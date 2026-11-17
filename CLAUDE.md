@@ -25,6 +25,7 @@ python tools/check_settings.py                                        # settings
 - `ampsim/chain.py`: builds an amp from a preset, links sag blocks to their targets
 - `ampsim/filters.py`: biquad filters (RBJ cookbook), general `IIR`, FFT convolution, resampling, `check_keys`
 - `ampsim/circuit.py`: turns a resistor/capacitor netlist into a digital filter (used by the tone stack)
+- `ampsim/curves.py`: the `custom` and `triode` clipping curves
 - `ampsim/oversample.py`: oversampling for clipping (chunked) and up/down for the feedback loop
 - `ampsim/wavio.py`: wav read/write
 - `presets/*.json`: one file = one amp
@@ -34,8 +35,15 @@ python tools/check_settings.py                                        # settings
 
 - **Gain**: pre filters -> drive -> `curve(x + bias) - curve(bias)` at 8x -> post filters -> level.
   A 10 Hz high-pass is always added at the end, because uneven clipping leaves a DC offset.
+- **Curves**: `soft`, `tube`, `diode`, `hard` (fixed shapes in `CURVES` / `SCALAR_CURVES`), plus
+  `custom` and `triode` built in `ampsim/curves.py` from their settings (`Gain.CURVE_DEFAULTS`; a setting
+  for one curve used with another curve is an error). `triode`: Koren 1996 model + plate resistor load
+  line, solved by bisection into a table at start-up; input = grid swing in volts around `bias_v`;
+  output = plate swing / small-signal gain, flipped upright (real stages invert; we do not).
+  Grid current above 0 V: slope 2% after a 0.1 V soft corner (fixed numbers in curves.py).
+  Each curve has a `top` (where the top starts clipping); bias shift starts there.
 - **Bias shift** (in gain): `g = drive*x/h + bias`; the curve gets `g + s`. When `g + s > 1` (past the top of
-  the curve), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
+  the curve; really `g + s > top`), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
   release time. `s` is worked out at the normal rate in `process` (Python loop) and per sample in `tick`.
   This is a memory effect: EQ + clipping alone can not do it.
 - **Sag**: listens where it sits (sound passes through unchanged). Envelope with attack/release, then
@@ -96,6 +104,9 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
 - Tonestack: circuit solver vs the Yeh & Smith closed form, 12 knob settings x 2 styles: within 0.0003 dB.
   Digital vs analog: 0.01 dB up to 10 kHz at 48 kHz. All knobs at 5: mid dip at ~700 Hz (british, -4.7 dB)
   and ~760 Hz (american, -6.9 dB). b0 > 0 for all 54 tested settings at 48 and 192 kHz.
+- Triode 12AX7, 300 V, 100k, -1.5 V: plate 205 V, 0.95 mA, gain 61 (real tube data: ~190-205 V, ~60).
+  At 0.5 V: 2.6% 2nd / 0.1% 3rd harmonic. Cold bias -2.5 V at 2 V: 24% 2nd harmonic.
+  Bias shift on a triode starts at grid current (1.2 V peak: none, 1.8 V: yes).
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
@@ -117,7 +128,8 @@ Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step
 high gain presets; distortion at soft/medium/hard playing is in the README).
 Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
 5150, Fender clean, Vox): bias shift (done), split (done), noise gate (done), tone stack from real
-component values (done: british/american values; Vox top boost, Baxandall, James still to add), more clipping curves; then famous-amp-style presets with descriptive names
+component values (done: british/american values; Vox top boost, Baxandall, James still to add), more clipping
+curves (done: custom, triode 12AX7/12AT7/12AU7; power tubes EL34/6L6/EL84 still to add); then famous-amp-style presets with descriptive names
 (no brand names in preset names). Push-pull and output transformer are built from existing blocks.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.

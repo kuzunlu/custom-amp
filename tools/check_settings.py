@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ampsim.blocks import BLOCK_TYPES, CURVES, Split, Tonestack  # noqa: E402
+from ampsim.blocks import BLOCK_TYPES, Gain, Split, Tonestack  # noqa: E402
+from ampsim.curves import TUBES  # noqa: E402
 from ampsim.filters import BAND_SETTINGS, KINDS, make_filters  # noqa: E402
 
 SR = 48000
@@ -35,16 +36,27 @@ def main():
             problems.append(f"{kind}: only in code {sorted(cls.SETTINGS - set(settings))}, "
                             f"only in doc {sorted(set(settings) - cls.SETTINGS)}")
         # A block built with the documented defaults must equal a block built with nothing set.
-        defaults = {k: v["default"] for k, v in settings.items() if v["default"] is not None}
-        base = {"type": kind, **REQUIRED.get(kind, {})}
-        with_defaults = cls({**base, **defaults}, SR).__dict__
-        without = cls(base, SR).__dict__
-        for attr, value in with_defaults.items():
-            if attr not in SKIP and value != without[attr]:
-                problems.append(f"{kind}: default differs for '{attr}': doc gives {value}, code gives {without[attr]}")
+        # Settings that belong to one curve are checked with that curve chosen.
+        defaults = {k: v["default"] for k, v in settings.items() if v["default"] is not None and "curve" not in v}
+        groups = [({}, defaults)]
+        for curve in getattr(cls, "CURVE_SETTINGS", {}):
+            groups.append(({"curve": curve}, {k: v["default"] for k, v in settings.items() if v.get("curve") == curve}))
+        for extra, values in groups:
+            base = {"type": kind, **REQUIRED.get(kind, {}), **extra}
+            with_defaults = cls({**base, **values}, SR).__dict__
+            without = cls(base, SR).__dict__
+            for attr, value in with_defaults.items():
+                if attr not in SKIP and value != without[attr]:
+                    problems.append(f"{kind} {extra}: default differs for '{attr}': doc gives {value}, code gives {without[attr]}")
+        for curve, names in getattr(cls, "CURVE_SETTINGS", {}).items():
+            tagged = {k for k, v in settings.items() if v.get("curve") == curve}
+            if tagged != names:
+                problems.append(f"{kind}: settings marked for curve '{curve}' differ: doc {sorted(tagged)}, code {sorted(names)}")
 
-    if set(doc["blocks"]["gain"]["settings"]["curve"]["choices"]) != set(CURVES):
+    if set(doc["blocks"]["gain"]["settings"]["curve"]["choices"]) != set(Gain.CURVE_NAMES):
         problems.append("gain curve choices differ")
+    if set(doc["blocks"]["gain"]["settings"]["tube"]["choices"]) != set(TUBES):
+        problems.append("triode tube choices differ")
     tonestack = doc["blocks"]["tonestack"]["settings"]
     if set(tonestack["style"]["choices"]) != set(Tonestack.STYLES):
         problems.append("tonestack style choices differ")

@@ -284,10 +284,57 @@
             "soft": "Smooth, round clipping (tanh). Warm and natural, both sides the same. Only odd harmonics. A safe start for any stage.",
             "tube": "Uneven like a real triode: the top clips earlier and harder than the bottom. Adds even harmonics, which sound thicker and sweeter. Best for preamp stages.",
             "diode": "Stays clean longer, then bends quickly. Sounds like a pedal with clipping diodes: tighter and more compressed than 'soft'.",
-            "hard": "Flat cut at the ceiling. Buzzy and aggressive, like a fuzz or a broken transistor. Best used with a low-pass after it."
+            "hard": "Flat cut at the ceiling. Buzzy and aggressive, like a fuzz or a broken transistor. Best used with a low-pass after it.",
+            "custom": "Set the top and the bottom of the wave separately: where each side clips and how soft the bend is. Use it to copy a cathode follower (only the top clips), a pedal with uneven diodes, a fuzz, or anything else.",
+            "triode": "A real preamp tube (12AX7, 12AT7 or 12AU7) worked out from published tube equations, with its supply voltage, plate resistor and bias. The input is in volts at the grid. Small signals get mostly 2nd harmonic (the classic tube warmth); the top clips hard where grid current starts, the bottom squashes gradually toward cut-off."
           },
           "short": "The shape of the clipping. Changes the character of the distortion.",
-          "tooltip": "All curves pass small signals unchanged and squash big ones. They differ in HOW they squash: soft and tube bend gradually (warm), diode bends late and fast (tight), hard cuts flat (buzzy). Uneven curves (tube, or any curve with Bias) add even harmonics."
+          "tooltip": "All curves pass small signals unchanged and squash big ones. They differ in HOW they squash: soft and tube bend gradually (warm), diode bends late and fast (tight), hard cuts flat (buzzy). Uneven curves (tube, triode, custom with different sides, or any curve with Bias) add even harmonics. Measured with a 220 Hz note: soft = 0% 2nd and 6.7% 3rd harmonic; triode 12AX7 at 0.5 V = 2.6% 2nd and 0.1% 3rd; triode biased cold (-2.5 V) at 2 V = 24% 2nd harmonic."
+        },
+        "top": {
+          "label": "Top level", "type": "number", "unit": "", "min": 0.05, "max": 20, "default": 1.0, "scale": "log", "curve": "custom",
+          "short": "Custom curve: where the top half of the wave clips.",
+          "tooltip": "The highest level the top half of the wave can reach. Smaller = the top clips sooner. Making top and bottom different gives even harmonics (a thicker, more 'tube' sound). Example: a cathode follower clips only the top: top 1, bottom 20. Only used when Curve is 'custom'."
+        },
+        "top_softness": {
+          "label": "Top softness", "type": "number", "unit": "", "min": 0, "max": 1, "default": 0.5, "curve": "custom",
+          "short": "Custom curve: how soft the top bend is. 0 = almost a hard corner, 1 = very gradual.",
+          "tooltip": "0 = stays clean almost up to the level and then cuts nearly flat (diode-like, buzzy). 0.5 = a round bend, similar to a tube. 1 = starts squashing early and very gradually (smooth, compressed). Measured: at an input equal to the level, the output is 92% (softness 0), 78% (0.5), 50% (1) of the level. Only used when Curve is 'custom'."
+        },
+        "bottom": {
+          "label": "Bottom level", "type": "number", "unit": "", "min": 0.05, "max": 20, "default": 1.0, "scale": "log", "curve": "custom",
+          "short": "Custom curve: where the bottom half of the wave clips.",
+          "tooltip": "The lowest level the bottom half of the wave can reach (as a positive number). See Top level. Only used when Curve is 'custom'."
+        },
+        "bottom_softness": {
+          "label": "Bottom softness", "type": "number", "unit": "", "min": 0, "max": 1, "default": 0.5, "curve": "custom",
+          "short": "Custom curve: how soft the bottom bend is.",
+          "tooltip": "See Top softness. Only used when Curve is 'custom'."
+        },
+        "tube": {
+          "label": "Tube", "type": "choice", "default": "12AX7", "curve": "triode",
+          "choices": {
+            "12AX7": "The usual preamp tube: high gain (about 60 per stage with a 100k plate resistor). Used in almost every guitar amp preamp.",
+            "12AT7": "Medium gain (about 45). Often used in reverb drivers and phase inverters; cleaner and stiffer in a preamp.",
+            "12AU7": "Low gain (about 15). Lots of headroom; very clean. Used as a gentle first stage or a cathode follower."
+          },
+          "short": "Triode curve: which preamp tube.",
+          "tooltip": "Each tube has its own gain and curve shape. The numbers come from Koren's tube models (1996), which are widely used in tube simulation. Only used when Curve is 'triode'."
+        },
+        "plate_v": {
+          "label": "Supply voltage", "type": "number", "unit": "V", "min": 50, "max": 500, "default": 300, "curve": "triode",
+          "short": "Triode curve: the supply voltage at the top of the plate resistor.",
+          "tooltip": "Higher = more headroom, cleaner and louder. Lower = 'starved', clips sooner and more unevenly. Typical preamp supplies are 200-350 V. Measured: a 12AX7 with 100k and -1.5 V bias sits at 205 V on the plate with 300 V supply (about 1 mA, gain 61), like the real tube. Only used when Curve is 'triode'."
+        },
+        "plate_ohms": {
+          "label": "Plate resistor", "type": "number", "unit": "ohm", "min": 10000, "max": 500000, "default": 100000, "scale": "log", "curve": "triode",
+          "short": "Triode curve: the plate resistor (the stage's load).",
+          "tooltip": "100k is the usual value. A bigger plate resistor gives a bit more gain and clips sooner; a smaller one gives more headroom. Copy it from the schematic (usually written like '100K' next to the tube's plate). Only used when Curve is 'triode'."
+        },
+        "bias_v": {
+          "label": "Bias voltage", "type": "number", "unit": "V", "min": -10, "max": -0.2, "default": -1.5, "curve": "triode",
+          "short": "Triode curve: the grid voltage at rest (below 0). Sets how 'hot' or 'cold' the stage is.",
+          "tooltip": "The most important setting for the character of a tube stage. Around -1 to -1.5 V (a 1.5k cathode resistor in a real amp) = a normal 'hot' stage: the top clips first when the grid reaches 0 V (grid current). Around -2.5 to -4 V (a 10k cathode resistor) = a 'cold clipper': the bottom squashes very early, which gives a lot of 2nd harmonic and the tight, aggressive grind of many high-gain amps (measured: 24% 2nd harmonic at -2.5 V). In a real amp, bias voltage = cathode current x cathode resistor. Only used when Curve is 'triode'. With this curve, Drive sets how many volts reach the grid: a guitar gives about 0.1-1 V, earlier stages give many volts."
         },
         "bias": {
           "label": "Bias", "type": "number", "unit": "", "min": -1, "max": 1, "default": 0,

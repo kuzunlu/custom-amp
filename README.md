@@ -6,7 +6,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 |---|---|
 | `eq` | Boost or cut tones (high-pass, low-pass, shelves, peaks) |
 | `tonestack` | The real bass/mid/treble circuit of a tube amp, from its part values. The knobs affect each other like in the real amp |
-| `gain` | One gain stage: filter, then clip, then filter. Optional bias shift: hard hits push the stage "colder" for a moment |
+| `gain` | One gain stage: filter, then clip, then filter. Curves: `soft`, `tube`, `diode`, `hard`, `custom` (top and bottom set separately), `triode` (a real 12AX7/12AT7/12AU7 from tube equations). Optional bias shift: hard hits push the stage "colder" for a moment |
 | `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
 | `split` | Parallel paths: the same sound through several chains side by side, then mixed |
@@ -99,6 +99,17 @@ a high shelf cut works like a **presence** knob, a low shelf cut works like a **
 Every path gets the same input; the outputs are added. Each path has its own `chain` (any blocks, even another
 split or a cab IR), `level_db` and `invert` (flips the path upside down before mixing).
 An empty chain passes the input through untouched (a clean blend).
+
+### Triode curve
+
+```json
+{ "type": "gain", "curve": "triode", "tube": "12AX7", "plate_v": 300, "plate_ohms": 100e3, "bias_v": -1.5, "drive_db": 6 }
+```
+
+A real preamp tube stage, from Koren's tube equations. The input is in volts at the grid (a guitar gives
+about 0.1-1 V), so copy the values from a schematic. `bias_v` sets the character: about -1.5 V is a normal
+stage (the top clips first, at grid current); -2.5 to -4 V is a "cold clipper" (the bottom squashes early,
+lots of 2nd harmonic). Small signals come out the same size; only the clipping shape is the tube's.
 
 ### Tone stack
 

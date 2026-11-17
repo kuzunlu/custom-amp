@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from .circuit import digital_filter
+from .curves import make_custom, make_triode
 from .filters import IIR, Biquad, check_keys, fft_convolve, make_filters, resample_fft, run_filters
 from .oversample import downsample, oversampled, upsample
 from .wavio import read_wav
@@ -161,18 +162,37 @@ class Tonestack(Block):
 class Gain(Block):
     """One gain stage: pre filters -> drive -> clipping curve -> post filters -> level."""
 
+    # Settings that only work with one curve, with their defaults.
+    CURVE_DEFAULTS = {
+        "custom": {"top": 1.0, "top_softness": 0.5, "bottom": 1.0, "bottom_softness": 0.5},
+        "triode": {"tube": "12AX7", "plate_v": 300.0, "plate_ohms": 100e3, "bias_v": -1.5},
+    }
+    CURVE_SETTINGS = {curve: set(defaults) for curve, defaults in CURVE_DEFAULTS.items()}
     SETTINGS = {
         "drive_db", "curve", "bias", "level_db", "pre", "post", "oversample",
         "bias_shift", "shift_attack_ms", "shift_release_ms",
-    }
+    } | set().union(*CURVE_SETTINGS.values())
+    CURVE_NAMES = (*CURVES, *CURVE_SETTINGS)
 
     def __init__(self, cfg, sr):
         super().__init__(cfg, sr)
         curve = cfg.get("curve", "soft")
-        if curve not in CURVES:
-            raise ValueError(f"unknown curve '{curve}'. Use one of: {', '.join(CURVES)}")
-        self.curve = CURVES[curve]
-        self.scalar_curve = SCALAR_CURVES[curve]
+        if curve not in self.CURVE_NAMES:
+            raise ValueError(f"unknown curve '{curve}'. Use one of: {', '.join(self.CURVE_NAMES)}")
+        for other, names in self.CURVE_SETTINGS.items():
+            wrong = names & set(cfg) if other != curve else set()
+            if wrong:
+                raise ValueError(f"gain: the setting(s) {', '.join(sorted(wrong))} only work with curve '{other}'")
+        self.top = 1.0  # where the top of the curve starts to clip (bias shift starts there)
+        self.tube_info = None
+        self.curve_params = {k: cfg.get(k, v) for k, v in self.CURVE_DEFAULTS.get(curve, {}).items()}
+        if curve == "custom":
+            self.curve, self.scalar_curve, self.top = make_custom(**self.curve_params)
+        elif curve == "triode":
+            self.curve, self.scalar_curve, self.top, self.tube_info = make_triode(**self.curve_params)
+        else:
+            self.curve = CURVES[curve]
+            self.scalar_curve = SCALAR_CURVES[curve]
         self.drive = db_to_gain(cfg.get("drive_db", 0.0))
         self.bias = cfg.get("bias", 0.0)
         self.level = db_to_gain(cfg.get("level_db", 0.0))
@@ -194,7 +214,7 @@ class Gain(Block):
 
     def next_shift(self, s, g):
         """The shift for the next sample. g is the curve input without the shift."""
-        over = g + s - 1.0  # how far past the top of the curve
+        over = g + s - self.top  # how far past the top of the curve
         if over > 0:
             s -= self.shift_amount * self.shift_attack * over
         return s - self.shift_release * s
