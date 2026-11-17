@@ -5,6 +5,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | Block | What it does |
 |---|---|
 | `eq` | Boost or cut tones (high-pass, low-pass, shelves, peaks) |
+| `tonestack` | The real bass/mid/treble circuit of a tube amp, from its part values. The knobs affect each other like in the real amp |
 | `gain` | One gain stage: filter, then clip, then filter. Optional bias shift: hard hits push the stage "colder" for a moment |
 | `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
@@ -78,7 +79,7 @@ More `amount` = less gain, tighter and cleaner clipping.
 The `path` filters choose which tones get less feedback, so those come out louder:
 a high shelf cut works like a **presence** knob, a low shelf cut works like a **resonance** knob.
 
-- Only `eq` and `gain` blocks can go inside. Inner gain blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
+- Only `eq`, `tonestack` and `gain` blocks can go inside. Inner gain blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
 - The loop has no delay. Each sample is found by solving the loop equation, so strong feedback is stable.
 - It runs one sample at a time, so it is slow in Python (about 1 s of work per 1 s of audio).
 
@@ -98,6 +99,17 @@ a high shelf cut works like a **presence** knob, a low shelf cut works like a **
 Every path gets the same input; the outputs are added. Each path has its own `chain` (any blocks, even another
 split or a cab IR), `level_db` and `invert` (flips the path upside down before mixing).
 An empty chain passes the input through untouched (a clean blend).
+
+### Tone stack
+
+```json
+{ "type": "tonestack", "style": "british", "treble": 6, "mid": 4, "bass": 7, "parts": { "R4": 47e3 } }
+```
+
+The classic passive tone circuit used by most tube amps, solved from its part values (`ampsim/circuit.py`).
+`style` picks the starting values (`british` or `american`); `parts` changes single parts (farads and ohms:
+470 pF = `470e-12`, 22 nF = `22e-9`, 33k = `33e3`). The knobs go from 0 to 10. Like the real circuit,
+it loses volume (about 5-20 dB), so raise `level_db` or the next stage's drive.
 
 ### Gate
 

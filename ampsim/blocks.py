@@ -4,7 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .filters import Biquad, check_keys, fft_convolve, make_filters, resample_fft, run_filters
+from .circuit import digital_filter
+from .filters import IIR, Biquad, check_keys, fft_convolve, make_filters, resample_fft, run_filters
 from .oversample import downsample, oversampled, upsample
 from .wavio import read_wav
 
@@ -87,6 +88,74 @@ class EQ(Block):
         for f in self.filters:
             v = f.tick(v, commit)
         return v * self.level
+
+
+class Tonestack(Block):
+    """The classic passive bass/mid/treble circuit, worked out from its real part values.
+
+    The circuit (used by most tube amps, with different values):
+        in --C1-- treble pot top . treble pot wiper = out . treble pot bottom = x
+        x --bass pot (variable resistor)-- y = mid pot top . mid pot wiper = w . mid pot bottom = ground
+        in --R4-- z,   z --C2-- x,   z --C3-- w
+    The knobs affect each other, just like in the real amp. The output level is the real (lossy) one.
+    """
+
+    SETTINGS = {
+        "style", "parts", "treble", "mid", "bass", "treble_taper", "mid_taper", "bass_taper",
+        "source_ohms", "load_ohms", "level_db",
+    }
+    # Pot tapers as common schematics list them: linear treble and mid, audio ("log") bass.
+    TAPERS = {"treble": "linear", "mid": "linear", "bass": "log"}
+    STYLES = {
+        # Values as in common published schematics. Check them against the schematic of the amp you copy.
+        "british": {"C1": 470e-12, "C2": 22e-9, "C3": 22e-9, "R1": 220e3, "R2": 1e6, "R3": 25e3, "R4": 33e3},
+        "american": {"C1": 250e-12, "C2": 20e-9, "C3": 20e-9, "R1": 250e3, "R2": 1e6, "R3": 25e3, "R4": 56e3},
+    }
+    MIN_OHMS = 1.0  # a pot turned fully to one end still has a tiny resistance
+
+    def __init__(self, cfg, sr):
+        super().__init__(cfg, sr)
+        style = cfg.get("style", "british")
+        if style not in self.STYLES:
+            raise ValueError(f"tonestack: unknown style '{style}'. Use one of: {', '.join(self.STYLES)}")
+        parts = dict(self.STYLES[style])
+        check_keys(cfg.get("parts", {}), set(parts), "tonestack parts")
+        parts.update(cfg.get("parts", {}))
+        knobs = {}
+        for knob in ("treble", "mid", "bass"):
+            value = cfg.get(knob, 5.0)
+            if not 0 <= value <= 10:
+                raise ValueError(f"tonestack: {knob} must be from 0 to 10, got {value}")
+            taper = cfg.get(f"{knob}_taper", self.TAPERS[knob])
+            if taper not in ("log", "linear"):
+                raise ValueError(f"tonestack: {knob}_taper must be 'log' or 'linear'")
+            # Audio ("log") taper: half way round gives 10% of the resistance, like real tone pots.
+            knobs[knob] = (81 ** (value / 10) - 1) / 80 if taper == "log" else value / 10
+
+        t, m, l = knobs["treble"], knobs["mid"], knobs["bass"]
+        p, r = parts, self.MIN_OHMS
+        self.parts = [
+            ("C", p["C1"], "in", "top"),
+            ("R", max(p["R1"] * (1 - t), r), "top", "out"),
+            ("R", max(p["R1"] * t, r), "out", "x"),
+            ("R", max(p["R2"] * l, r), "x", "y"),
+            ("R", max(p["R3"] * (1 - m), r), "y", "w"),
+            ("R", max(p["R3"] * m, r), "w", "gnd"),
+            ("R", p["R4"], "in", "z"),
+            ("C", p["C2"], "z", "x"),
+            ("C", p["C3"], "z", "w"),
+        ]
+        self.source_ohms = cfg.get("source_ohms", 1000.0)
+        self.load_ohms = cfg.get("load_ohms", 1e6)
+        self.filter = IIR(*digital_filter(self.parts, sr, self.source_ohms, self.load_ohms))
+        self.level = db_to_gain(cfg.get("level_db", 0.0))
+
+    def process(self, x):
+        return self.filter.process(x) * self.level
+
+    def tick(self, v, h=1.0, commit=True):
+        # h (headroom) is not used: a tone stack does not clip.
+        return self.filter.tick(v, commit) * self.level
 
 
 class Gain(Block):
@@ -272,7 +341,7 @@ class Feedback(Block):
     the sample rate, so it is slow in Python.
     """
 
-    INNER_TYPES = {"eq": EQ, "gain": Gain}
+    INNER_TYPES = {"eq": EQ, "tonestack": Tonestack, "gain": Gain}
     SETTINGS = {"amount", "path", "chain", "oversample", "level_db"}
 
     def __init__(self, cfg, sr):
@@ -289,7 +358,7 @@ class Feedback(Block):
         for inner in cfg.get("chain", []):
             kind = inner.get("type")
             if kind not in self.INNER_TYPES:
-                raise ValueError(f"feedback: '{kind}' blocks can not go inside a feedback loop. Use: eq, gain")
+                raise ValueError(f"feedback: '{kind}' blocks can not go inside a feedback loop. Use: {', '.join(self.INNER_TYPES)}")
             if "oversample" in inner:
                 raise ValueError("feedback: gain blocks inside the loop can not set 'oversample'. Set it on the feedback block")
             self.blocks.append(self.INNER_TYPES[kind](inner, loop_sr))
@@ -409,5 +478,6 @@ class Gate(Block):
 
 
 BLOCK_TYPES = {
-    "eq": EQ, "gain": Gain, "sag": Sag, "feedback": Feedback, "split": Split, "gate": Gate, "ir": IRLoader,
+    "eq": EQ, "tonestack": Tonestack, "gain": Gain, "sag": Sag, "feedback": Feedback, "split": Split,
+    "gate": Gate, "ir": IRLoader,
 }

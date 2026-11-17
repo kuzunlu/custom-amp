@@ -88,6 +88,37 @@ class Biquad:
         return y
 
 
+class IIR:
+    """A filter of any order from its coefficients (b, a with a[0] = 1), like Biquad but general."""
+
+    def __init__(self, b, a):
+        self.b = [float(v) for v in b]
+        self.a = [float(v) for v in a]
+        self.z = [0.0] * (len(self.a) - 1)
+
+    def process(self, x):
+        out = [0.0] * len(x)
+        z = list(self.z)
+        for i, v in enumerate(x.tolist()):
+            out[i] = self.tick_with(z, v)
+        self.z = z
+        return np.array(out)
+
+    def tick_with(self, z, v):
+        """One sample, moving the state list z on."""
+        b, a = self.b, self.a
+        y = b[0] * v + z[0]
+        for k in range(len(z) - 1):
+            z[k] = b[k + 1] * v - a[k + 1] * y + z[k + 1]
+        z[-1] = b[-1] * v - a[-1] * y
+        return y
+
+    def tick(self, v, commit=True):
+        if commit:
+            return self.tick_with(self.z, v)
+        return self.b[0] * v + self.z[0]
+
+
 def make_filters(bands, sr):
     """Build a list of Biquads from preset bands like {"kind": "peak", "freq": 700, "gain_db": -6, "q": 0.7}."""
     filters = []

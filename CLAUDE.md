@@ -23,7 +23,8 @@ python tools/check_settings.py                                        # settings
 
 - `ampsim/blocks.py`: all blocks (`EQ`, `Gain`, `Sag`, `Feedback`, `IRLoader`) and the clipping curves
 - `ampsim/chain.py`: builds an amp from a preset, links sag blocks to their targets
-- `ampsim/filters.py`: biquad filters (RBJ cookbook), FFT convolution, resampling, `check_keys`
+- `ampsim/filters.py`: biquad filters (RBJ cookbook), general `IIR`, FFT convolution, resampling, `check_keys`
+- `ampsim/circuit.py`: turns a resistor/capacitor netlist into a digital filter (used by the tone stack)
 - `ampsim/oversample.py`: oversampling for clipping (chunked) and up/down for the feedback loop
 - `ampsim/wavio.py`: wav read/write
 - `presets/*.json`: one file = one amp
@@ -43,8 +44,14 @@ python tools/check_settings.py                                        # settings
 - **Feedback**: inner chain gets `input - amount * path(output)`. **There is no delay in the loop.**
   Each sample is found by solving the loop equation (`solve_falling`, Illinois method). Do not "simplify"
   this to a 1-sample delay: that oscillates when loop gain is above 1, and real amps run 2-10.
-  Filters have `tick(v, commit=False)` to try a value without moving on. Only `eq` and `gain` can go
-  inside. `amount` must be >= 0 (the solver needs the loop to be one-way rising; positive feedback is not done yet).
+  Filters have `tick(v, commit=False)` to try a value without moving on. Only `eq`, `tonestack` and `gain`
+  can go inside. `amount` must be >= 0 and every inner block must rise with its input (first filter
+  coefficient b0 > 0), or the solver can find a wrong answer. Positive feedback is not done yet.
+- **Tonestack**: the classic passive circuit as a netlist, solved by `circuit.py` (nodal analysis ->
+  H(s) polynomials via FFT on a circle -> bilinear transform -> `IIR`). The MID POT IS A 3-TERMINAL POT:
+  bass pot -> mid pot top, mid pot bottom -> ground, C3 -> mid pot wiper. Wiring it as a variable resistor
+  was wrong by up to 78 dB against the published formula (Yeh & Smith 2006). Default tapers: treble and
+  mid linear, bass log (all-log made "all at 5" far too dark). New tone circuits = a new netlist.
 - **Split**: every path gets the same input; outputs are added (`sign * level` per path). Any block can go in
   a path. Every block has `children()`; `chain.flatten` walks into feedback loops and split paths, so sag
   targets and unique ids work everywhere. `build_chain` lives in `blocks.py` (Split needs it).
@@ -86,6 +93,9 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
   High-gain amp: gate placed after the amp leaves hiss at -11.5 dB (never closes); gate at the input with
   apply_after the last stage: -79 dB. Fading note with hiss -70, threshold -55: hysteresis 0 = 4-8 state
   changes (chatter), 3 = 2 (clean), 6 = 1 (never closes: closing point under the hiss peaks).
+- Tonestack: circuit solver vs the Yeh & Smith closed form, 12 knob settings x 2 styles: within 0.0003 dB.
+  Digital vs analog: 0.01 dB up to 10 kHz at 48 kHz. All knobs at 5: mid dip at ~700 Hz (british, -4.7 dB)
+  and ~760 Hz (american, -6.9 dB). b0 > 0 for all 54 tested settings at 48 and 192 kHz.
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
@@ -107,7 +117,7 @@ Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step
 high gain presets; distortion at soft/medium/hard playing is in the README).
 Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
 5150, Fender clean, Vox): bias shift (done), split (done), noise gate (done), tone stack from real
-component values, more clipping curves; then famous-amp-style presets with descriptive names
+component values (done: british/american values; Vox top boost, Baxandall, James still to add), more clipping curves; then famous-amp-style presets with descriptive names
 (no brand names in preset names). Push-pull and output transformer are built from existing blocks.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.

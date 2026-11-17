@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ampsim.blocks import BLOCK_TYPES, CURVES, Split  # noqa: E402
+from ampsim.blocks import BLOCK_TYPES, CURVES, Split, Tonestack  # noqa: E402
 from ampsim.filters import BAND_SETTINGS, KINDS, make_filters  # noqa: E402
 
 SR = 48000
 # Settings a block can not be built without, and attributes that can not be compared simply.
 REQUIRED = {"ir": {"file": str(ROOT / "audio" / "fake_4x12.wav")}, "split": {"paths": [{}]}}
-SKIP = {"blocks", "path", "paths", "pre", "post", "filters", "targets", "target_ids", "ir", "curve", "scalar_curve"}
+SKIP = {"blocks", "path", "paths", "pre", "post", "filters", "filter", "targets", "target_ids", "ir", "curve", "scalar_curve"}
 
 
 def main():
@@ -45,6 +45,11 @@ def main():
 
     if set(doc["blocks"]["gain"]["settings"]["curve"]["choices"]) != set(CURVES):
         problems.append("gain curve choices differ")
+    tonestack = doc["blocks"]["tonestack"]["settings"]
+    if set(tonestack["style"]["choices"]) != set(Tonestack.STYLES):
+        problems.append("tonestack style choices differ")
+    if set(tonestack["parts"]["names"]) != set(Tonestack.STYLES["british"]):
+        problems.append("tonestack part names differ")
     band = doc["band"]["settings"]
     if set(band) != BAND_SETTINGS:
         problems.append("band setting names differ")

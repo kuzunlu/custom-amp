@@ -32,6 +32,7 @@
         "label": "Block type", "type": "choice", "default": null,
         "choices": {
           "eq": "Tone shaping with filter bands.",
+          "tonestack": "The real bass/mid/treble circuit of a tube amp, worked out from its part values.",
           "gain": "One gain stage: filter, clip, filter.",
           "sag": "Power supply sag: lowers the clipping ceiling of later gain stages when you play hard.",
           "feedback": "A loop around a few blocks, like the feedback loop of a power amp.",
@@ -109,6 +110,85 @@
   },
 
   "blocks": {
+    "tonestack": {
+      "label": "Tone stack",
+      "short": "The real bass/mid/treble circuit of a tube amp, worked out from its part values.",
+      "tooltip": "Almost every famous tube amp uses the same passive tone circuit (3 capacitors, 1 resistor, 3 pots), only with different part values. This block works out that exact circuit, so the knobs behave like the real amp: they affect each other (for example, Mid also changes the treble level), there is a built-in mid scoop, and the whole circuit loses volume, as in the real amp. Checked against the published formula for this circuit (Yeh and Smith, 2006): same answer within 0.001 dB. Where to put it: after the first one or two gain stages in most British and American amps; BEFORE the gain stages in some amps (for example the Mesa Mark series), which makes the knobs change the distortion itself.",
+      "settings": {
+        "style": {
+          "label": "Part values", "type": "choice", "default": "british",
+          "choices": {
+            "british": "Values like the classic British 100 W amps: C1 470 pF, C2 22 nF, C3 22 nF, treble 220k, bass 1M, mid 25k, slope 33k. Less mid scoop (about -5 dB at 700 Hz with all knobs at 5), punchy mids.",
+            "american": "Values like the 1959 American tweed bass amp (the circuit the British amps copied): C1 250 pF, C2 20 nF, C3 20 nF, treble 250k, bass 1M, mid 25k, slope 56k. Deeper mid scoop (about -7 dB at 760 Hz with all knobs at 5)."
+          },
+          "short": "Which set of part values to start from.",
+          "tooltip": "The starting part values. Any single part can then be changed with 'Parts'. The values are from common published schematics; check them against the schematic of the exact amp you want to copy."
+        },
+        "parts": {
+          "label": "Parts", "type": "parts", "default": {},
+          "names": {
+            "C1": "Treble capacitor (farads, e.g. 470e-12 = 470 pF). Bigger = the treble knob reaches lower and the sound gets brighter.",
+            "C2": "Bass capacitor (farads, e.g. 22e-9 = 22 nF). Bigger = more low bass.",
+            "C3": "Mid capacitor (farads). Bigger = the mid knob works lower.",
+            "R1": "Treble pot total resistance (ohms).",
+            "R2": "Bass pot total resistance (ohms). Bigger = more bass range.",
+            "R3": "Mid pot total resistance (ohms). Bigger = more mids overall.",
+            "R4": "Slope resistor (ohms). The most important value for the character: smaller = more mids and more output (British), bigger = deeper scoop (American, and amps with a 100k slope resistor sound very scooped)."
+          },
+          "short": "Change any single part value of the circuit.",
+          "tooltip": "Only list the parts you want to change; the others come from the style. Units are farads and ohms: 470 pF = 470e-12, 22 nF = 22e-9, 220k = 220e3, 1M = 1e6. This is how you copy one exact amp from its schematic."
+        },
+        "treble": {
+          "label": "Treble", "type": "number", "unit": "", "min": 0, "max": 10, "default": 5,
+          "short": "The treble knob, 0 to 10.",
+          "tooltip": "Moves the output pick-off point along the treble pot. Up = more highs, AND less mids and bass (the knobs share one circuit). Measured with British values and the other knobs at 5: 3 kHz goes from -10.5 dB (treble 0) to -1.7 dB (treble 10)."
+        },
+        "mid": {
+          "label": "Middle", "type": "number", "unit": "", "min": 0, "max": 10, "default": 5,
+          "short": "The middle knob, 0 to 10.",
+          "tooltip": "Sets how much the mid pot holds the mids up. Up = more mids AND a louder sound overall, because more of the signal gets through. At 0 you get the deepest scoop and the lowest volume. Measured with British values: 500 Hz goes from -11.8 dB (mid 0) to -6.6 dB (mid 10), and 3 kHz moves too (-8.5 to -4.1 dB)."
+        },
+        "bass": {
+          "label": "Bass", "type": "number", "unit": "", "min": 0, "max": 10, "default": 5,
+          "short": "The bass knob, 0 to 10.",
+          "tooltip": "Sets how much low end gets through. Most of the change happens in the top half of the knob when the taper is 'log' (like the real audio-taper pot). Measured with British values: 100 Hz goes from -10.7 dB (bass 0) to -2.7 dB (bass 10). The effect is a bit smaller when the treble is high, because the knobs share one circuit."
+        },
+        "treble_taper": {
+          "label": "Treble taper", "type": "choice", "default": "linear",
+          "choices": { "linear": "Resistance changes evenly as you turn.", "log": "Audio taper: at the half-way point only 10% of the resistance. Most of the change is at the top of the knob." },
+          "short": "How the treble pot's resistance changes as you turn it.",
+          "tooltip": "Real amps use either kind; the schematic says 'LIN' (linear, sometimes 'B') or 'LOG' (audio, sometimes 'A'). It changes where on the knob the sound changes most, not the range."
+        },
+        "mid_taper": {
+          "label": "Middle taper", "type": "choice", "default": "linear",
+          "choices": { "linear": "Resistance changes evenly as you turn.", "log": "Audio taper: at the half-way point only 10% of the resistance." },
+          "short": "How the mid pot's resistance changes as you turn it.",
+          "tooltip": "See Treble taper. Check the schematic of the amp you copy."
+        },
+        "bass_taper": {
+          "label": "Bass taper", "type": "choice", "default": "log",
+          "choices": { "linear": "Resistance changes evenly as you turn.", "log": "Audio taper: at the half-way point only 10% of the resistance (the usual choice for bass pots)." },
+          "short": "How the bass pot's resistance changes as you turn it.",
+          "tooltip": "See Treble taper. Bass pots are usually audio taper ('LOG' or 'A')."
+        },
+        "source_ohms": {
+          "label": "Source resistance", "type": "number", "unit": "ohm", "min": 1, "max": 200000, "default": 1000, "scale": "log",
+          "short": "The output resistance of the tube stage that drives the tone stack.",
+          "tooltip": "A cathode follower (most British and high-gain amps, and the 1959 tweed bass amp) drives the tone stack with about 1k: use 1000. A normal tube stage drives it from its plate, with roughly 30k-40k: the stack then loses more highs and the knobs behave differently (American 'blackface'-style amps). This setting copies that."
+        },
+        "load_ohms": {
+          "label": "Load resistance", "type": "number", "unit": "ohm", "min": 10000, "max": 10000000, "default": 1000000, "scale": "log",
+          "short": "The resistance after the tone stack (usually the next tube's grid resistor or volume pot).",
+          "tooltip": "Usually a 1M volume pot or grid resistor: use 1e6. A smaller load (for example a 250k volume pot) takes away some low end and volume."
+        },
+        "level_db": {
+          "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 40, "default": 0,
+          "short": "Volume after the tone stack.",
+          "tooltip": "The tone stack loses about 5-20 dB like the real circuit (the stage after it in a real amp makes up for it). Raise this, or the drive of the next gain stage, to get the level back."
+        }
+      }
+    },
+
     "gate": {
       "label": "Noise gate",
       "short": "Turns the sound down when you stop playing, to remove hiss and hum.",
@@ -302,8 +382,8 @@
           "tooltip": "This works the opposite way to a normal EQ: cutting a tone here makes it louder at the output, because that tone is no longer held back by the feedback. Presence: high shelf around 2-4 kHz with -6 to -12 dB = more bite and sparkle. Resonance (or Depth): low shelf around 80-120 Hz with a cut = bigger, looser bass, like a closed-back cab pushing back. With no filters, all tones get the same feedback."
         },
         "chain": {
-          "label": "Inside the loop", "type": "block-list", "allowed": ["eq", "gain"], "default": [],
-          "short": "The blocks inside the loop (EQ and gain stages only).",
+          "label": "Inside the loop", "type": "block-list", "allowed": ["eq", "tonestack", "gain"], "default": [],
+          "short": "The blocks inside the loop (EQ, tone stack and gain stages only).",
           "tooltip": "Usually the power amp stage, maybe with an EQ for the output transformer (a high-pass around 60-100 Hz and a low-pass around 5-8 kHz). Inner gain stages can not set their own oversampling: the whole loop runs at the loop's oversampling rate."
         },
         "oversample": {
