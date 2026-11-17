@@ -2,29 +2,22 @@
 import json
 from pathlib import Path
 
-from .blocks import BLOCK_TYPES, Feedback, Gain, Sag
+from .blocks import Gain, Sag, build_chain
 from .filters import check_keys
 
 
-def build_chain(cfgs, sr):
-    blocks = []
-    for i, cfg in enumerate(cfgs, start=1):
-        kind = cfg.get("type")
-        if kind not in BLOCK_TYPES:
-            raise ValueError(f"block {i}: unknown type '{kind}'. Use one of: {', '.join(BLOCK_TYPES)}")
-        blocks.append(BLOCK_TYPES[kind](cfg, sr))
-    return blocks
+def flatten(blocks):
+    """All blocks in the order they run. Blocks inside a feedback loop or split come right after it."""
+    flat = []
+    for block in blocks:
+        flat.append(block)
+        flat.extend(flatten(block.children()))
+    return flat
 
 
 def link_sag(blocks):
     """Connect each sag block to the gain blocks named in its targets."""
-    # Blocks inside a feedback loop count as coming right after the feedback block.
-    flat = []
-    for block in blocks:
-        flat.append(block)
-        if isinstance(block, Feedback):
-            flat.extend(block.blocks)
-    blocks = flat
+    blocks = flatten(blocks)
 
     position = {}
     for i, block in enumerate(blocks):

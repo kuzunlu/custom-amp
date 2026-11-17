@@ -44,6 +44,20 @@ class Block:
     def process(self, x):
         raise NotImplementedError
 
+    def children(self):
+        """Blocks inside this block (feedback loops and split paths have some)."""
+        return []
+
+
+def build_chain(cfgs, sr):
+    blocks = []
+    for i, cfg in enumerate(cfgs, start=1):
+        kind = cfg.get("type")
+        if kind not in BLOCK_TYPES:
+            raise ValueError(f"block {i}: unknown type '{kind}'. Use one of: {', '.join(BLOCK_TYPES)}")
+        blocks.append(BLOCK_TYPES[kind](cfg, sr))
+    return blocks
+
 
 class EQ(Block):
     """A list of filter bands, applied one after another."""
@@ -298,5 +312,42 @@ class Feedback(Block):
             y1, y2 = y, y1
         return downsample(np.array(out), factor) * self.level
 
+    def children(self):
+        return self.blocks
 
-BLOCK_TYPES = {"eq": EQ, "gain": Gain, "sag": Sag, "feedback": Feedback, "ir": IRLoader}
+
+class Split(Block):
+    """Parallel paths: the same input goes into every path, and their outputs are added together.
+
+    Like the 'jumpered' channels of an old amp, a clean blend, or two cabs mixed.
+    """
+
+    SETTINGS = {"paths", "level_db"}
+    PATH_SETTINGS = {"chain", "level_db", "invert"}
+
+    def __init__(self, cfg, sr):
+        super().__init__(cfg, sr)
+        paths = cfg.get("paths", [])
+        if not paths:
+            raise ValueError("split: needs at least one path")
+        self.paths = []
+        for i, path in enumerate(paths, start=1):
+            check_keys(path, self.PATH_SETTINGS, f"split path {i}")
+            sign = -1.0 if path.get("invert", False) else 1.0
+            self.paths.append((build_chain(path.get("chain", []), sr), sign * db_to_gain(path.get("level_db", 0.0))))
+        self.level = db_to_gain(cfg.get("level_db", 0.0))
+
+    def process(self, x):
+        out = np.zeros(len(x))
+        for blocks, gain in self.paths:
+            y = x
+            for block in blocks:
+                y = block.process(y)
+            out += gain * y
+        return out * self.level
+
+    def children(self):
+        return [block for blocks, _ in self.paths for block in blocks]
+
+
+BLOCK_TYPES = {"eq": EQ, "gain": Gain, "sag": Sag, "feedback": Feedback, "split": Split, "ir": IRLoader}

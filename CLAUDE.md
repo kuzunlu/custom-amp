@@ -45,6 +45,9 @@ python tools/check_settings.py                                        # settings
   this to a 1-sample delay: that oscillates when loop gain is above 1, and real amps run 2-10.
   Filters have `tick(v, commit=False)` to try a value without moving on. Only `eq` and `gain` can go
   inside. `amount` must be >= 0 (the solver needs the loop to be one-way rising; positive feedback is not done yet).
+- **Split**: every path gets the same input; outputs are added (`sign * level` per path). Any block can go in
+  a path. Every block has `children()`; `chain.flatten` walks into feedback loops and split paths, so sag
+  targets and unique ids work everywhere. `build_chain` lives in `blocks.py` (Split needs it).
 - **Presets**: every unknown setting name is an error (`check_keys`), so typos never pass silently.
 - `SCALAR_CURVES` (used in the loop) must stay the same as `CURVES` (used with NumPy).
 
@@ -72,6 +75,8 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
 - Bias shift 1.0, tube curve, 220 Hz: loud part (amplitude 3) then soft (0.8). Soft note 0-40 ms after:
   level 0.47 vs 0.72 alone, 2nd harmonic 15.6% vs 3.1%; back to normal after ~100 ms.
   Loop (tick) vs normal (process): 0.08% apart (the loop tracks the shift at the higher rate).
+- Split: two empty paths = 2x input, one inverted = exact silence, nested split with feedback matches theory
+  (1.9988), sag reaches a gain inside a path.
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
@@ -92,7 +97,7 @@ Idea for later: turn these into a real `tests/` folder.
 Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step 4 (clean, crunch,
 high gain presets; distortion at soft/medium/hard playing is in the README).
 Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
-5150, Fender clean, Vox): bias shift (done), split (parallel chains), noise gate, tone stack from real
+5150, Fender clean, Vox): bias shift (done), split (done), noise gate, tone stack from real
 component values, more clipping curves; then famous-amp-style presets with descriptive names
 (no brand names in preset names). Push-pull and output transformer are built from existing blocks.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright

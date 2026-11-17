@@ -35,6 +35,7 @@
           "gain": "One gain stage: filter, clip, filter.",
           "sag": "Power supply sag: lowers the clipping ceiling of later gain stages when you play hard.",
           "feedback": "A loop around a few blocks, like the feedback loop of a power amp.",
+          "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
           "ir": "Speaker cabinet sound from an impulse response file."
         },
         "short": "What kind of block this is.",
@@ -83,7 +84,48 @@
     }
   },
 
+  "split_path": {
+    "label": "Split path",
+    "short": "One of the parallel chains inside a split block.",
+    "tooltip": "Each path gets the same input. Its own chain of blocks runs on it, then it is mixed with the other paths at its own level.",
+    "settings": {
+      "chain": {
+        "label": "Chain", "type": "block-list", "default": [],
+        "short": "The blocks in this path. Empty = the untouched input.",
+        "tooltip": "Any blocks can go here, even another split, a feedback loop or a cab IR. Leave it empty to pass the input through untouched: useful for a clean blend under a distorted path."
+      },
+      "level_db": {
+        "label": "Level", "type": "number", "unit": "dB", "min": -60, "max": 20, "default": 0,
+        "short": "How loud this path is in the mix.",
+        "tooltip": "Works like the volume knob of one channel in a 'jumpered' amp: turn one path down to hear more of the other. -60 dB is about off. Since paths are simply added, the total gets louder when several paths are up; use the split block's Level to bring it back."
+      },
+      "invert": {
+        "label": "Invert", "type": "toggle", "default": false,
+        "short": "Flips this path upside down before mixing (polarity).",
+        "tooltip": "When two paths are mixed and one is flipped, the tones they share cancel out and only the differences stay. Real circuits do this: some tube stages flip the signal and some do not, so two paths through a different number of stages can partly cancel. Try it when a blend sounds thin or hollow: flipping one path often fixes it (or makes it the special sound you want). Two identical paths with one flipped = silence."
+      }
+    }
+  },
+
   "blocks": {
+    "split": {
+      "label": "Split",
+      "short": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
+      "tooltip": "Lets an amp have more than one path. Examples: the 'jumpered' channels of old British amps (a bright channel and a normal channel mixed, each with its own volume); a clean signal blended under a high-gain sound to keep the pick attack; two cab IRs (or two microphones) mixed; a bass path and a treble path with different gain. Each path can hold any blocks.",
+      "settings": {
+        "paths": {
+          "label": "Paths", "type": "path-list", "default": null,
+          "short": "The parallel chains. At least one.",
+          "tooltip": "Each path has its own chain, level and invert switch. All paths get the same input, and their outputs are added together."
+        },
+        "level_db": {
+          "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 20, "default": 0,
+          "short": "Volume after the paths are mixed.",
+          "tooltip": "Adding paths together makes the sound louder (two equal paths = +6 dB). Use this to bring the level back, or to set how hard the mix drives the next gain stage."
+        }
+      }
+    },
+
     "eq": {
       "label": "EQ",
       "short": "Tone shaping with a list of filter bands.",

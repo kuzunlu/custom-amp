@@ -8,6 +8,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `gain` | One gain stage: filter, then clip, then filter. Optional bias shift: hard hits push the stage "colder" for a moment |
 | `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
+| `split` | Parallel paths: the same sound through several chains side by side, then mixed |
 | `ir` | Cabinet sound from an impulse response `.wav` file |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
@@ -79,6 +80,23 @@ a high shelf cut works like a **presence** knob, a low shelf cut works like a **
 - Only `eq` and `gain` blocks can go inside. Inner gain blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
 - The loop has no delay. Each sample is found by solving the loop equation, so strong feedback is stable.
 - It runs one sample at a time, so it is slow in Python (about 1 s of work per 1 s of audio).
+
+### Split
+
+```json
+{
+  "type": "split", "level_db": -6,
+  "paths": [
+    { "chain": [{ "type": "gain", "drive_db": 12 }] },
+    { "chain": [{ "type": "gain", "drive_db": 12, "pre": [{ "kind": "highshelf", "freq": 1500, "gain_db": 8 }] }], "level_db": -3 },
+    { "chain": [], "level_db": -20, "invert": true }
+  ]
+}
+```
+
+Every path gets the same input; the outputs are added. Each path has its own `chain` (any blocks, even another
+split or a cab IR), `level_db` and `invert` (flips the path upside down before mixing).
+An empty chain passes the input through untouched (a clean blend).
 
 ## Setting help
 

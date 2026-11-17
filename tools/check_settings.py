@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ampsim.blocks import BLOCK_TYPES, CURVES  # noqa: E402
+from ampsim.blocks import BLOCK_TYPES, CURVES, Split  # noqa: E402
 from ampsim.filters import BAND_SETTINGS, KINDS, make_filters  # noqa: E402
 
 SR = 48000
 # Settings a block can not be built without, and attributes that can not be compared simply.
-REQUIRED = {"ir": {"file": str(ROOT / "audio" / "fake_4x12.wav")}}
-SKIP = {"blocks", "path", "pre", "post", "filters", "targets", "target_ids", "ir", "curve", "scalar_curve"}
+REQUIRED = {"ir": {"file": str(ROOT / "audio" / "fake_4x12.wav")}, "split": {"paths": [{}]}}
+SKIP = {"blocks", "path", "paths", "pre", "post", "filters", "targets", "target_ids", "ir", "curve", "scalar_curve"}
 
 
 def main():
@@ -54,6 +54,13 @@ def main():
                                    "gain_db": band["gain_db"]["default"]}], SR)[0].__dict__
     if with_defaults != make_filters([{"kind": "peak", "freq": 1000}], SR)[0].__dict__:
         problems.append("band defaults differ")
+
+    path = doc["split_path"]["settings"]
+    if set(path) != Split.PATH_SETTINGS:
+        problems.append("split path setting names differ")
+    path_defaults = {k: v["default"] for k, v in path.items()}
+    if Split({"type": "split", "paths": [path_defaults]}, SR).paths[0][1] != Split({"type": "split", "paths": [{}]}, SR).paths[0][1]:
+        problems.append("split path defaults differ")
 
     for p in problems:
         print("MISMATCH:", p)
