@@ -27,15 +27,18 @@ STYLES = {
 
 
 def pluck(midi, hold, rng, decay, bright):
-    """One plucked string. A noise burst runs around a delay loop that slowly smooths it out."""
+    """One plucked string. The pluck shape runs around a delay loop that slowly smooths it out."""
     freq = 440 * 2 ** ((midi - 69) / 12)
     period = max(2, round(SR / freq - 0.5))
     n = int((hold + 0.03) * SR)
     y = np.zeros(n + 1)  # y[0] stays 0 so the loop below never reads before the start
 
-    burst = rng.uniform(-1, 1, period)
-    smooth = max(1, round((1 - bright) * 8))
-    burst = np.convolve(burst, np.ones(smooth) / smooth, mode="same")
+    # A string pulled aside by the pick: a triangle with its tip at the pick point.
+    # Picking nearer the bridge (smaller pick point) gives more highs.
+    pick = 0.5 - 0.4 * bright
+    pos = np.arange(period) / period
+    burst = np.where(pos < pick, pos / pick, (1 - pos) / (1 - pick))
+    burst = burst + 0.25 * rng.uniform(-1, 1, period)  # the pick's sharp edge adds some noise
     y[1 : period + 1] = burst - burst.mean()
 
     # Each sample depends only on samples one period back, so a whole period is computed at once.
@@ -71,6 +74,8 @@ def make_di(rng):
             i = int((t0 + offset) * SR)
             note = note[: len(out) - i]
             out[i : i + len(note)] += note
+    # The pickup and cable: a small peak around 3.5 kHz, then the highs fall away fast.
+    out = run_filters(make_filters([{"kind": "lowpass", "freq": 3500, "q": 1.2}], SR), out)
     return out * (0.5 / np.max(np.abs(out)))  # peak at about -6 dBFS, like a real DI track
 
 
@@ -81,7 +86,7 @@ def make_fake_ir():
         {"kind": "peak", "freq": 110, "gain_db": 4, "q": 1.2},
         {"kind": "peak", "freq": 400, "gain_db": -2, "q": 1.0},
         {"kind": "peak", "freq": 1200, "gain_db": -3, "q": 2.0},
-        {"kind": "peak", "freq": 2500, "gain_db": 5, "q": 1.5},
+        {"kind": "peak", "freq": 2500, "gain_db": 3, "q": 1.5},
         {"kind": "lowpass", "freq": 5000, "q": 0.7},
         {"kind": "lowpass", "freq": 6000, "q": 0.7},
     ]

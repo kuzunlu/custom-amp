@@ -78,8 +78,10 @@ Idea for later: turn these into a real `tests/` folder.
 
 ## Status
 
-Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback).
-Next: step 4, three presets (clean, crunch, high gain) to show the same blocks make very different amps.
+Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step 4 (clean, crunch,
+high gain presets; distortion at soft/medium/hard playing is in the README).
+The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
+(half its energy above 2 kHz) and made the presets look wrong.
 Ideas for later: a `tonestack` block built from real component values (the bass/mid/treble circuits of
 real amps, where the knobs affect each other); positive feedback; sag targets before the sag block.
 The user often can not listen to the output, so report measured numbers, not only "it sounds right".

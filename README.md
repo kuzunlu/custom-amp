@@ -39,7 +39,13 @@ File paths inside presets (like the IR file) are relative to the folder you run 
 ## Presets
 
 A preset is a `.json` file with a `chain` list. Blocks run from top to bottom.
-See `presets/crunch.json`. Misspelled settings stop the run with a message that lists the allowed ones.
+Misspelled settings stop the run with a message that lists the allowed ones.
+
+| Preset | Sound | Distortion of a 220 Hz note: soft / medium / hard playing |
+|---|---|---|
+| `clean.json` | Bright, scooped clean with lots of headroom | 0.1% / 0.2% / 2.1% |
+| `crunch.json` | Mid-forward rock crunch, cleans up when you play softly | 8% / 38% / 45% |
+| `high_gain.json` | Tight modern high gain, three preamp stages | 43% / 44% / 44% |
 
 ### Sag
 

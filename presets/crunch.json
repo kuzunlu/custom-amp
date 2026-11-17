@@ -1,6 +1,6 @@
 {
-  "name": "Crunch (step 3 test)",
-  "notes": "Two gain stages with a mid-cut EQ between them. The second stage is a power amp: sag squeezes it and a feedback loop with presence wraps it. Then the cab IR.",
+  "name": "Crunch",
+  "notes": "Mid-forward classic rock crunch. One hot preamp stage, a tone stack that pushes the mids, then a power amp that does part of the clipping: lots of sag and light feedback, so it is loose and touch-sensitive.",
   "chain": [
     { "type": "eq", "bands": [{ "kind": "highpass", "freq": 90 }] },
     {
@@ -11,13 +11,13 @@
       "type": "eq", "id": "tonestack",
       "bands": [
         { "kind": "lowshelf", "freq": 200, "gain_db": -3 },
-        { "kind": "peak", "freq": 700, "gain_db": -5, "q": 0.7 },
-        { "kind": "highshelf", "freq": 2500, "gain_db": 3 }
+        { "kind": "peak", "freq": 800, "gain_db": 3, "q": 0.8 },
+        { "kind": "highshelf", "freq": 2500, "gain_db": 2 }
       ]
     },
-    { "type": "sag", "amount": 0.3, "attack_ms": 5, "release_ms": 150, "targets": ["v2"] },
+    { "type": "sag", "amount": 0.4, "attack_ms": 5, "release_ms": 200, "targets": ["v2"] },
     {
-      "type": "feedback", "amount": 0.3,
+      "type": "feedback", "amount": 0.1,
       "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
       "chain": [
         {
