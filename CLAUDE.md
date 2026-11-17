@@ -42,6 +42,18 @@ python tools/check_settings.py                                        # settings
   output = plate swing / small-signal gain, flipped upright (real stages invert; we do not).
   Grid current above 0 V: slope 2% after a 0.1 V soft corner (fixed numbers in curves.py).
   Each curve has a `top` (where the top starts clipping); bias shift starts there.
+  `plate_volts: true` multiplies the output by the stage's real gain (output = plate swing in volts), so
+  the next stage's `drive_db` is just the pot or divider between the tubes, as on a schematic.
+- **Amp-style presets** (`brit_plexi`, `brit_800`, `us_blackface_clean`, `us_modern_high_gain`,
+  `us_hotrod_lead`, `german_high_gain`, `brit_top_boost`): signal in volts all the way (DI peak 0.5 V =
+  a guitar), triode stages with `plate_volts`, phase inverter = one triode at -6 dB inside the feedback
+  loop with the power block. Each preset's `notes` lists what is from schematics and what is a guess.
+  Check the "peak after each block" levels when changing one: the phase inverter input must stay a few
+  volts for a clean amp (the blackface preset distorted 26% before its -18 dB "reverb_mixer" loss was added).
+  Brand names stay out of preset names. Phase inverter = one triode with `drive_db: -6` (each triode of a
+  long-tailed pair sees half the input: twice the headroom, same total gain), NOT `level_db: -6`.
+  Open question: the Plexi-style preset distorts ~32% even at 0.05 V input (preamp clean, phase inverter
+  gets ~17 V). Needs a real amp recording to decide if that is right.
 - **Power** (push-pull): grid A = `bias + sa + x`, grid B = `bias + sb - x`; each current from Koren's
   pentode model (`PENTODES`: kg1/kp FITTED to each datasheet's class A point, which they match exactly;
   my remembered Koren numbers for EL34/6L6 were 3-12% off). Output = (Raa/4)(IA - IB), soft-limited at

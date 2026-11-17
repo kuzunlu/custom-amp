@@ -51,6 +51,27 @@ Misspelled settings stop the run with a message that lists the allowed ones.
 | `crunch.json` | Mid-forward rock crunch, cleans up when you play softly | 8% / 38% / 45% |
 | `high_gain.json` | Tight modern high gain, three preamp stages | 43% / 44% / 44% |
 
+### Amp-style presets
+
+These copy the signal path of famous amp styles stage by stage, with part values from published
+schematics where known. Each preset's `notes` says which values are from schematics and which are
+guesses. They are starting points: they have not been compared with recordings of real amps yet.
+The signal is in volts all the way (the test guitar peaks at 0.5 V).
+
+Harmonics' share of the sound for a 220 Hz note at 0.05 / 0.2 / 0.5 V (soft / medium / hard playing), no cab:
+
+| Preset | Style | Power | Feedback | Soft / medium / hard |
+|---|---|---|---|---|
+| `us_blackface_clean.json` | American blackface-style clean | 2x 6L6GC | 8.5 dB | 0.6% / 2.5% / 7.2% |
+| `brit_top_boost.json` | British top-boost style, chime | 2x EL84 | none | 24% / 24% / 42% |
+| `brit_plexi.json` | British Plexi-style 50 W, jumpered | 2x EL34 | 7.2 dB | 32% / 36% / 38% |
+| `brit_800.json` | British 800-style master volume | 2x EL34 | 7.2 dB | 39% / 47% / 66% |
+| `german_high_gain.json` | German high gain, tight | 2x EL34 | 8.4 dB | 36% / 38% / 60% |
+| `us_hotrod_lead.json` | American hot-rod lead (SLO-style) | 2x 6L6GC | 6.3 dB | 50% / 72% / 79% |
+| `us_modern_high_gain.json` | American modern high gain (rectifier-style) | 2x 6L6GC | 5.2 dB | 52% / 75% / 86% |
+
+Known limit: the Plexi-style preset barely cleans up when played softly (see its notes).
+
 ### Sag
 
 ```json

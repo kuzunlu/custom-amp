@@ -417,6 +417,11 @@
           "short": "Triode curve: the plate resistor (the stage's load).",
           "tooltip": "100k is the usual value. A bigger plate resistor gives a bit more gain and clips sooner; a smaller one gives more headroom. Copy it from the schematic (usually written like '100K' next to the tube's plate). Only used when Curve is 'triode'."
         },
+        "plate_volts": {
+          "label": "Real plate volts", "type": "toggle", "default": false, "curve": "triode",
+          "short": "Triode curve: output the real plate swing in volts (with the tube's real gain).",
+          "tooltip": "Off: small signals come out the same size as they go in; only the clipping shape is the tube's. On: the output is the real voltage swing at the plate, so a 12AX7 stage turns 1 V into about 60 V, like in the real amp. Turn it on when you copy a schematic: then the next stage's Drive is simply the volume pot or divider between the two tubes (for example, an audio-taper volume pot at 5 is about -20 dB, at 7 about -12 dB). Only used when Curve is 'triode'."
+        },
         "bias_v": {
           "label": "Bias voltage", "type": "number", "unit": "V", "min": -10, "max": -0.2, "default": -1.5, "curve": "triode",
           "short": "Triode curve: the grid voltage at rest (below 0). Sets how 'hot' or 'cold' the stage is.",

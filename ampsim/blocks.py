@@ -165,7 +165,7 @@ class Gain(Block):
     # Settings that only work with one curve, with their defaults.
     CURVE_DEFAULTS = {
         "custom": {"top": 1.0, "top_softness": 0.5, "bottom": 1.0, "bottom_softness": 0.5},
-        "triode": {"tube": "12AX7", "plate_v": 300.0, "plate_ohms": 100e3, "bias_v": -1.5},
+        "triode": {"tube": "12AX7", "plate_v": 300.0, "plate_ohms": 100e3, "bias_v": -1.5, "plate_volts": False},
     }
     CURVE_SETTINGS = {curve: set(defaults) for curve, defaults in CURVE_DEFAULTS.items()}
     SETTINGS = {
@@ -189,13 +189,16 @@ class Gain(Block):
         if curve == "custom":
             self.curve, self.scalar_curve, self.top = make_custom(**self.curve_params)
         elif curve == "triode":
-            self.curve, self.scalar_curve, self.top, self.tube_info = make_triode(**self.curve_params)
+            params = {k: v for k, v in self.curve_params.items() if k != "plate_volts"}
+            self.curve, self.scalar_curve, self.top, self.tube_info = make_triode(**params)
         else:
             self.curve = CURVES[curve]
             self.scalar_curve = SCALAR_CURVES[curve]
         self.drive = db_to_gain(cfg.get("drive_db", 0.0))
         self.bias = cfg.get("bias", 0.0)
         self.level = db_to_gain(cfg.get("level_db", 0.0))
+        if self.curve_params.get("plate_volts"):
+            self.level *= self.tube_info["gain"]  # put the stage's real gain back: output = plate swing in volts
         self.factor = cfg.get("oversample", 8)
         self.pre = make_filters(cfg.get("pre", []), sr)
         # Uneven clipping leaves a DC offset, so a 10 Hz high-pass always ends the stage.

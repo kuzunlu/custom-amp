@@ -1,0 +1,32 @@
+{
+  "name": "British Plexi-style 50 W (jumpered)",
+  "notes": "Late-60s British 50 W style, normal and bright channels jumpered, both volumes at 7. Path: two V1 triodes in parallel (bright channel has the bright cap) -> 470k mixing resistors -> V2a -> cathode follower -> tone stack (no master volume) -> phase inverter -> 2x EL34 with feedback and presence. FROM SCHEMATICS (fairly sure): 12AX7 stages with 100k plate resistors, tone stack 22n/22n/33k slope/1M bass/25k mid, EL34 pair into 3.4k, presence in the feedback loop. UNSURE / APPROXIMATED: bright cap as a +8 dB shelf at 1.5 kHz; 470k mixing resistors as -6 dB plus a 5 kHz low-pass (Miller capacitance of V2a); V2a partial cathode bypass as a -4 dB shelf below 300 Hz; the cathode follower clipping as a custom curve (top 40 V); treble cap 500 pF; bias voltages of the preamp stages; feedback amount (set for about 7 dB of feedback); phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage). MEASURED LIMIT: it does not clean up much when played softly (about 32% harmonics at 0.05 V input). The preamp is clean then (2% up to the tone stack); the distortion comes from the phase inverter and power amp, which get about 17 V from the tone stack because there is no master volume. Whether the real amp does this at volume 7 needs a comparison with a recording of a real one.",
+  "chain": [
+    {
+      "type": "split", "level_db": -6,
+      "paths": [
+        { "chain": [ { "type": "gain", "id": "v1_normal", "curve": "triode", "tube": "12AX7", "plate_v": 300, "plate_ohms": 100e3, "bias_v": -1.3, "plate_volts": true } ], "level_db": -12 },
+        { "chain": [ { "type": "gain", "id": "v1_bright", "curve": "triode", "tube": "12AX7", "plate_v": 300, "plate_ohms": 100e3, "bias_v": -1.3, "plate_volts": true,
+                       "post": [ { "kind": "highshelf", "freq": 1500, "gain_db": 8 } ] } ], "level_db": -12 }
+      ]
+    },
+    { "type": "eq", "id": "mixing", "bands": [ { "kind": "lowpass", "freq": 5000 } ] },
+    { "type": "gain", "id": "v2a", "curve": "triode", "tube": "12AX7", "plate_v": 300, "plate_ohms": 100e3, "bias_v": -1.0, "plate_volts": true,
+      "pre": [ { "kind": "lowshelf", "freq": 300, "gain_db": -4 } ], "bias_shift": 0.3, "shift_release_ms": 20 },
+    { "type": "gain", "id": "cathode_follower", "curve": "custom", "top": 40, "top_softness": 0.3, "bottom": 200, "bottom_softness": 0.5 },
+    { "type": "tonestack", "style": "british", "parts": { "C1": 500e-12 }, "treble": 7, "mid": 5, "bass": 4 },
+    { "type": "sag", "amount": 0.2, "attack_ms": 5, "release_ms": 150, "targets": ["pa"] },
+    {
+      "type": "feedback", "id": "nfb", "amount": 0.04,
+      "path": [ { "kind": "highshelf", "freq": 3000, "gain_db": -6 } ],
+      "chain": [
+        { "type": "gain", "id": "pi", "curve": "triode", "tube": "12AX7", "plate_v": 330, "plate_ohms": 82e3, "bias_v": -1.5, "plate_volts": true, "drive_db": -6 },
+        { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450, "bias_v": -46, "raa_ohms": 3400,
+          "pre": [ { "kind": "highpass", "freq": 33 } ],
+          "post": [ { "kind": "highpass", "freq": 60 }, { "kind": "lowpass", "freq": 8000 } ],
+          "bias_shift": 0.5, "shift_release_ms": 5 }
+      ]
+    },
+    { "type": "ir", "file": "audio/fake_4x12.wav" }
+  ]
+}
