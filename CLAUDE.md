@@ -146,18 +146,35 @@ Idea for later: turn these into a real `tests/` folder.
   (low frequencies at 8x sample rate are not precise enough in `float`).
 - Load `shared/settings.json` as JUCE BinaryData for tooltips and knob ranges.
 
+## Release plan (not started; the user said "later")
+
+The user wants releases with an exe installer, following their repo `github.com/kuzunlu/stream-bridge`:
+- `.github/workflows/build.yml` on `windows-latest`: builds on every push; pushing a tag like `v0.1.0`
+  also runs `gh release create` with the files attached. Actions are pinned by commit SHA.
+- `installer/<Name>.iss` (Inno Setup 6, installed in CI with `choco install innosetup`), built with
+  `ISCC /DAppVersion=<tag without v>`; output in `build/installer/`. Fixed `AppId` (never change it).
+- Version from `git describe --tags --match "v[0-9]*"`; `v0.0.0` when there is no tag.
+- stream-bridge is a JUCE VST3 (JUCE as a git submodule, `build.bat` uses the Visual Studio CMake/Ninja,
+  static MSVC runtime). Its installer puts the `.vst3` into `{commoncf64}\VST3`.
+
+OPEN DECISION (ask the user before starting):
+- A. Release the Python prototype now: `custom-amp.exe` via PyInstaller (exact version pinned), plus
+  presets and `shared/settings.json`, in an Inno Setup installer. Recommended first step; the same
+  workflow can later ship the VST3.
+- B. Build the JUCE VST3 plugin first, then release it like stream-bridge.
+Also ask: version (suggested `v0.1.0`) and whether the repo is private (a release on a public repo can
+be downloaded by anyone). Pushing the release tag is the publishing step.
+
 ## Status
 
-Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step 4 (clean, crunch,
-high gain presets; distortion at soft/medium/hard playing is in the README).
-Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
-5150, Fender clean, Vox): bias shift (done), split (done), noise gate (done), tone stack from real
-component values (done: british/american values; Vox top boost, Baxandall, James still to add), more clipping
-curves (done: custom, triode 12AX7/12AT7/12AU7), power block (done: EL34, 6L6GC, EL84, 6V6GT; KT88/6550
-still to add, numbers must be fitted to their datasheets the same way); then famous-amp-style presets with descriptive names
-(no brand names in preset names). Push-pull and output transformer are built from existing blocks.
+Pushed to `github.com/kuzunlu/custom-amp` (branch `main`).
+Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
+values), power (push-pull EL34/6L6GC/EL84/6V6GT), sag, feedback, split, gate, ir; `tools/check_settings.py`;
+simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
+Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
+when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
+their datasheets like the others); a real `tests/` folder; positive feedback; sag targets before the sag
+block; then the C++ plugin and the release (see above).
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.
-Ideas for later: a `tonestack` block built from real component values (the bass/mid/treble circuits of
-real amps, where the knobs affect each other); positive feedback; sag targets before the sag block.
 The user often can not listen to the output, so report measured numbers, not only "it sounds right".
