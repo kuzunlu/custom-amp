@@ -25,7 +25,7 @@ python tools/check_settings.py                                        # settings
 - `ampsim/chain.py`: builds an amp from a preset, links sag blocks to their targets
 - `ampsim/filters.py`: biquad filters (RBJ cookbook), general `IIR`, FFT convolution, resampling, `check_keys`
 - `ampsim/circuit.py`: turns a resistor/capacitor netlist into a digital filter (used by the tone stack)
-- `ampsim/curves.py`: the `custom` and `triode` clipping curves
+- `ampsim/curves.py`: the `custom` and `triode` clipping curves, and the push-pull power tube pair
 - `ampsim/oversample.py`: oversampling for clipping (chunked) and up/down for the feedback loop
 - `ampsim/wavio.py`: wav read/write
 - `presets/*.json`: one file = one amp
@@ -42,6 +42,14 @@ python tools/check_settings.py                                        # settings
   output = plate swing / small-signal gain, flipped upright (real stages invert; we do not).
   Grid current above 0 V: slope 2% after a 0.1 V soft corner (fixed numbers in curves.py).
   Each curve has a `top` (where the top starts clipping); bias shift starts there.
+- **Power** (push-pull): grid A = `bias + sa + x`, grid B = `bias + sb - x`; each current from Koren's
+  pentode model (`PENTODES`: kg1/kp FITTED to each datasheet's class A point, which they match exactly;
+  my remembered Koren numbers for EL34/6L6 were 3-12% off). Output = (Raa/4)(IA - IB), soft-limited at
+  `plate_v * (Raa/4) / (Raa/4 + rsat)`. `rsat` was worked back from known amp outputs (EL34 pair 50 W
+  etc.), so the output-power check is a consistency check, not independent proof. Sag scales the supply:
+  `I(vg, h*Vs) = h**1.35 * I(vg/h, Vs)` (Koren's model allows this exactly). Each grid has its own bias
+  shift. Full output is scaled to |bias_v|. Default bias -45 V: -35/-38 V ran an EL34 at 450 V far
+  above its 25 W limit in this model.
 - **Bias shift** (in gain): `g = drive*x/h + bias`; the curve gets `g + s`. When `g + s > 1` (past the top of
   the curve; really `g + s > top`), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
   release time. `s` is worked out at the normal rate in `process` (Python loop) and per sample in `tick`.
@@ -52,8 +60,8 @@ python tools/check_settings.py                                        # settings
 - **Feedback**: inner chain gets `input - amount * path(output)`. **There is no delay in the loop.**
   Each sample is found by solving the loop equation (`solve_falling`, Illinois method). Do not "simplify"
   this to a 1-sample delay: that oscillates when loop gain is above 1, and real amps run 2-10.
-  Filters have `tick(v, commit=False)` to try a value without moving on. Only `eq`, `tonestack` and `gain`
-  can go inside. `amount` must be >= 0 and every inner block must rise with its input (first filter
+  Filters have `tick(v, commit=False)` to try a value without moving on. Only `eq`, `tonestack`, `gain` and
+  `power` can go inside. `amount` must be >= 0 and every inner block must rise with its input (first filter
   coefficient b0 > 0), or the solver can find a wrong answer. Positive feedback is not done yet.
 - **Tonestack**: the classic passive circuit as a netlist, solved by `circuit.py` (nodal analysis ->
   H(s) polynomials via FFT on a circle -> bilinear transform -> `IIR`). The MID POT IS A 3-TERMINAL POT:
@@ -107,6 +115,10 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
 - Triode 12AX7, 300 V, 100k, -1.5 V: plate 205 V, 0.95 mA, gain 61 (real tube data: ~190-205 V, ~60).
   At 0.5 V: 2.6% 2nd / 0.1% 3rd harmonic. Cold bias -2.5 V at 2 V: 24% 2nd harmonic.
   Bias shift on a triode starts at grid current (1.2 V peak: none, 1.8 V: yes).
+- Power: datasheet points hit exactly (EL34 100 mA 11 mA/V, 6L6GC 72/6, EL84 48/11.3, 6V6GT 45/4.1).
+  Max output: EL34 pair 48 W, 6L6GC 45 W, EL84 17 W, 6V6GT 22 W. Matched pair: 0.00% 2nd harmonic;
+  10% mismatch: 0.95%. EL34 450 V, 10 V drive: bias -38 V 0.24%, -45 V 1.61% (crossover).
+  Bias shift 0.5: soft note after a loud part 5.4% vs 3.1% alone, normal again after ~250 ms.
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
@@ -129,7 +141,8 @@ high gain presets; distortion at soft/medium/hard playing is in the README).
 Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
 5150, Fender clean, Vox): bias shift (done), split (done), noise gate (done), tone stack from real
 component values (done: british/american values; Vox top boost, Baxandall, James still to add), more clipping
-curves (done: custom, triode 12AX7/12AT7/12AU7; power tubes EL34/6L6/EL84 still to add); then famous-amp-style presets with descriptive names
+curves (done: custom, triode 12AX7/12AT7/12AU7), power block (done: EL34, 6L6GC, EL84, 6V6GT; KT88/6550
+still to add, numbers must be fitted to their datasheets the same way); then famous-amp-style presets with descriptive names
 (no brand names in preset names). Push-pull and output transformer are built from existing blocks.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.

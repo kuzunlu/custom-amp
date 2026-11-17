@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from .blocks import Feedback, Gain, Gate, Sag, build_chain, run_blocks
+from .blocks import Feedback, Gain, Gate, Power, Sag, build_chain, run_blocks
 from .filters import check_keys
 
 
@@ -39,8 +39,8 @@ def link_blocks(blocks):
         if isinstance(block, Sag):
             for target_id in block.target_ids:
                 target = find("sag", i, target_id)
-                if not isinstance(target, Gain):
-                    raise ValueError(f"sag: '{target_id}' is not a gain block")
+                if not isinstance(target, (Gain, Power)):
+                    raise ValueError(f"sag: '{target_id}' is not a gain or power block")
                 block.targets.append(target)
         elif isinstance(block, Gate) and block.apply_after is not None:
             target = find("gate", i, block.apply_after)

@@ -9,14 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ampsim.blocks import BLOCK_TYPES, Gain, Split, Tonestack  # noqa: E402
-from ampsim.curves import TUBES  # noqa: E402
+from ampsim.blocks import BLOCK_TYPES, Feedback, Gain, Split, Tonestack  # noqa: E402
+from ampsim.curves import PENTODES, TUBES  # noqa: E402
 from ampsim.filters import BAND_SETTINGS, KINDS, make_filters  # noqa: E402
 
 SR = 48000
 # Settings a block can not be built without, and attributes that can not be compared simply.
 REQUIRED = {"ir": {"file": str(ROOT / "audio" / "fake_4x12.wav")}, "split": {"paths": [{}]}}
-SKIP = {"blocks", "path", "paths", "pre", "post", "filters", "filter", "targets", "target_ids", "ir", "curve", "scalar_curve"}
+SKIP = {"blocks", "path", "paths", "pre", "post", "filters", "filter", "targets", "target_ids", "ir", "curve", "scalar_curve",
+        "shape", "scalar_shape"}
 
 
 def main():
@@ -57,6 +58,10 @@ def main():
         problems.append("gain curve choices differ")
     if set(doc["blocks"]["gain"]["settings"]["tube"]["choices"]) != set(TUBES):
         problems.append("triode tube choices differ")
+    if set(doc["blocks"]["power"]["settings"]["tube"]["choices"]) != set(PENTODES):
+        problems.append("power tube choices differ")
+    if set(doc["blocks"]["feedback"]["settings"]["chain"]["allowed"]) != set(Feedback.INNER_TYPES):
+        problems.append("blocks allowed inside a feedback loop differ")
     tonestack = doc["blocks"]["tonestack"]["settings"]
     if set(tonestack["style"]["choices"]) != set(Tonestack.STYLES):
         problems.append("tonestack style choices differ")

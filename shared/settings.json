@@ -34,6 +34,7 @@
           "eq": "Tone shaping with filter bands.",
           "tonestack": "The real bass/mid/treble circuit of a tube amp, worked out from its part values.",
           "gain": "One gain stage: filter, clip, filter.",
+          "power": "A push-pull power amp: two power tubes (EL34, 6L6GC, EL84, 6V6GT) into an output transformer.",
           "sag": "Power supply sag: lowers the clipping ceiling of later gain stages when you play hard.",
           "feedback": "A loop around a few blocks, like the feedback loop of a power amp.",
           "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
@@ -110,6 +111,91 @@
   },
 
   "blocks": {
+    "power": {
+      "label": "Power amp",
+      "short": "A push-pull power amp: two power tubes into an output transformer.",
+      "tooltip": "The last tube stage of a tube amp. The phase inverter sends opposite signals to two power tubes; the output transformer passes on only the DIFFERENCE of their currents. Because of that, the even harmonics of the two tubes cancel (measured: 0.00% 2nd harmonic with matched tubes), so a power amp clips with a different, more 'open' sound than a preamp stage. The power tube type is one of the biggest differences between famous amps: EL34 (British amps), 6L6GC (big American amps and many high-gain amps), EL84 (small British 'chime' amps), 6V6GT (small American amps). The tube curves are fitted to each tube's datasheet. The plugin shows the idle current and the rough output power of your settings. Put a sag block before it, and usually a feedback block around it.",
+      "settings": {
+        "tube": {
+          "label": "Power tubes", "type": "choice", "default": "EL34",
+          "choices": {
+            "EL34": "British sound: strong upper mids, an aggressive 'crunch' when pushed, breaks up earlier. About 50 W from a pair at 450 V into 3.4k.",
+            "6L6GC": "American sound: big clean headroom, deep bass, smooth highs, scooped feel. About 45 W from a pair at 460 V into 4.2k.",
+            "EL84": "Small British 'chime': bright, breaks up early and sweetly, compressed. About 17 W from a pair at 320 V into 8k.",
+            "6V6GT": "Small American amps: warm, breaks up early and smoothly. About 22 W from a pair at 420 V into 8k."
+          },
+          "short": "Which pair of power tubes.",
+          "tooltip": "Each tube's curve is fitted to its datasheet (current and gain at 250 V, matched exactly). Typical safe bias voltages (about 70% of the tube's maximum heat): EL34 at 450 V: -46 V; 6L6GC at 460 V: -47 V; EL84 at 320 V: -13 V; 6V6GT at 420 V: -40 V. When you change the tube, change the bias too."
+        },
+        "plate_v": {
+          "label": "Supply voltage (B+)", "type": "number", "unit": "V", "min": 150, "max": 700, "default": 450,
+          "short": "The power supply voltage on the power tubes.",
+          "tooltip": "More voltage = more clean headroom, more power, tighter bass. Less = earlier, softer breakup. Typical: 420-480 V for EL34 and 6L6GC amps, 300-350 V for EL84 amps, 400-430 V for 6V6GT amps. If you change it, check the bias: at a higher voltage the same bias gives much more idle current."
+        },
+        "screen_v": {
+          "label": "Screen voltage", "type": "number", "unit": "V", "min": 100, "max": 700, "default": null,
+          "short": "The voltage on the tubes' screen grids. Empty = the same as the supply voltage.",
+          "tooltip": "In most amps the screens sit a little below the supply. A lower screen voltage gives less current and gain: softer, earlier breakup with less power. Leave empty to use the supply voltage."
+        },
+        "bias_v": {
+          "label": "Bias voltage", "type": "number", "unit": "V", "min": -120, "max": -1, "default": -45,
+          "short": "The grid voltage at rest. Sets the idle current: 'hot' (closer to 0) or 'cold' (more negative).",
+          "tooltip": "Hot (closer to 0 V): more idle current, a smooth, warm, 'class A'-like sound, but the tubes get hot. Cold (more negative): less heat, but crossover distortion at low and medium volume: a grainy, 'fizzy' edge on quiet notes. Measured with EL34 at 450 V and 10 V drive: -38 V gives 0.24% distortion, -45 V gives 1.6% (crossover). Typical safe values: EL34 at 450 V: -46 V; 6L6GC at 460 V: -47 V; EL84 at 320 V: -13 V; 6V6GT at 420 V: -40 V. The default (-45 V) suits the default EL34 at 450 V (about 39 mA per tube)."
+        },
+        "raa_ohms": {
+          "label": "Load (plate to plate)", "type": "number", "unit": "ohm", "min": 1000, "max": 20000, "default": 3400, "scale": "log",
+          "short": "The output transformer's load, seen from plate to plate.",
+          "tooltip": "From the output transformer data or the schematic. Typical: 3.4k for a pair of EL34, 4.2k for a pair of 6L6GC, 8k for a pair of EL84 or 6V6GT (four tubes = half the value). A lower load gives more current and a 'fatter', more compressed sound; a higher load gives more voltage swing and an earlier, brighter breakup. In a real amp, using a speaker with the wrong impedance changes this value."
+        },
+        "mismatch": {
+          "label": "Tube mismatch", "type": "number", "unit": "", "min": 0, "max": 0.5, "default": 0,
+          "short": "How much weaker tube B is than tube A. 0 = a perfect pair.",
+          "tooltip": "Real tube pairs are never perfect. A mismatch lets some even harmonics through (measured: 10% mismatch gives about 1% 2nd harmonic when driven hard), which sounds thicker and a bit rougher, and it adds a small hum in a real amp. 0.05-0.1 is a normal 'real-world' pair."
+        },
+        "drive_db": {
+          "label": "Drive", "type": "number", "unit": "dB", "min": -20, "max": 60, "default": 0,
+          "short": "How many volts reach the power tube grids.",
+          "tooltip": "The input is in volts at each grid. Full output needs about as many volts as the bias (for example 45 V for a -45 V bias); the phase inverter of a real amp gives up to about 50-80 V. So if the signal coming in is around 1, a drive of about +30 to +36 dB reaches full power. In a real amp this is the master volume."
+        },
+        "level_db": {
+          "label": "Level", "type": "number", "unit": "dB", "min": -60, "max": 20, "default": 0,
+          "short": "Volume after the power amp.",
+          "tooltip": "The output is scaled so that full power equals the bias voltage (for example about 45 at -45 V). Use this to bring it down, for example to about -33 dB to get back near 1."
+        },
+        "pre": {
+          "label": "Pre filters", "type": "band-list", "default": [],
+          "short": "Filters before the tubes (the phase inverter's coupling).",
+          "tooltip": "In a real amp, the coupling capacitors before the power tubes cut some low bass (a high-pass around 10-30 Hz) and that matters a lot for blocking. A high-pass here keeps the power amp tight when driven hard."
+        },
+        "post": {
+          "label": "Post filters", "type": "band-list", "default": [],
+          "short": "Filters after the tubes (the output transformer).",
+          "tooltip": "The output transformer limits the bandwidth: a high-pass around 40-80 Hz and a low-pass around 6-10 kHz copy it. A 10 Hz high-pass is always added at the end."
+        },
+        "oversample": {
+          "label": "Oversampling", "type": "choice", "default": 8,
+          "choices": { "1": "Off.", "2": "2x.", "4": "4x.", "8": "8x (default).", "16": "16x." },
+          "short": "How many times faster the tubes run, to avoid harsh noise.",
+          "tooltip": "See the gain stage. Python prototype only: in the plugin the whole amp is oversampled once."
+        },
+        "bias_shift": {
+          "label": "Bias shift", "type": "number", "unit": "", "min": 0, "max": 1, "default": 0,
+          "short": "How much hard playing pushes both tubes colder for a moment. 0 = off.",
+          "tooltip": "When a grid is driven above 0 V, it charges its coupling capacitor and the tube goes colder; each tube's grid does this on its own half of the wave. Both tubes end up colder, so crossover distortion grows right after hard playing and then fades: the famous 'farty' or 'gated' sound of an overdriven power amp, and part of its 'bloom'. Measured with 0.5: a soft note right after a loud part had 5.4% distortion instead of 3.1%, back to normal after about 250 ms."
+        },
+        "shift_attack_ms": {
+          "label": "Shift attack", "type": "number", "unit": "ms", "min": 0.1, "max": 20, "default": 1, "scale": "log",
+          "short": "How fast the grids charge when driven above 0 V.",
+          "tooltip": "Fast in a real amp (about 1 ms). Only matters when Bias shift is above 0."
+        },
+        "shift_release_ms": {
+          "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 50, "scale": "log",
+          "short": "How fast the grids recover.",
+          "tooltip": "In a real amp: the coupling capacitor times the bias resistor (for example 22 nF x 220k = 5 ms, 100 nF x 220k = 22 ms). Bigger coupling capacitors = longer recovery and more 'farting' when driven hard; that is why some amps use small ones. Only matters when Bias shift is above 0."
+        }
+      }
+    },
+
     "tonestack": {
       "label": "Tone stack",
       "short": "The real bass/mid/treble circuit of a tube amp, worked out from its part values.",
@@ -407,8 +493,8 @@
         },
         "targets": {
           "label": "Targets", "type": "id-list", "default": [],
-          "short": "The ids of the gain stages this sag controls.",
-          "tooltip": "List the gain stages that share this power supply. They must come after the sag block in the chain (a gain stage inside a later feedback block is fine). Usually the power amp stage. Adding preamp stages too gives an even softer, more 'saggy' feel."
+          "short": "The ids of the gain and power blocks this sag controls.",
+          "tooltip": "List the gain stages and power amps that share this power supply. They must come after the sag block in the chain (one inside a later feedback block is fine). Usually the power amp: with a power block, sag lowers the supply voltage, which lowers both the tube current and the voltage swing, like a real power supply. Adding preamp stages too gives an even softer, more 'saggy' feel."
         }
       }
     },
@@ -429,8 +515,8 @@
           "tooltip": "This works the opposite way to a normal EQ: cutting a tone here makes it louder at the output, because that tone is no longer held back by the feedback. Presence: high shelf around 2-4 kHz with -6 to -12 dB = more bite and sparkle. Resonance (or Depth): low shelf around 80-120 Hz with a cut = bigger, looser bass, like a closed-back cab pushing back. With no filters, all tones get the same feedback."
         },
         "chain": {
-          "label": "Inside the loop", "type": "block-list", "allowed": ["eq", "tonestack", "gain"], "default": [],
-          "short": "The blocks inside the loop (EQ, tone stack and gain stages only).",
+          "label": "Inside the loop", "type": "block-list", "allowed": ["eq", "tonestack", "gain", "power"], "default": [],
+          "short": "The blocks inside the loop (EQ, tone stack, gain stages and power amps only).",
           "tooltip": "Usually the power amp stage, maybe with an EQ for the output transformer (a high-pass around 60-100 Hz and a low-pass around 5-8 kHz). Inner gain stages can not set their own oversampling: the whole loop runs at the loop's oversampling rate."
         },
         "oversample": {

@@ -7,7 +7,8 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `eq` | Boost or cut tones (high-pass, low-pass, shelves, peaks) |
 | `tonestack` | The real bass/mid/treble circuit of a tube amp, from its part values. The knobs affect each other like in the real amp |
 | `gain` | One gain stage: filter, then clip, then filter. Curves: `soft`, `tube`, `diode`, `hard`, `custom` (top and bottom set separately), `triode` (a real 12AX7/12AT7/12AU7 from tube equations). Optional bias shift: hard hits push the stage "colder" for a moment |
-| `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
+| `power` | Push-pull power amp: two power tubes (EL34, 6L6GC, EL84, 6V6GT, fitted to their datasheets) into an output transformer |
+| `sag` | Lowers the clipping ceiling of later gain and power blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
 | `split` | Parallel paths: the same sound through several chains side by side, then mixed |
 | `gate` | Noise gate. Can listen at the clean input but mute after a later block (`apply_after`) |
@@ -79,7 +80,7 @@ More `amount` = less gain, tighter and cleaner clipping.
 The `path` filters choose which tones get less feedback, so those come out louder:
 a high shelf cut works like a **presence** knob, a low shelf cut works like a **resonance** knob.
 
-- Only `eq`, `tonestack` and `gain` blocks can go inside. Inner gain blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
+- Only `eq`, `tonestack`, `gain` and `power` blocks can go inside. Inner blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
 - The loop has no delay. Each sample is found by solving the loop equation, so strong feedback is stable.
 - It runs one sample at a time, so it is slow in Python (about 1 s of work per 1 s of audio).
 
@@ -110,6 +111,18 @@ A real preamp tube stage, from Koren's tube equations. The input is in volts at 
 about 0.1-1 V), so copy the values from a schematic. `bias_v` sets the character: about -1.5 V is a normal
 stage (the top clips first, at grid current); -2.5 to -4 V is a "cold clipper" (the bottom squashes early,
 lots of 2nd harmonic). Small signals come out the same size; only the clipping shape is the tube's.
+
+### Power amp
+
+```json
+{ "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450, "bias_v": -45, "raa_ohms": 3400, "drive_db": 33, "level_db": -33 }
+```
+
+Two power tubes driven with opposite signals; the output transformer passes on the difference of their
+currents, so even harmonics cancel (unless `mismatch` is set) and a cold bias gives crossover distortion.
+The input is in volts at the grids: full power needs about as many volts as the bias. Full output is
+scaled to `|bias_v|`. Safe bias values (about 70% of the tube's maximum heat): EL34 at 450 V: -46 V,
+6L6GC at 460 V: -47 V, EL84 at 320 V: -13 V, 6V6GT at 420 V: -40 V. Sag can target it.
 
 ### Tone stack
 

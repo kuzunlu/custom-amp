@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from .circuit import digital_filter
-from .curves import make_custom, make_triode
+from .curves import make_custom, make_pushpull, make_triode
 from .filters import IIR, Biquad, check_keys, fft_convolve, make_filters, resample_fft, run_filters
 from .oversample import downsample, oversampled, upsample
 from .wavio import read_wav
@@ -257,6 +257,81 @@ class Gain(Block):
         return v * self.level
 
 
+class Power(Block):
+    """A push-pull power amp: two power tubes driven with opposite signals into an output transformer.
+
+    pre filters -> drive (volts at the grids) -> the tube pair -> post filters -> level.
+    Even harmonics cancel (unless the tubes are mismatched), a cold bias gives crossover distortion,
+    and each grid has its own bias shift, so hard playing pushes both tubes colder for a moment.
+    """
+
+    SETTINGS = {
+        "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
+        "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
+    }
+
+    def __init__(self, cfg, sr):
+        super().__init__(cfg, sr)
+        plate_v = cfg.get("plate_v", 450.0)
+        self.bias_v = cfg.get("bias_v", -45.0)  # about 39 mA idle for the default EL34 pair at 450 V
+        self.shape, self.scalar_shape, self.tube_info = make_pushpull(
+            cfg.get("tube", "EL34"), plate_v, cfg.get("screen_v") or plate_v, self.bias_v,
+            cfg.get("raa_ohms", 3400.0), cfg.get("mismatch", 0.0))
+        self.offset = self.scalar_shape(0.0, 1.0, 0.0, 0.0)  # mismatched tubes leave a step at rest
+        self.drive = db_to_gain(cfg.get("drive_db", 0.0))
+        self.level = db_to_gain(cfg.get("level_db", 0.0))
+        self.factor = cfg.get("oversample", 8)
+        self.pre = make_filters(cfg.get("pre", []), sr)
+        self.post = make_filters(cfg.get("post", []), sr) + [Biquad("highpass", 10, sr)]
+        self.headroom = None  # set by a sag block
+        self.shift_amount = cfg.get("bias_shift", 0.0)
+        if not 0 <= self.shift_amount <= 1:
+            raise ValueError(f"bias_shift must be from 0 to 1, got {self.shift_amount}")
+        self.shift_attack = 1 - math.exp(-1 / (cfg.get("shift_attack_ms", 1) * 0.001 * sr))
+        self.shift_release = 1 - math.exp(-1 / (cfg.get("shift_release_ms", 50) * 0.001 * sr))
+        self.sa = self.sb = 0.0  # bias shift of each grid
+
+    def next_shifts(self, sa, sb, x):
+        """Each grid charges its coupling capacitor when it goes above 0 V, then drifts back."""
+        ga, gb = self.bias_v + sa + x, self.bias_v + sb - x
+        if ga > 0:
+            sa -= self.shift_amount * self.shift_attack * ga
+        if gb > 0:
+            sb -= self.shift_amount * self.shift_attack * gb
+        return sa - self.shift_release * sa, sb - self.shift_release * sb
+
+    def track_shifts(self, x):
+        sa_out, sb_out = [0.0] * len(x), [0.0] * len(x)
+        sa, sb = self.sa, self.sb
+        for i, v in enumerate(x.tolist()):
+            sa_out[i], sb_out[i] = sa, sb
+            sa, sb = self.next_shifts(sa, sb, v)
+        self.sa, self.sb = sa, sb
+        return np.array(sa_out), np.array(sb_out)
+
+    def process(self, x):
+        x = run_filters(self.pre, x) * self.drive
+        h = np.ones(len(x)) if self.headroom is None else self.headroom
+        if self.shift_amount:
+            sa, sb = self.track_shifts(x)
+        else:
+            sa = sb = np.zeros(len(x))
+        shape, offset = self.shape, self.offset
+        x = oversampled(x, lambda u, h, sa, sb: shape(u, h, sa, sb) - offset, self.factor, ctrls=(h, sa, sb))
+        return run_filters(self.post, x) * self.level
+
+    def tick(self, v, h=1.0, commit=True):
+        for f in self.pre:
+            v = f.tick(v, commit)
+        v *= self.drive
+        out = self.scalar_shape(v, h, self.sa, self.sb) - self.offset
+        if commit and self.shift_amount:
+            self.sa, self.sb = self.next_shifts(self.sa, self.sb, v)
+        for f in self.post:
+            out = f.tick(out, commit)
+        return out * self.level
+
+
 class Sag(Block):
     """Power supply sag. Listens to the signal here and lowers the headroom of later gain stages.
 
@@ -361,7 +436,7 @@ class Feedback(Block):
     the sample rate, so it is slow in Python.
     """
 
-    INNER_TYPES = {"eq": EQ, "tonestack": Tonestack, "gain": Gain}
+    INNER_TYPES = {"eq": EQ, "tonestack": Tonestack, "gain": Gain, "power": Power}
     SETTINGS = {"amount", "path", "chain", "oversample", "level_db"}
 
     def __init__(self, cfg, sr):
@@ -498,6 +573,6 @@ class Gate(Block):
 
 
 BLOCK_TYPES = {
-    "eq": EQ, "tonestack": Tonestack, "gain": Gain, "sag": Sag, "feedback": Feedback, "split": Split,
-    "gate": Gate, "ir": IRLoader,
+    "eq": EQ, "tonestack": Tonestack, "gain": Gain, "power": Power, "sag": Sag, "feedback": Feedback,
+    "split": Split, "gate": Gate, "ir": IRLoader,
 }
