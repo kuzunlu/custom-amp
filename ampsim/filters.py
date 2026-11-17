@@ -4,6 +4,7 @@ import math
 import numpy as np
 
 KINDS = ("highpass", "lowpass", "lowshelf", "highshelf", "peak")
+BAND_SETTINGS = {"kind", "freq", "q", "gain_db"}
 
 
 def check_keys(cfg, allowed, where):
@@ -91,7 +92,7 @@ def make_filters(bands, sr):
     """Build a list of Biquads from preset bands like {"kind": "peak", "freq": 700, "gain_db": -6, "q": 0.7}."""
     filters = []
     for band in bands:
-        check_keys(band, {"kind", "freq", "q", "gain_db"}, f"filter band {band}")
+        check_keys(band, BAND_SETTINGS, f"filter band {band}")
         filters.append(Biquad(band["kind"], band["freq"], sr, band.get("q", 0.707), band.get("gain_db", 0.0)))
     return filters
 

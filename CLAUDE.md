@@ -14,6 +14,7 @@ Use `C:\Python314\python.exe`. Only NumPy is used (no SciPy; filters and resampl
 ```
 python tools/make_test_audio.py                                       # fake DI riff + fake cab IR into audio/
 python run.py presets/crunch.json audio/test_di.wav out/crunch.wav    # run a preset
+python tools/check_settings.py                                        # settings.json matches the code?
 ```
 
 `.wav` files are not in git (`.gitignore`). `audio/` test files can always be made again.
@@ -32,6 +33,10 @@ python run.py presets/crunch.json audio/test_di.wav out/crunch.wav    # run a pr
 
 - **Gain**: pre filters -> drive -> `curve(x + bias) - curve(bias)` at 8x -> post filters -> level.
   A 10 Hz high-pass is always added at the end, because uneven clipping leaves a DC offset.
+- **Bias shift** (in gain): `g = drive*x/h + bias`; the curve gets `g + s`. When `g + s > 1` (past the top of
+  the curve), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
+  release time. `s` is worked out at the normal rate in `process` (Python loop) and per sample in `tick`.
+  This is a memory effect: EQ + clipping alone can not do it.
 - **Sag**: listens where it sits (sound passes through unchanged). Envelope with attack/release, then
   `headroom = 1 - amount * tanh(env * sens)`. Targets clip as `h * curve(x / h + bias)`, so quiet
   sound is not changed. Targets must come AFTER the sag block (a target before it would need a loop).
@@ -47,7 +52,8 @@ python run.py presets/crunch.json audio/test_di.wav out/crunch.wav    # run a pr
 
 Every setting has: label, type, unit, min/max (plugin knob range), default, `short` (one line) and
 `tooltip` (detailed). The plugin will show these as hover tooltips. **When you add, rename or change the
-default of a setting, update this file in the same change.** Names, choices and defaults must match the code.
+default of a setting, update this file in the same change.** Names, choices and defaults must match the code:
+run `tools/check_settings.py`. Each block class lists its setting names in `SETTINGS`.
 Write the text in plain, simple English (the user is not a native English speaker).
 
 ## Checks done so far (redo them after changing the DSP)
@@ -63,6 +69,11 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
 - Feedback with loop gain 63 stays stable and matches theory.
 - Feedback with amount 0 equals a plain gain stage (only the first/last 1 ms of a file differ).
 - Feedback speed: ~1 s of work per 1 s of audio (4x).
+- Bias shift 1.0, tube curve, 220 Hz: loud part (amplitude 3) then soft (0.8). Soft note 0-40 ms after:
+  level 0.47 vs 0.72 alone, 2nd harmonic 15.6% vs 3.1%; back to normal after ~100 ms.
+  Loop (tick) vs normal (process): 0.08% apart (the loop tracks the shift at the higher rate).
+- After any change: all presets must still equal their `out/*.wav` files when the change should not
+  affect them (difference ~1.6e-7 = 24-bit rounding).
 
 Idea for later: turn these into a real `tests/` folder.
 
@@ -80,6 +91,10 @@ Idea for later: turn these into a real `tests/` folder.
 
 Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step 4 (clean, crunch,
 high gain presets; distortion at soft/medium/hard playing is in the README).
+Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
+5150, Fender clean, Vox): bias shift (done), split (parallel chains), noise gate, tone stack from real
+component values, more clipping curves; then famous-amp-style presets with descriptive names
+(no brand names in preset names). Push-pull and output transformer are built from existing blocks.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.
 Ideas for later: a `tonestack` block built from real component values (the bass/mid/treble circuits of

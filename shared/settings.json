@@ -128,6 +128,21 @@
           "short": "Moves the clipping point off center, so one side of the wave clips before the other.",
           "tooltip": "At 0 both sides clip the same. Moving it away from 0 makes one side clip first, which adds even harmonics (a thicker, warmer, more 'tube' sound) and makes the distortion change as notes fade out. Small values (0.05-0.2) are subtle. Large values give a gated, sputtering 'cold' sound like a starved tube or a dying battery. The DC offset this creates is removed automatically."
         },
+        "bias_shift": {
+          "label": "Bias shift", "type": "number", "unit": "", "min": 0, "max": 1, "default": 0,
+          "short": "How much a loud signal pushes the stage 'colder' for a moment. 0 = off.",
+          "tooltip": "In a real tube stage, a signal that goes past the top of the curve makes the grid draw current. This charges the capacitor in front of the tube and moves its working point down (colder). After the loud part, it drifts back. You hear it as: right after a hard hit, soft notes come out quieter, thinner and a bit sputtery, then they 'open up' again. This is a big part of how cascaded high-gain amps feel and why they 'chug'. Measured with 1.0: a soft note right after a loud chord came out 35% quieter with 5 times more 2nd harmonic, and was back to normal after about 100 ms. 0 = off (a stiff, 'perfect' stage). 0.3-0.6 = a normal tube stage. 1.0 = strong, gated, 'farty' blocking when hit very hard. Works with any curve; it only does something when the stage is driven past the top of the curve."
+        },
+        "shift_attack_ms": {
+          "label": "Shift attack", "type": "number", "unit": "ms", "min": 0.1, "max": 20, "default": 1, "scale": "log",
+          "short": "How fast the working point moves when hit hard.",
+          "tooltip": "In a real stage the capacitor charges fast, through the low resistance of the conducting grid: around 0.5-2 ms. Shorter = the pick attack itself gets squashed. Longer = the first hit gets through, then the stage chokes. Only matters when Bias shift is above 0."
+        },
+        "shift_release_ms": {
+          "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 50, "scale": "log",
+          "short": "How fast the working point comes back after a loud part.",
+          "tooltip": "In a real stage this is the coupling capacitor draining through the grid resistor (for example 22 nF x 1 Mohm = 22 ms). Short (10-30 ms): the stage recovers between notes; tight and fast. Long (100-500 ms): the stage stays choked after a hard hit; you hear a 'swell' as it recovers, and with fast palm mutes it sounds gated. Bigger coupling capacitors in a real amp = longer release. Only matters when Bias shift is above 0."
+        },
         "level_db": {
           "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 20, "default": 0,
           "short": "Volume after this stage.",

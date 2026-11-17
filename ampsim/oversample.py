@@ -39,22 +39,22 @@ def downsample(y, factor):
     return np.convolve(y, h)[delay : delay + len(y)][::factor]
 
 
-def oversampled(x, func, factor=8, chunk=1 << 15, ctrl=None):
+def oversampled(x, func, factor=8, chunk=1 << 15, ctrls=()):
     """Return func(x) computed at `factor` times the sample rate.
 
     func must work sample by sample with no memory (a clipping curve).
-    If ctrl is given (one control value per sample, like headroom from sag), func is called as func(x, ctrl).
+    ctrls are control signals with one value per sample (like headroom from sag).
+    func is called as func(x, *ctrls).
     The audio is done in chunks with some overlap, so long files do not use too much memory.
     """
     if factor == 1:
-        return func(x) if ctrl is None else func(x, ctrl)
+        return func(x, *ctrls)
 
     h = _lowpass_fir(factor)
     delay = (len(h) - 1) // 2
     margin = len(h) // factor + 2  # base-rate samples each filter reaches on each side
     padded = np.concatenate([np.zeros(margin), x, np.zeros(margin)])
-    if ctrl is not None:
-        padded_ctrl = np.concatenate([np.full(margin, ctrl[0]), ctrl, np.full(margin, ctrl[-1])])
+    padded_ctrls = [np.concatenate([np.full(margin, c[0]), c, np.full(margin, c[-1])]) for c in ctrls]
     out = np.empty(len(x))
 
     for start in range(0, len(x), chunk):
@@ -65,12 +65,9 @@ def oversampled(x, func, factor=8, chunk=1 << 15, ctrl=None):
         up = np.zeros(n_up)
         up[::factor] = seg * factor
         up = fft_convolve(up, h)[delay : delay + n_up]
-        if ctrl is None:
-            clipped = func(up)
-        else:
-            # Control values change slowly, so simply repeating each one is enough.
-            clipped = func(up, np.repeat(padded_ctrl[start : stop + 2 * margin], factor))
-        y = fft_convolve(clipped, h)[delay : delay + n_up][::factor]
+        # Control values change slowly, so simply repeating each one is enough.
+        ctrl_ups = [np.repeat(c[start : stop + 2 * margin], factor) for c in padded_ctrls]
+        y = fft_convolve(func(up, *ctrl_ups), h)[delay : delay + n_up][::factor]
 
         out[start:stop] = y[margin : margin + stop - start]
     return out

@@ -34,8 +34,10 @@ SCALAR_CURVES = {
 
 
 class Block:
-    def __init__(self, cfg, sr, allowed):
-        check_keys(cfg, {"type", "id"} | allowed, f"{cfg['type']} block {cfg.get('id', '')}".strip())
+    SETTINGS = set()  # the setting names each block allows (besides "type" and "id")
+
+    def __init__(self, cfg, sr):
+        check_keys(cfg, {"type", "id"} | self.SETTINGS, f"{cfg['type']} block {cfg.get('id', '')}".strip())
         self.id = cfg.get("id")
         self.sr = sr
 
@@ -46,8 +48,10 @@ class Block:
 class EQ(Block):
     """A list of filter bands, applied one after another."""
 
+    SETTINGS = {"bands", "level_db"}
+
     def __init__(self, cfg, sr):
-        super().__init__(cfg, sr, {"bands", "level_db"})
+        super().__init__(cfg, sr)
         self.filters = make_filters(cfg.get("bands", []), sr)
         self.level = db_to_gain(cfg.get("level_db", 0.0))
 
@@ -64,8 +68,13 @@ class EQ(Block):
 class Gain(Block):
     """One gain stage: pre filters -> drive -> clipping curve -> post filters -> level."""
 
+    SETTINGS = {
+        "drive_db", "curve", "bias", "level_db", "pre", "post", "oversample",
+        "bias_shift", "shift_attack_ms", "shift_release_ms",
+    }
+
     def __init__(self, cfg, sr):
-        super().__init__(cfg, sr, {"drive_db", "curve", "bias", "level_db", "pre", "post", "oversample"})
+        super().__init__(cfg, sr)
         curve = cfg.get("curve", "soft")
         if curve not in CURVES:
             raise ValueError(f"unknown curve '{curve}'. Use one of: {', '.join(CURVES)}")
@@ -81,15 +90,44 @@ class Gain(Block):
         # Set by a sag block: one value per sample, 1 = full headroom, lower = clips earlier.
         self.headroom = None
 
+        # Bias shift: signal past the top of the curve (grid current) quickly pushes the working point
+        # down (colder); it then slowly drifts back, like the coupling capacitor of a real tube stage.
+        self.shift_amount = cfg.get("bias_shift", 0.0)
+        if not 0 <= self.shift_amount <= 1:
+            raise ValueError(f"bias_shift must be from 0 to 1, got {self.shift_amount}")
+        self.shift_attack = 1 - math.exp(-1 / (cfg.get("shift_attack_ms", 1) * 0.001 * sr))
+        self.shift_release = 1 - math.exp(-1 / (cfg.get("shift_release_ms", 50) * 0.001 * sr))
+        self.shift = 0.0  # the current shift (0 or below)
+
+    def next_shift(self, s, g):
+        """The shift for the next sample. g is the curve input without the shift."""
+        over = g + s - 1.0  # how far past the top of the curve
+        if over > 0:
+            s -= self.shift_amount * self.shift_attack * over
+        return s - self.shift_release * s
+
+    def track_shift(self, g):
+        """The shift for every sample of g (one value per sample, worked out at the normal rate)."""
+        out = [0.0] * len(g)
+        s = self.shift
+        for i, v in enumerate(g.tolist()):
+            out[i] = s
+            s = self.next_shift(s, v)
+        self.shift = s
+        return np.array(out)
+
     def process(self, x):
         x = run_filters(self.pre, x) * self.drive
         curve, bias = self.curve, self.bias
         offset = float(curve(np.array(bias)))  # keeps silence at zero when bias is set
-        if self.headroom is None:
+        if self.headroom is None and self.shift_amount == 0:
             x = oversampled(x, lambda u: curve(u + bias) - offset, self.factor)
         else:
-            # Same curve, but its ceiling is scaled down to the headroom. Quiet signals are not changed.
-            x = oversampled(x, lambda u, h: h * (curve(u / h + bias) - offset), self.factor, ctrl=self.headroom)
+            # The curve's ceiling is scaled down to the headroom (quiet signals are not changed),
+            # and the bias shift moves the working point.
+            h = np.ones(len(x)) if self.headroom is None else self.headroom
+            s = self.track_shift(x / h + bias) if self.shift_amount else np.zeros(len(x))
+            x = oversampled(x, lambda u, h, s: h * (curve(u / h + bias + s) - offset), self.factor, ctrls=(h, s))
         return run_filters(self.post, x) * self.level
 
     def tick(self, v, h=1.0, commit=True):
@@ -97,7 +135,10 @@ class Gain(Block):
         for f in self.pre:
             v = f.tick(v, commit)
         curve, bias = self.scalar_curve, self.bias
-        v = h * (curve(v * self.drive / h + bias) - curve(bias))
+        g = v * self.drive / h + bias
+        v = h * (curve(g + self.shift) - curve(bias))
+        if commit and self.shift_amount:
+            self.shift = self.next_shift(self.shift, g)
         for f in self.post:
             v = f.tick(v, commit)
         return v * self.level
@@ -110,8 +151,10 @@ class Sag(Block):
     The signal itself passes through unchanged.
     """
 
+    SETTINGS = {"amount", "sens_db", "attack_ms", "release_ms", "targets"}
+
     def __init__(self, cfg, sr):
-        super().__init__(cfg, sr, {"amount", "sens_db", "attack_ms", "release_ms", "targets"})
+        super().__init__(cfg, sr)
         self.amount = cfg.get("amount", 0.3)
         if not 0 <= self.amount < 1:
             raise ValueError(f"sag amount must be from 0 up to (not including) 1, got {self.amount}")
@@ -145,8 +188,10 @@ class Sag(Block):
 class IRLoader(Block):
     """Cabinet sound: convolution with an impulse response .wav file."""
 
+    SETTINGS = {"file", "mix", "level_db"}
+
     def __init__(self, cfg, sr):
-        super().__init__(cfg, sr, {"file", "mix", "level_db"})
+        super().__init__(cfg, sr)
         ir, ir_sr = read_wav(Path(cfg["file"]))
         ir = ir.mean(axis=1)
         if ir_sr != sr:
@@ -204,9 +249,10 @@ class Feedback(Block):
     """
 
     INNER_TYPES = {"eq": EQ, "gain": Gain}
+    SETTINGS = {"amount", "path", "chain", "oversample", "level_db"}
 
     def __init__(self, cfg, sr):
-        super().__init__(cfg, sr, {"amount", "path", "chain", "oversample", "level_db"})
+        super().__init__(cfg, sr)
         self.amount = cfg.get("amount", 0.3)
         if self.amount < 0:
             raise ValueError("feedback amount must be 0 or more (positive feedback is not supported yet)")

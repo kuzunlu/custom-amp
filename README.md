@@ -5,7 +5,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | Block | What it does |
 |---|---|
 | `eq` | Boost or cut tones (high-pass, low-pass, shelves, peaks) |
-| `gain` | One gain stage: filter, then clip, then filter |
+| `gain` | One gain stage: filter, then clip, then filter. Optional bias shift: hard hits push the stage "colder" for a moment |
 | `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
 | `ir` | Cabinet sound from an impulse response `.wav` file |
