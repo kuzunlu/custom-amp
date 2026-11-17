@@ -75,6 +75,17 @@ class Biquad:
         self.z1, self.z2 = z1, z2
         return np.array(out)
 
+    def tick(self, v, commit=True):
+        """One sample at a time, for use inside a feedback loop.
+
+        commit=False only tries the value: the filter does not move on to the next sample.
+        """
+        y = self.b0 * v + self.z1
+        if commit:
+            self.z1 = self.b1 * v - self.a1 * y + self.z2
+            self.z2 = self.b2 * v - self.a2 * y
+        return y
+
 
 def make_filters(bands, sr):
     """Build a list of Biquads from preset bands like {"kind": "peak", "freq": 700, "gain_db": -6, "q": 0.7}."""

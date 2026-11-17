@@ -20,6 +20,25 @@ def _lowpass_fir(factor):
     return h / h.sum()
 
 
+def upsample(x, factor):
+    """Raise the sample rate. Used by the feedback loop, which must run sample by sample."""
+    if factor == 1:
+        return x
+    h = _lowpass_fir(factor)
+    delay = (len(h) - 1) // 2
+    up = np.zeros(len(x) * factor)
+    up[::factor] = x * factor
+    return np.convolve(up, h)[delay : delay + len(up)]
+
+
+def downsample(y, factor):
+    if factor == 1:
+        return y
+    h = _lowpass_fir(factor)
+    delay = (len(h) - 1) // 2
+    return np.convolve(y, h)[delay : delay + len(y)][::factor]
+
+
 def oversampled(x, func, factor=8, chunk=1 << 15, ctrl=None):
     """Return func(x) computed at `factor` times the sample rate.
 

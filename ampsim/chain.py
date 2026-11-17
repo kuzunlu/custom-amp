@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from .blocks import BLOCK_TYPES, Gain, Sag
+from .blocks import BLOCK_TYPES, Feedback, Gain, Sag
 from .filters import check_keys
 
 
@@ -18,6 +18,14 @@ def build_chain(cfgs, sr):
 
 def link_sag(blocks):
     """Connect each sag block to the gain blocks named in its targets."""
+    # Blocks inside a feedback loop count as coming right after the feedback block.
+    flat = []
+    for block in blocks:
+        flat.append(block)
+        if isinstance(block, Feedback):
+            flat.extend(block.blocks)
+    blocks = flat
+
     position = {}
     for i, block in enumerate(blocks):
         if block.id is not None:

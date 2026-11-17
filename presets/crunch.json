@@ -1,6 +1,6 @@
 {
-  "name": "Crunch (step 2 test)",
-  "notes": "Two gain stages with a mid-cut EQ between them. Sag squeezes the second stage. Then the cab IR.",
+  "name": "Crunch (step 3 test)",
+  "notes": "Two gain stages with a mid-cut EQ between them. The second stage is a power amp: sag squeezes it and a feedback loop with presence wraps it. Then the cab IR.",
   "chain": [
     { "type": "eq", "bands": [{ "kind": "highpass", "freq": 90 }] },
     {
@@ -17,8 +17,14 @@
     },
     { "type": "sag", "amount": 0.3, "attack_ms": 5, "release_ms": 150, "targets": ["v2"] },
     {
-      "type": "gain", "id": "v2", "drive_db": 10, "curve": "soft",
-      "post": [{ "kind": "lowpass", "freq": 7000 }]
+      "type": "feedback", "amount": 0.3,
+      "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
+      "chain": [
+        {
+          "type": "gain", "id": "v2", "drive_db": 16, "curve": "soft",
+          "post": [{ "kind": "lowpass", "freq": 7000 }]
+        }
+      ]
     },
     { "type": "ir", "file": "audio/fake_4x12.wav" }
   ]

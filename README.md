@@ -7,7 +7,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `eq` | Boost or cut tones (high-pass, low-pass, shelves, peaks) |
 | `gain` | One gain stage: filter, then clip, then filter |
 | `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
-| `feedback` | *(coming)* Feeds the output of a group of blocks back to its input |
+| `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
 | `ir` | Cabinet sound from an impulse response `.wav` file |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
@@ -53,4 +53,28 @@ When the signal gets loud, the gain blocks in `targets` get a lower clipping cei
 - `amount`: the most the ceiling can drop (0.3 = down to 70%). Must be below 1.
 - `sens_db`: how easily it reacts. Higher = reacts to softer playing.
 - `attack_ms` / `release_ms`: how fast the ceiling drops, and how fast it comes back.
-- `targets`: ids of gain blocks. They must come after the sag block.
+- `targets`: ids of gain blocks. They must come after the sag block (a gain block inside a later feedback block is fine).
+
+### Feedback
+
+```json
+{
+  "type": "feedback", "amount": 0.3, "oversample": 4,
+  "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
+  "chain": [{ "type": "gain", "id": "v2", "drive_db": 16, "curve": "soft" }]
+}
+```
+
+The inner `chain` gets: input minus `amount` times the `path`-filtered output.
+More `amount` = less gain, tighter and cleaner clipping.
+The `path` filters choose which tones get less feedback, so those come out louder:
+a high shelf cut works like a **presence** knob, a low shelf cut works like a **resonance** knob.
+
+- Only `eq` and `gain` blocks can go inside. Inner gain blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
+- The loop has no delay. Each sample is found by solving the loop equation, so strong feedback is stable.
+- It runs one sample at a time, so it is slow in Python (about 1 s of work per 1 s of audio).
+
+## Setting help
+
+Every setting is explained in `shared/settings.json` (range, default, a one-line help and a detailed tooltip).
+The plugin version will show these as tooltips.
