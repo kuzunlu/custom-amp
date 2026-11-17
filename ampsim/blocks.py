@@ -40,6 +40,8 @@ class Block:
         check_keys(cfg, {"type", "id"} | self.SETTINGS, f"{cfg['type']} block {cfg.get('id', '')}".strip())
         self.id = cfg.get("id")
         self.sr = sr
+        # Set by a gate block with apply_after: one gain value per sample, applied to this block's output.
+        self.after_gain = None
 
     def process(self, x):
         raise NotImplementedError
@@ -47,6 +49,14 @@ class Block:
     def children(self):
         """Blocks inside this block (feedback loops and split paths have some)."""
         return []
+
+
+def run_blocks(blocks, x):
+    for block in blocks:
+        x = block.process(x)
+        if block.after_gain is not None:
+            x = x * block.after_gain
+    return x
 
 
 def build_chain(cfgs, sr):
@@ -340,14 +350,64 @@ class Split(Block):
     def process(self, x):
         out = np.zeros(len(x))
         for blocks, gain in self.paths:
-            y = x
-            for block in blocks:
-                y = block.process(y)
-            out += gain * y
+            out += gain * run_blocks(blocks, x)
         return out * self.level
 
     def children(self):
         return [block for blocks, _ in self.paths for block in blocks]
 
 
-BLOCK_TYPES = {"eq": EQ, "gain": Gain, "sag": Sag, "feedback": Feedback, "split": Split, "ir": IRLoader}
+class Gate(Block):
+    """Noise gate: turns the sound down when it falls below the threshold.
+
+    With apply_after, the gate listens here but turns down the output of a later block instead
+    (listen at the clean input, mute after the high-gain stages where the hiss is loud).
+    """
+
+    SETTINGS = {"threshold_db", "hysteresis_db", "attack_ms", "hold_ms", "release_ms", "range_db", "apply_after"}
+
+    def __init__(self, cfg, sr):
+        super().__init__(cfg, sr)
+        self.open_level = db_to_gain(cfg.get("threshold_db", -50.0))
+        self.close_level = db_to_gain(cfg.get("threshold_db", -50.0) - cfg.get("hysteresis_db", 6.0))
+        self.attack = 1 - math.exp(-1 / (cfg.get("attack_ms", 0.5) * 0.001 * sr))
+        self.release = 1 - math.exp(-1 / (cfg.get("release_ms", 100) * 0.001 * sr))
+        self.hold = int(cfg.get("hold_ms", 50) * 0.001 * sr)
+        self.floor = db_to_gain(cfg.get("range_db", -80.0))
+        # The level is the biggest peak in the last 20 ms: longer than one cycle of the lowest guitar note,
+        # so the level does not dip between the peaks of one note.
+        self.window = max(1, int(0.020 * sr))
+        self.apply_after = cfg.get("apply_after")
+        self.target = None  # filled in by the chain when apply_after is set
+
+    def gains(self, x):
+        """One gain value per sample: 1 = open, range_db = closed."""
+        open_level, close_level, hold = self.open_level, self.close_level, self.hold
+        attack, release, floor = self.attack, self.release, self.floor
+        padded = np.concatenate([np.zeros(self.window - 1), np.abs(x)])
+        levels = np.lib.stride_tricks.sliding_window_view(padded, self.window).max(axis=1)
+        is_open, held, g = False, 0, floor
+        out = [0.0] * len(x)
+        for i, level in enumerate(levels.tolist()):
+            if level > open_level:
+                is_open, held = True, 0
+            elif is_open and level < close_level:
+                held += 1
+                if held > hold:
+                    is_open = False
+            target = 1.0 if is_open else floor
+            g += (attack if target > g else release) * (target - g)
+            out[i] = g
+        return np.array(out)
+
+    def process(self, x):
+        gains = self.gains(x)
+        if self.target is not None:
+            self.target.after_gain = gains
+            return x
+        return x * gains
+
+
+BLOCK_TYPES = {
+    "eq": EQ, "gain": Gain, "sag": Sag, "feedback": Feedback, "split": Split, "gate": Gate, "ir": IRLoader,
+}

@@ -9,6 +9,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `sag` | Lowers the clipping ceiling of later gain blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
 | `split` | Parallel paths: the same sound through several chains side by side, then mixed |
+| `gate` | Noise gate. Can listen at the clean input but mute after a later block (`apply_after`) |
 | `ir` | Cabinet sound from an impulse response `.wav` file |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
@@ -97,6 +98,17 @@ a high shelf cut works like a **presence** knob, a low shelf cut works like a **
 Every path gets the same input; the outputs are added. Each path has its own `chain` (any blocks, even another
 split or a cab IR), `level_db` and `invert` (flips the path upside down before mixing).
 An empty chain passes the input through untouched (a clean blend).
+
+### Gate
+
+```json
+{ "type": "gate", "threshold_db": -55, "hysteresis_db": 3, "hold_ms": 50, "release_ms": 100, "apply_after": "v3" }
+```
+
+Put the gate first and set `apply_after` to the last gain stage: it decides on the clean input signal
+(where hiss is quiet) but mutes after the high-gain stages (where hiss is loud). A gate placed after a
+high-gain amp hears the amplified hiss as playing and does not close. Set the threshold above the hiss
+peaks (about 10 dB above the average hiss level).
 
 ## Setting help
 

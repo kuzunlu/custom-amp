@@ -48,6 +48,11 @@ python tools/check_settings.py                                        # settings
 - **Split**: every path gets the same input; outputs are added (`sign * level` per path). Any block can go in
   a path. Every block has `children()`; `chain.flatten` walks into feedback loops and split paths, so sag
   targets and unique ids work everywhere. `build_chain` lives in `blocks.py` (Split needs it).
+- **Gate**: level = biggest |x| in the last 20 ms (sliding max). Do not use a fast-falling peak follower:
+  it dips between the peaks of a low note (low E = 12 ms per cycle) and the gate chatters.
+  Opens above threshold, closes below threshold - hysteresis after `hold`; gain moves with attack/release.
+  With `apply_after`, the gain goes to that block's `after_gain` (applied in `run_blocks`); the gate's
+  own position passes the sound unchanged. Not allowed on a block inside a feedback loop.
 - **Presets**: every unknown setting name is an error (`check_keys`), so typos never pass silently.
 - `SCALAR_CURVES` (used in the loop) must stay the same as `CURVES` (used with NumPy).
 
@@ -77,6 +82,10 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
   Loop (tick) vs normal (process): 0.08% apart (the loop tracks the shift at the higher rate).
 - Split: two empty paths = 2x input, one inverted = exact silence, nested split with feedback matches theory
   (1.9988), sag reaches a gain inside a path.
+- Gate: hiss -70 dB, note -23 dB, threshold -50: hiss -> -150 dB, note unchanged, opens in 0.3 ms.
+  High-gain amp: gate placed after the amp leaves hiss at -11.5 dB (never closes); gate at the input with
+  apply_after the last stage: -79 dB. Fading note with hiss -70, threshold -55: hysteresis 0 = 4-8 state
+  changes (chatter), 3 = 2 (clean), 6 = 1 (never closes: closing point under the hiss peaks).
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
@@ -97,7 +106,7 @@ Idea for later: turn these into a real `tests/` folder.
 Done: step 1 (eq, gain, ir, oversampling), step 2 (sag), step 3 (feedback), step 4 (clean, crunch,
 high gain presets; distortion at soft/medium/hard playing is in the README).
 Step 5 plan (the user wants to build any famous amp style: Plexi, 800-series, Rectifier, Soldano, ENGL,
-5150, Fender clean, Vox): bias shift (done), split (done), noise gate, tone stack from real
+5150, Fender clean, Vox): bias shift (done), split (done), noise gate (done), tone stack from real
 component values, more clipping curves; then famous-amp-style presets with descriptive names
 (no brand names in preset names). Push-pull and output transformer are built from existing blocks.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright

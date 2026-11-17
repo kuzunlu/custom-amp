@@ -36,6 +36,7 @@
           "sag": "Power supply sag: lowers the clipping ceiling of later gain stages when you play hard.",
           "feedback": "A loop around a few blocks, like the feedback loop of a power amp.",
           "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
+          "gate": "Noise gate: turns the sound down when you stop playing, to remove hiss and hum.",
           "ir": "Speaker cabinet sound from an impulse response file."
         },
         "short": "What kind of block this is.",
@@ -108,6 +109,49 @@
   },
 
   "blocks": {
+    "gate": {
+      "label": "Noise gate",
+      "short": "Turns the sound down when you stop playing, to remove hiss and hum.",
+      "tooltip": "High-gain amps make the small hiss and hum of a guitar very loud. The gate follows the signal level: when it falls below the threshold, the gate closes and turns the sound down; when you play again, it opens. Best use: put the gate at the START of the chain (where the guitar signal is clean and the hiss is quiet) and set 'Apply after' to the last gain stage (where the hiss is loud). Then the gate decides on the clean signal but mutes the loud hiss. A gate placed after a high-gain amp hears the amplified hiss as 'playing' and may never close.",
+      "settings": {
+        "threshold_db": {
+          "label": "Threshold", "type": "number", "unit": "dB", "min": -100, "max": 0, "default": -50,
+          "short": "The gate opens when the signal is louder than this.",
+          "tooltip": "Set it above the PEAKS of the hiss when you are not playing. Hiss peaks are about 10 dB above its average level, so hiss that measures -70 dB needs a threshold of about -55 dB. Too low: the gate stays open and the hiss gets through. Too high: quiet notes and the ends of ringing notes get cut off. At the start of the chain, typical values are -60 to -40 dB. Listen to the end of a ringing chord while you set it. The level the gate follows is the biggest peak in the last 20 ms, so it does not flicker between the peaks of a low note."
+        },
+        "hysteresis_db": {
+          "label": "Hysteresis", "type": "number", "unit": "dB", "min": 0, "max": 20, "default": 6,
+          "short": "The gate closes this many dB BELOW the threshold, so it does not flutter.",
+          "tooltip": "A note that fades out slowly sits near the threshold for a while. If opening and closing happened at the same level, the gate would flutter open and shut ('chatter'). With 6 dB, the gate opens at the threshold but only closes when the level is 6 dB lower. Important: the closing point (threshold minus hysteresis) must still be above the hiss peaks, or the gate never closes. Measured with hiss at -70 dB and threshold -55 dB: 0 dB = the gate fluttered 4-8 times on one fading note; 3 dB = it opened once and closed once (clean); 6 dB = it never closed, because the closing point (-61 dB) was under the hiss peaks. If the gate does not close, lower this or raise the threshold."
+        },
+        "attack_ms": {
+          "label": "Attack", "type": "number", "unit": "ms", "min": 0.05, "max": 50, "default": 0.5, "scale": "log",
+          "short": "How fast the gate opens when you play.",
+          "tooltip": "Keep it very short (0.1-1 ms) so the pick attack is not lost. Longer values soften the start of every note, which can be a special effect (a 'swell')."
+        },
+        "hold_ms": {
+          "label": "Hold", "type": "number", "unit": "ms", "min": 0, "max": 1000, "default": 50,
+          "short": "How long the gate waits before closing.",
+          "tooltip": "After the level falls below the closing point, the gate stays open for this long. It stops the gate from closing in the short gaps inside fast riffs. For tight staccato metal riffs: 10-30 ms. For normal playing: 50-150 ms."
+        },
+        "release_ms": {
+          "label": "Release", "type": "number", "unit": "ms", "min": 1, "max": 2000, "default": 100, "scale": "log",
+          "short": "How fast the gate closes.",
+          "tooltip": "Short (5-30 ms): very tight cut-offs for modern high-gain riffs, but ringing notes can end abruptly. Long (100-500 ms): notes fade out naturally, the hiss fades with them."
+        },
+        "range_db": {
+          "label": "Range", "type": "number", "unit": "dB", "min": -100, "max": 0, "default": -80,
+          "short": "How much the sound is turned down when the gate is closed.",
+          "tooltip": "-80 dB = fully silent. -20 to -10 dB = the hiss is only made quieter, which sounds more natural, because a fully silent gate can make the starts and ends of notes stand out."
+        },
+        "apply_after": {
+          "label": "Apply after", "type": "id", "default": null,
+          "short": "Optional: the id of a later block. The gate listens here but mutes after that block.",
+          "tooltip": "Leave empty to gate the sound right here. Set it to the id of a later block (for example the last gain stage) to listen to the clean signal here but mute the loud hiss after that block. The sound passes through the gate's own position unchanged. The block must come after the gate and can not be inside a feedback loop (use the feedback block's own id instead)."
+        }
+      }
+    },
+
     "split": {
       "label": "Split",
       "short": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",

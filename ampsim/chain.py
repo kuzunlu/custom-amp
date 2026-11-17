@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from .blocks import Gain, Sag, build_chain
+from .blocks import Feedback, Gain, Gate, Sag, build_chain, run_blocks
 from .filters import check_keys
 
 
@@ -15,9 +15,10 @@ def flatten(blocks):
     return flat
 
 
-def link_sag(blocks):
-    """Connect each sag block to the gain blocks named in its targets."""
+def link_blocks(blocks):
+    """Connect sag blocks to their targets and gate blocks to their apply_after block."""
     blocks = flatten(blocks)
+    in_loops = {id(inner) for loop in blocks if isinstance(loop, Feedback) for inner in flatten(loop.children())}
 
     position = {}
     for i, block in enumerate(blocks):
@@ -26,18 +27,26 @@ def link_sag(blocks):
                 raise ValueError(f"two blocks use the id '{block.id}'")
             position[block.id] = i
 
+    def find(kind, i, target_id):
+        if target_id not in position:
+            raise ValueError(f"{kind}: no block has the id '{target_id}'")
+        j = position[target_id]
+        if j < i:
+            raise ValueError(f"{kind}: '{target_id}' must come after the {kind} block in the chain")
+        return blocks[j]
+
     for i, block in enumerate(blocks):
-        if not isinstance(block, Sag):
-            continue
-        for target_id in block.target_ids:
-            if target_id not in position:
-                raise ValueError(f"sag: no block has the id '{target_id}'")
-            j = position[target_id]
-            if not isinstance(blocks[j], Gain):
-                raise ValueError(f"sag: '{target_id}' is not a gain block")
-            if j < i:
-                raise ValueError(f"sag: '{target_id}' must come after the sag block in the chain")
-            block.targets.append(blocks[j])
+        if isinstance(block, Sag):
+            for target_id in block.target_ids:
+                target = find("sag", i, target_id)
+                if not isinstance(target, Gain):
+                    raise ValueError(f"sag: '{target_id}' is not a gain block")
+                block.targets.append(target)
+        elif isinstance(block, Gate) and block.apply_after is not None:
+            target = find("gate", i, block.apply_after)
+            if id(target) in in_loops:
+                raise ValueError(f"gate: '{block.apply_after}' is inside a feedback loop; use the feedback block's id")
+            block.target = target
 
 
 class Amp:
@@ -45,12 +54,10 @@ class Amp:
         check_keys(preset, {"name", "notes", "chain"}, "preset")
         self.name = preset.get("name", "")
         self.blocks = build_chain(preset["chain"], sr)
-        link_sag(self.blocks)
+        link_blocks(self.blocks)
 
     def process(self, x):
-        for block in self.blocks:
-            x = block.process(x)
-        return x
+        return run_blocks(self.blocks, x)
 
 
 def load_amp(path, sr):
