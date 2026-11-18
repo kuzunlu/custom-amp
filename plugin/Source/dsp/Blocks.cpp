@@ -1,0 +1,861 @@
+#include "Blocks.h"
+
+#include "Circuit.h"
+
+#include <juce_audio_formats/juce_audio_formats.h>
+
+#include <map>
+
+namespace amp
+{
+
+static std::set<juce::String> withCommon (std::set<juce::String> settings)
+{
+    settings.insert ("type");
+    settings.insert ("id");
+    return settings;
+}
+
+static juce::String blockWhere (const Cfg& cfg)
+{
+    return (cfg.text ("type", {}) + " block " + cfg.get ("id").toString()).trim();
+}
+
+Block::Block (const Cfg& cfg, const std::set<juce::String>& settings)
+{
+    amp::checkKeys (cfg.value(), withCommon (settings), blockWhere (cfg));
+    type = cfg.text ("type", {});
+    id = cfg.has ("id") ? cfg.get ("id").toString() : juce::String();
+}
+
+void runBlocks (const Chain& blocks, double* x, int n) noexcept
+{
+    for (auto& block : blocks)
+    {
+        block->process (x, n);
+
+        if (block->afterGain != nullptr)
+            for (int i = 0; i < n; ++i)
+                x[i] *= block->afterGain[i];
+    }
+}
+
+static double shiftCoefficient (double ms, double rate)
+{
+    return 1 - std::exp (-1 / (ms * 0.001 * rate));
+}
+
+//==============================================================================
+EqBlock::EqBlock (const Cfg& cfg, const BuildContext& ctx) : LoopBlock (cfg, { "bands", "level_db" })
+{
+    filters = makeFilters (cfg.list ("bands"), ctx);
+    level = dbToGain (cfg.number ("level_db", 0.0));
+}
+
+void EqBlock::process (double* x, int n) noexcept
+{
+    for (int i = 0; i < n; ++i)
+        x[i] = filters.tick (x[i]) * level;
+}
+
+//==============================================================================
+Tonestack::Tonestack (const Cfg& cfg, const BuildContext& ctx)
+    : LoopBlock (cfg, { "style", "parts", "treble", "mid", "bass", "treble_taper", "mid_taper", "bass_taper",
+                        "source_ohms", "load_ohms", "level_db" })
+{
+    // Values as in common published schematics (Tonestack.STYLES in blocks.py).
+    static const std::map<juce::String, std::map<juce::String, double>> styles {
+        { "british", { { "C1", 470e-12 }, { "C2", 22e-9 }, { "C3", 22e-9 }, { "R1", 220e3 }, { "R2", 1e6 }, { "R3", 25e3 }, { "R4", 33e3 } } },
+        { "american", { { "C1", 250e-12 }, { "C2", 20e-9 }, { "C3", 20e-9 }, { "R1", 250e3 }, { "R2", 1e6 }, { "R3", 25e3 }, { "R4", 56e3 } } },
+    };
+    const auto style = cfg.text ("style", "british");
+
+    if (styles.count (style) == 0)
+        throw PresetError ("tonestack: unknown style '" + style + "'. Use one of: british, american");
+
+    auto parts = styles.at (style);
+    const auto partsCfg = cfg.get ("parts");
+
+    if (! partsCfg.isVoid())
+    {
+        Cfg custom (partsCfg, "tonestack parts");
+        custom.checkKeys ({ "C1", "C2", "C3", "R1", "R2", "R3", "R4" });
+
+        for (auto& [name, value] : parts)
+            value = custom.number (name.toRawUTF8(), value);
+    }
+
+    std::map<juce::String, double> knobs;
+    const std::map<juce::String, juce::String> tapers { { "treble", "linear" }, { "mid", "linear" }, { "bass", "log" } };
+
+    for (auto* knob : { "treble", "mid", "bass" })
+    {
+        const double value = cfg.number (knob, 5.0);
+
+        if (value < 0 || value > 10)
+            throw PresetError (juce::String ("tonestack: ") + knob + " must be from 0 to 10, got " + juce::String (value));
+
+        const auto taper = cfg.text ((juce::String (knob) + "_taper").toRawUTF8(), tapers.at (knob));
+
+        if (taper != "log" && taper != "linear")
+            throw PresetError (juce::String ("tonestack: ") + knob + "_taper must be 'log' or 'linear'");
+
+        // Audio ("log") taper: half way round gives 10% of the resistance, like real tone pots.
+        knobs[knob] = taper == "log" ? (std::pow (81.0, value / 10) - 1) / 80 : value / 10;
+    }
+
+    const double t = knobs["treble"], m = knobs["mid"], l = knobs["bass"];
+    const double r = 1.0;  // a pot turned fully to one end still has a tiny resistance
+    const std::vector<Part> netlist {
+        { 'C', parts["C1"], "in", "top" },
+        { 'R', std::max (parts["R1"] * (1 - t), r), "top", "out" },
+        { 'R', std::max (parts["R1"] * t, r), "out", "x" },
+        { 'R', std::max (parts["R2"] * l, r), "x", "y" },
+        { 'R', std::max (parts["R3"] * (1 - m), r), "y", "w" },
+        { 'R', std::max (parts["R3"] * m, r), "w", "gnd" },
+        { 'R', parts["R4"], "in", "z" },
+        { 'C', parts["C2"], "z", "x" },
+        { 'C', parts["C3"], "z", "w" },
+    };
+
+    std::vector<double> b, a;
+    digitalFilter (netlist, ctx.rate, cfg.number ("source_ohms", 1000.0), cfg.number ("load_ohms", 1e6), b, a);
+    filter = Iir (b, a);
+    level = dbToGain (cfg.number ("level_db", 0.0));
+}
+
+void Tonestack::process (double* x, int n) noexcept
+{
+    for (int i = 0; i < n; ++i)
+        x[i] = filter.tick (x[i]) * level;
+}
+
+//==============================================================================
+static const std::map<juce::String, std::set<juce::String>> curveSettings {
+    { "custom", { "top", "top_softness", "bottom", "bottom_softness" } },
+    { "triode", { "tube", "plate_v", "plate_ohms", "bias_v", "plate_volts" } },
+};
+
+static std::set<juce::String> gainSettings()
+{
+    std::set<juce::String> s { "drive_db", "curve", "bias", "level_db", "pre", "post", "oversample",
+                               "bias_shift", "shift_attack_ms", "shift_release_ms" };
+
+    for (auto& [curve, names] : curveSettings)
+        s.insert (names.begin(), names.end());
+
+    return s;
+}
+
+Gain::Gain (const Cfg& cfg, const BuildContext& ctx) : LoopBlock (cfg, gainSettings())
+{
+    static const juce::StringArray curveNames { "hard", "soft", "tube", "diode", "custom", "triode" };
+    const auto name = cfg.text ("curve", "soft");
+
+    if (! curveNames.contains (name))
+        throw PresetError ("unknown curve '" + name + "'. Use one of: " + curveNames.joinIntoString (", "));
+
+    for (auto& [other, names] : curveSettings)
+    {
+        if (other == name)
+            continue;
+
+        juce::StringArray wrong;
+
+        for (auto& setting : names)
+            if (cfg.has (setting.toRawUTF8()))
+                wrong.add (setting);
+
+        if (! wrong.isEmpty())
+        {
+            wrong.sort (false);
+            throw PresetError ("gain: the setting(s) " + wrong.joinIntoString (", ") + " only work with curve '" + other + "'");
+        }
+    }
+
+    top = 1.0;  // where the top of the curve starts to clip (bias shift starts there)
+    level = dbToGain (cfg.number ("level_db", 0.0));
+
+    if (name == "custom")
+    {
+        curve = makeCustomCurve (cfg.number ("top", 1.0), cfg.number ("top_softness", 0.5),
+                                 cfg.number ("bottom", 1.0), cfg.number ("bottom_softness", 0.5));
+        top = cfg.number ("top", 1.0);
+    }
+    else if (name == "triode")
+    {
+        const double biasV = cfg.number ("bias_v", -1.5);
+        curve = makeTriodeCurve (cfg.text ("tube", "12AX7"), cfg.number ("plate_v", 300.0),
+                                 cfg.number ("plate_ohms", 100e3), biasV, tubeInfo);
+        top = -biasV;
+        isTriode = true;
+
+        if (cfg.flag ("plate_volts", false))
+            level *= tubeInfo.gain;  // put the stage's real gain back: output = plate swing in volts
+    }
+    else
+    {
+        curve.kind = name == "hard" ? Curve::Kind::hard
+                   : name == "tube" ? Curve::Kind::tube
+                   : name == "diode" ? Curve::Kind::diode
+                                     : Curve::Kind::soft;
+    }
+
+    drive = dbToGain (cfg.number ("drive_db", 0.0));
+    bias = cfg.number ("bias", 0.0);
+    offset = curve (bias);  // keeps silence at zero when bias is set
+    pre = makeFilters (cfg.list ("pre"), ctx);
+    // Uneven clipping leaves a DC offset, so a 10 Hz high-pass always ends the stage.
+    post = makeFilters (cfg.list ("post"), ctx);
+    post.filters.push_back (Biquad::make ("highpass", 10, ctx.rate, 0.707, 0.0, ctx.checkRate));
+
+    shiftAmount = cfg.number ("bias_shift", 0.0);
+
+    if (shiftAmount < 0 || shiftAmount > 1)
+        throw PresetError ("bias_shift must be from 0 to 1, got " + juce::String (shiftAmount));
+
+    shiftAttack = shiftCoefficient (cfg.number ("shift_attack_ms", 1), ctx.rate);
+    shiftRelease = shiftCoefficient (cfg.number ("shift_release_ms", 50), ctx.rate);
+}
+
+void Gain::reset() noexcept
+{
+    pre.reset();
+    post.reset();
+    shift = 0.0;
+    h = 1.0;
+}
+
+void Gain::process (double* x, int n) noexcept
+{
+    if (headroom == nullptr && shiftAmount == 0)
+    {
+        for (int i = 0; i < n; ++i)
+            x[i] = post.tick (curve (pre.tick (x[i]) * drive + bias) - offset) * level;
+
+        return;
+    }
+
+    // The curve's ceiling is scaled down to the headroom (quiet signals are not changed),
+    // and the bias shift moves the working point.
+    for (int i = 0; i < n; ++i)
+    {
+        const double hh = headroom != nullptr ? headroom[i] : 1.0;
+        const double g = pre.tick (x[i]) * drive / hh + bias;
+        const double y = hh * (curve (g + shift) - offset);
+
+        if (shiftAmount != 0)
+            shift = nextShift (shift, g);
+
+        x[i] = post.tick (y) * level;
+    }
+}
+
+double Gain::peek (double v) const noexcept
+{
+    const double g = pre.peek (v) * drive / h + bias;
+    return post.peek (h * (curve (g + shift) - offset)) * level;
+}
+
+double Gain::commit (double v) noexcept
+{
+    const double g = pre.tick (v) * drive / h + bias;
+    const double y = h * (curve (g + shift) - offset);
+
+    if (shiftAmount != 0)
+        shift = nextShift (shift, g);
+
+    return post.tick (y) * level;
+}
+
+juce::String Gain::describe() const
+{
+    if (! isTriode)
+        return {};
+
+    return "plate " + juce::String (juce::roundToInt (tubeInfo.plateV)) + " V, " + juce::String (tubeInfo.plateMa, 2)
+           + " mA, gain " + juce::String (juce::roundToInt (tubeInfo.gain));
+}
+
+//==============================================================================
+Power::Power (const Cfg& cfg, const BuildContext& ctx)
+    : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
+                        "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms" })
+{
+    const double plateV = cfg.number ("plate_v", 450.0);
+    const double screenV = cfg.number ("screen_v", 0.0);
+    tubeName = cfg.text ("tube", "EL34");
+    tubes = PushPull::make (tubeName, plateV, screenV != 0 ? screenV : plateV, cfg.number ("bias_v", -45.0),
+                            cfg.number ("raa_ohms", 3400.0), cfg.number ("mismatch", 0.0));
+    offset = tubes.shape (0.0, 1.0, 1.0, 0.0, 0.0);  // mismatched tubes leave a step at rest
+    drive = dbToGain (cfg.number ("drive_db", 0.0));
+    level = dbToGain (cfg.number ("level_db", 0.0));
+    pre = makeFilters (cfg.list ("pre"), ctx);
+    post = makeFilters (cfg.list ("post"), ctx);
+    post.filters.push_back (Biquad::make ("highpass", 10, ctx.rate, 0.707, 0.0, ctx.checkRate));
+
+    shiftAmount = cfg.number ("bias_shift", 0.0);
+
+    if (shiftAmount < 0 || shiftAmount > 1)
+        throw PresetError ("bias_shift must be from 0 to 1, got " + juce::String (shiftAmount));
+
+    shiftAttack = shiftCoefficient (cfg.number ("shift_attack_ms", 1), ctx.rate);
+    shiftRelease = shiftCoefficient (cfg.number ("shift_release_ms", 50), ctx.rate);
+}
+
+void Power::reset() noexcept
+{
+    pre.reset();
+    post.reset();
+    sa = sb = 0.0;
+    h = hPow = 1.0;
+}
+
+void Power::nextShifts (double v) noexcept
+{
+    // Each grid charges its coupling capacitor when it goes above 0 V, then drifts back.
+    const double ga = tubes.bias + sa + v, gb = tubes.bias + sb - v;
+
+    if (ga > 0)
+        sa -= shiftAmount * shiftAttack * ga;
+
+    if (gb > 0)
+        sb -= shiftAmount * shiftAttack * gb;
+
+    sa = sa - shiftRelease * sa;
+    sb = sb - shiftRelease * sb;
+}
+
+void Power::process (double* x, int n) noexcept
+{
+    for (int i = 0; i < n; ++i)
+    {
+        const double v = pre.tick (x[i]) * drive;
+
+        if (headroom != nullptr && headroom[i] != h)
+        {
+            h = headroom[i];
+            hPow = std::pow (h, pentodeEx);
+        }
+
+        const double y = tubes.shape (v, h, hPow, sa, sb) - offset;
+
+        if (shiftAmount != 0)
+            nextShifts (v);
+
+        x[i] = post.tick (y) * level;
+    }
+}
+
+void Power::beginSample (int n) noexcept
+{
+    if (headroom != nullptr && headroom[n] != h)
+    {
+        h = headroom[n];
+        hPow = std::pow (h, pentodeEx);
+    }
+}
+
+double Power::peek (double v) const noexcept
+{
+    return post.peek (tubes.shape (pre.peek (v) * drive, h, hPow, sa, sb) - offset) * level;
+}
+
+double Power::commit (double v) noexcept
+{
+    const double u = pre.tick (v) * drive;
+    const double y = tubes.shape (u, h, hPow, sa, sb) - offset;
+
+    if (shiftAmount != 0)
+        nextShifts (u);
+
+    return post.tick (y) * level;
+}
+
+juce::String Power::describe() const
+{
+    return "2x " + tubeName + ", idle " + juce::String (juce::roundToInt (tubes.idleMa)) + " mA ("
+           + juce::String (tubes.idleWatts, 1) + " W each), max about " + juce::String (juce::roundToInt (tubes.maxWatts)) + " W";
+}
+
+//==============================================================================
+Sag::Sag (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "amount", "sens_db", "attack_ms", "release_ms", "targets" })
+{
+    amount = cfg.number ("amount", 0.3);
+
+    if (amount < 0 || amount >= 1)
+        throw PresetError ("sag amount must be from 0 up to (not including) 1, got " + juce::String (amount));
+
+    sens = dbToGain (cfg.number ("sens_db", 0.0));
+    attack = std::exp (-1 / (cfg.number ("attack_ms", 5) * 0.001 * ctx.rate));
+    release = std::exp (-1 / (cfg.number ("release_ms", 150) * 0.001 * ctx.rate));
+
+    const auto targets = cfg.get ("targets");
+
+    if (! targets.isVoid() && ! targets.isArray())
+        throw PresetError ("sag targets must be a list, like [\"v2\"]");
+
+    for (auto& t : cfg.list ("targets"))
+        targetIds.add (t.toString());
+}
+
+void Sag::process (double* x, int n) noexcept
+{
+    // Follow the loudness: rise with the attack time, fall with the release time.
+    // tanh: the supply can only drop so far, even when playing very hard.
+    for (int i = 0; i < n; ++i)
+    {
+        const double v = std::abs (x[i]);
+        const double c = v > env ? attack : release;
+        env = v + c * (env - v);
+        headroom[(size_t) i] = 1 - amount * std::tanh (env * sens);
+    }
+}
+
+//==============================================================================
+Gate::Gate (const Cfg& cfg, const BuildContext& ctx)
+    : Block (cfg, { "threshold_db", "hysteresis_db", "attack_ms", "hold_ms", "release_ms", "range_db", "apply_after" })
+{
+    const double threshold = cfg.number ("threshold_db", -50.0);
+    openLevel = dbToGain (threshold);
+    closeLevel = dbToGain (threshold - cfg.number ("hysteresis_db", 6.0));
+    attack = shiftCoefficient (cfg.number ("attack_ms", 0.5), ctx.rate);
+    release = shiftCoefficient (cfg.number ("release_ms", 100), ctx.rate);
+    hold = (int) (cfg.number ("hold_ms", 50) * 0.001 * ctx.rate);
+    floor = dbToGain (cfg.number ("range_db", -80.0));
+    // The level is the biggest peak in the last 20 ms: longer than one cycle of the lowest guitar note,
+    // so the level does not dip between the peaks of one note.
+    window = std::max (1, (int) (0.020 * ctx.rate));
+    applyAfter = cfg.get ("apply_after").isVoid() ? juce::String() : cfg.get ("apply_after").toString();
+    g = floor;
+}
+
+void Gate::prepare (int maxSamples)
+{
+    gains.assign ((size_t) maxSamples, 1.0);
+    queueValue.assign ((size_t) window + 1, 0.0);
+    queueTime.assign ((size_t) window + 1, 0);
+    reset();
+}
+
+void Gate::reset() noexcept
+{
+    queueFront = queueSize = 0;
+    time = 0;
+    isOpen = false;
+    held = 0;
+    g = floor;
+}
+
+void Gate::process (double* x, int n) noexcept
+{
+    const int capacity = (int) queueValue.size();
+
+    for (int i = 0; i < n; ++i)
+    {
+        // Sliding max: drop smaller values from the back, the oldest from the front once it leaves the window.
+        const double v = std::abs (x[i]);
+
+        while (queueSize > 0 && queueValue[(size_t) ((queueFront + queueSize - 1) % capacity)] <= v)
+            --queueSize;
+
+        const int back = (queueFront + queueSize) % capacity;
+        queueValue[(size_t) back] = v;
+        queueTime[(size_t) back] = time;
+        ++queueSize;
+
+        if (time - queueTime[(size_t) queueFront] >= window)
+        {
+            queueFront = (queueFront + 1) % capacity;
+            --queueSize;
+        }
+
+        ++time;
+        const double level = queueValue[(size_t) queueFront];
+
+        if (level > openLevel)
+        {
+            isOpen = true;
+            held = 0;
+        }
+        else if (isOpen && level < closeLevel)
+        {
+            if (++held > hold)
+                isOpen = false;
+        }
+
+        const double target = isOpen ? 1.0 : floor;
+        g += (target > g ? attack : release) * (target - g);
+        gains[(size_t) i] = g;
+    }
+
+    if (! hasTarget)
+        for (int i = 0; i < n; ++i)
+            x[i] *= gains[(size_t) i];
+}
+
+//==============================================================================
+// Find y where f(y) = 0, for an f that always goes down as y goes up (solve_falling in blocks.py).
+// First walk away from y0 in bigger and bigger steps until f changes sign,
+// then close in with the "Illinois" method (a safer form of the secant method).
+template <typename Function>
+static double solveFalling (Function f, double y0, double tol = 1e-10, int maxSteps = 60) noexcept
+{
+    double a = y0, fa = f (y0);
+
+    if (fa == 0)
+        return a;
+
+    const double direction = fa > 0 ? 1.0 : -1.0;
+    double step = std::max (1e-4, 0.01 * std::abs (y0));
+    double b = a + direction * step, fb = f (b);
+
+    while ((fb > 0) == (fa > 0))
+    {
+        a = b;
+        fa = fb;
+        step *= 2;
+        b = a + direction * step;
+        fb = f (b);
+    }
+
+    double c = b;
+
+    for (int i = 0; i < maxSteps; ++i)
+    {
+        c = b - fb * (b - a) / (fb - fa);
+        const double fc = f (c);
+
+        if (std::abs (fc) < tol || std::abs (b - a) < tol)
+            break;
+
+        if ((fc > 0) != (fb > 0))
+        {
+            a = b;
+            fa = fb;
+        }
+        else
+        {
+            fa *= 0.5;  // the Illinois trick: stops one end from getting stuck
+        }
+
+        b = c;
+        fb = fc;
+    }
+
+    return c;
+}
+
+Feedback::Feedback (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "amount", "path", "chain", "oversample", "level_db" })
+{
+    amount = cfg.number ("amount", 0.3);
+
+    if (amount < 0)
+        throw PresetError ("feedback amount must be 0 or more (positive feedback is not supported yet)");
+
+    level = dbToGain (cfg.number ("level_db", 0.0));
+    path = makeFilters (cfg.list ("path"), ctx);
+    int i = 0;
+
+    for (auto& inner : cfg.list ("chain"))
+    {
+        Cfg innerCfg (inner, "feedback chain block " + juce::String (++i));
+        const auto kind = innerCfg.text ("type", {});
+
+        if (kind != "eq" && kind != "tonestack" && kind != "gain" && kind != "power")
+            throw PresetError ("feedback: '" + kind + "' blocks can not go inside a feedback loop. Use: eq, tonestack, gain, power");
+
+        if (innerCfg.has ("oversample"))
+            throw PresetError ("feedback: gain blocks inside the loop can not set 'oversample'. Set it on the feedback block");
+
+        if (kind == "eq")
+            blocks.push_back (std::make_unique<EqBlock> (innerCfg, ctx));
+        else if (kind == "tonestack")
+            blocks.push_back (std::make_unique<Tonestack> (innerCfg, ctx));
+        else if (kind == "gain")
+            blocks.push_back (std::make_unique<Gain> (innerCfg, ctx));
+        else
+            blocks.push_back (std::make_unique<Power> (innerCfg, ctx));
+    }
+}
+
+void Feedback::reset() noexcept
+{
+    path.reset();
+    y1 = y2 = 0.0;
+
+    for (auto& b : blocks)
+        b->reset();
+}
+
+std::vector<Block*> Feedback::children()
+{
+    std::vector<Block*> list;
+
+    for (auto& b : blocks)
+        list.push_back (b.get());
+
+    return list;
+}
+
+double Feedback::loopPeek (double xv, double y) const noexcept
+{
+    // What the chain puts out if the loop output is y.
+    double v = xv - amount * path.peek (y);
+
+    for (auto& b : blocks)
+        v = b->peek (v);
+
+    return v;
+}
+
+void Feedback::loopCommit (double xv, double y) noexcept
+{
+    double v = xv - amount * path.tick (y);
+
+    for (auto& b : blocks)
+        v = b->commit (v);
+}
+
+void Feedback::process (double* x, int n) noexcept
+{
+    // There is no delay in the loop: each output sample is found by solving the loop equation.
+    for (int i = 0; i < n; ++i)
+    {
+        for (auto& b : blocks)
+            b->beginSample (i);
+
+        const double xv = x[i];
+        const double y = solveFalling ([this, xv] (double yy) { return loopPeek (xv, yy) - yy; }, 2 * y1 - y2);
+        loopCommit (xv, y);
+        y2 = y1;
+        y1 = y;
+        x[i] = y * level;
+    }
+}
+
+//==============================================================================
+Split::Split (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "paths", "level_db" })
+{
+    const auto pathCfgs = cfg.list ("paths");
+
+    if (pathCfgs.isEmpty())
+        throw PresetError ("split: needs at least one path");
+
+    int i = 0;
+
+    for (auto& p : pathCfgs)
+    {
+        Cfg pathCfg (p, "split path " + juce::String (++i));
+        pathCfg.checkKeys ({ "chain", "level_db", "invert" });
+        Path path;
+        path.blocks = buildChain (pathCfg.list ("chain"), ctx);
+        path.gain = (pathCfg.flag ("invert", false) ? -1.0 : 1.0) * dbToGain (pathCfg.number ("level_db", 0.0));
+        paths.push_back (std::move (path));
+    }
+
+    level = dbToGain (cfg.number ("level_db", 0.0));
+}
+
+void Split::prepare (int maxSamples)
+{
+    sum.assign ((size_t) maxSamples, 0.0);
+
+    for (auto& p : paths)
+        p.buffer.assign ((size_t) maxSamples, 0.0);
+}
+
+void Split::process (double* x, int n) noexcept
+{
+    std::fill (sum.begin(), sum.begin() + n, 0.0);
+
+    for (auto& p : paths)
+    {
+        std::copy (x, x + n, p.buffer.begin());
+        runBlocks (p.blocks, p.buffer.data(), n);
+
+        for (int i = 0; i < n; ++i)
+            sum[(size_t) i] += p.gain * p.buffer[(size_t) i];
+    }
+
+    for (int i = 0; i < n; ++i)
+        x[i] = sum[(size_t) i] * level;
+}
+
+std::vector<Block*> Split::children()
+{
+    std::vector<Block*> list;
+
+    for (auto& p : paths)
+        for (auto& b : p.blocks)
+            list.push_back (b.get());
+
+    return list;
+}
+
+//==============================================================================
+std::vector<double> makeFakeCabIr()
+{
+    // Rough 4x12 shape: low thump, mid dip, presence bump, steep top cut (make_fake_ir).
+    const double rate = 48000.0;
+    FilterList bands;
+    bands.filters = {
+        Biquad::make ("highpass", 70, rate, 0.9, 0, rate),
+        Biquad::make ("peak", 110, rate, 1.2, 4, rate),
+        Biquad::make ("peak", 400, rate, 1.0, -2, rate),
+        Biquad::make ("peak", 1200, rate, 2.0, -3, rate),
+        Biquad::make ("peak", 2500, rate, 1.5, 3, rate),
+        Biquad::make ("lowpass", 5000, rate, 0.7, 0, rate),
+        Biquad::make ("lowpass", 6000, rate, 0.7, 0, rate),
+    };
+
+    std::vector<double> ir (2048, 0.0);
+    ir[0] = 1.0;
+
+    // run_filters runs each filter over the whole signal in turn.
+    for (auto& f : bands.filters)
+        for (auto& v : ir)
+            v = f.tick (v);
+
+    const size_t fade = ir.size() / 4;
+    const double step = juce::MathConstants<double>::pi / (double) (fade - 1);
+    double peak = 0.0;
+
+    for (size_t k = 0; k < fade; ++k)
+    {
+        const double angle = k + 1 == fade ? juce::MathConstants<double>::pi : (double) k * step;
+        ir[ir.size() - fade + k] *= 0.5 * (1 + std::cos (angle));
+    }
+
+    for (auto v : ir)
+        peak = std::max (peak, std::abs (v));
+
+    for (auto& v : ir)
+        v *= 0.9 / peak;
+
+    return ir;
+}
+
+juce::File findIrFile (const juce::String& path, const juce::File& presetFolder)
+{
+    if (juce::File::isAbsolutePath (path))
+        return juce::File (path).existsAsFile() ? juce::File (path) : juce::File();
+
+    juce::Array<juce::File> places;
+
+    if (presetFolder != juce::File())
+    {
+        places.add (presetFolder.getChildFile (path));
+        places.add (presetFolder.getParentDirectory().getChildFile (path));
+    }
+
+    places.add (juce::File::getCurrentWorkingDirectory().getChildFile (path));
+
+    for (auto& f : places)
+        if (f.existsAsFile())
+            return f;
+
+    return {};
+}
+
+IrBlock::IrBlock (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "file", "mix", "level_db" })
+{
+    if (! ctx.allowIr)
+        throw PresetError ("ir: in the plugin, a cab IR must come at the end of the chain (only eq and ir blocks "
+                           "can follow it, and it can not be inside a split or feedback block)");
+
+    if (! cfg.has ("file"))
+        throw PresetError ("ir: needs a 'file'");
+
+    mix = cfg.number ("mix", 1.0);
+    level = dbToGain (cfg.number ("level_db", 0.0));
+
+    const auto path = cfg.text ("file", {});
+    auto file = ctx.irOverride != juce::File() ? ctx.irOverride : findIrFile (path, ctx.presetFolder);
+    std::vector<double> ir;
+    double irRate = 48000.0;
+
+    if (file.existsAsFile())
+    {
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+
+        if (reader == nullptr || reader->lengthInSamples <= 0)
+            throw PresetError ("ir: can not read the file '" + file.getFullPathName() + "'");
+
+        juce::AudioBuffer<float> buffer ((int) reader->numChannels, (int) reader->lengthInSamples);
+        reader->read (&buffer, 0, buffer.getNumSamples(), 0, true, true);
+        irRate = reader->sampleRate;
+        ir.assign ((size_t) buffer.getNumSamples(), 0.0);
+
+        // The amp is mono: use the average of the IR's channels.
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            double sum = 0.0;
+
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                sum += (double) buffer.getSample (ch, i);
+
+            ir[(size_t) i] = sum / buffer.getNumChannels();
+        }
+
+        note = file.getFileName();
+    }
+    else
+    {
+        ir = makeFakeCabIr();
+        note = "'" + path + "' not found: using the built-in test cab";
+    }
+
+    if (irRate != ctx.rate)
+    {
+        // More samples per second means each sample must count less, or the cab gets louder.
+        ir = resampleFft (ir, irRate, ctx.rate);
+
+        for (auto& v : ir)
+            v *= irRate / ctx.rate;
+    }
+
+    convolver.load (ir);
+}
+
+void IrBlock::process (double* x, int n) noexcept
+{
+    for (int i = 0; i < n; ++i)
+        x[i] = ((1 - mix) * x[i] + mix * convolver.tick (x[i])) * level;
+}
+
+//==============================================================================
+Chain buildChain (const juce::Array<juce::var>& cfgs, const BuildContext& ctx)
+{
+    Chain blocks;
+    int i = 0;
+
+    for (auto& c : cfgs)
+    {
+        ++i;
+        Cfg cfg (c, "block " + juce::String (i));
+        const auto kind = cfg.text ("type", {});
+        std::unique_ptr<Block> block;
+
+        if (kind == "eq")             block = std::make_unique<EqBlock> (cfg, ctx);
+        else if (kind == "tonestack") block = std::make_unique<Tonestack> (cfg, ctx);
+        else if (kind == "gain")      block = std::make_unique<Gain> (cfg, ctx);
+        else if (kind == "power")     block = std::make_unique<Power> (cfg, ctx);
+        else if (kind == "sag")       block = std::make_unique<Sag> (cfg, ctx);
+        else if (kind == "feedback")  block = std::make_unique<Feedback> (cfg, ctx);
+        else if (kind == "split")     block = std::make_unique<Split> (cfg, ctx);
+        else if (kind == "gate")      block = std::make_unique<Gate> (cfg, ctx);
+        else if (kind == "ir")        block = std::make_unique<IrBlock> (cfg, ctx);
+        else
+            throw PresetError ("block " + juce::String (i) + ": unknown type '" + kind
+                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir");
+
+        blocks.push_back (std::move (block));
+    }
+
+    return blocks;
+}
+
+} // namespace amp

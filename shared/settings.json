@@ -95,7 +95,7 @@
       "chain": {
         "label": "Chain", "type": "block-list", "default": [],
         "short": "The blocks in this path. Empty = the untouched input.",
-        "tooltip": "Any blocks can go here, even another split, a feedback loop or a cab IR. Leave it empty to pass the input through untouched: useful for a clean blend under a distorted path."
+        "tooltip": "Any blocks can go here, even another split or a feedback loop. A cab IR can only go here in the Python version: the plugin runs the cab after the amp, at the normal sample rate, so it must be at the end of the main chain. Leave it empty to pass the input through untouched: useful for a clean blend under a distorted path."
       },
       "level_db": {
         "label": "Level", "type": "number", "unit": "dB", "min": -60, "max": 20, "default": 0,
@@ -541,7 +541,7 @@
     "ir": {
       "label": "Cab IR",
       "short": "Speaker cabinet sound from an impulse response (.wav) file.",
-      "tooltip": "An impulse response (IR) is a short recording that captures how a speaker cabinet and microphone change the sound. Loading one makes the amp sound like it is played through that cab. The cab removes the harsh top end of the distortion, so without an IR (or a strong low-pass) a distorted amp sounds buzzy. Put this block last. It adds no delay.",
+      "tooltip": "An impulse response (IR) is a short recording that captures how a speaker cabinet and microphone change the sound. Loading one makes the amp sound like it is played through that cab. The cab removes the harsh top end of the distortion, so without an IR (or a strong low-pass) a distorted amp sounds buzzy. Put this block last. It adds no delay. In the plugin, only eq and other ir blocks can come after it, and it can not be inside a split or feedback block (the plugin runs the cab at the normal sample rate, after the oversampled amp). If the file is not found, the plugin uses a built-in test cab and says so. The plugin's 'Load IR' button replaces the file of every ir block.",
       "settings": {
         "file": {
           "label": "IR file", "type": "file", "default": null,
@@ -558,6 +558,34 @@
           "short": "Volume after the cab.",
           "tooltip": "IR files have very different loudness. Use this to match the volume when switching between cabs, so you hear the tone difference and not the level difference."
         }
+      }
+    }
+  },
+
+  "plugin": {
+    "label": "Plugin",
+    "short": "Knobs of the plugin itself, around the amp.",
+    "tooltip": "These are not part of a preset. They are saved with your DAW project.",
+    "settings": {
+      "input_db": {
+        "label": "Input", "type": "number", "unit": "dB", "min": -24, "max": 24, "default": 0,
+        "short": "Level of your guitar before the amp.",
+        "tooltip": "The amp presets expect a guitar that peaks at about 0.5 (-6 dBFS) on hard strums, like a normal DI track. If your audio interface records your guitar quieter, turn this up until hard strums peak around -6 dBFS; if it is louder, turn it down. This changes how hard you hit the amp, so it changes the distortion, like a hotter or weaker pickup. Stereo input is mixed to mono (the average of both sides): if your guitar is only on one side of a stereo track, the amp gets it 6 dB quieter, so use a mono track or add +6 dB here."
+      },
+      "output_db": {
+        "label": "Output", "type": "number", "unit": "dB", "min": -36, "max": 12, "default": 0,
+        "short": "Volume after the amp and cab.",
+        "tooltip": "The plugin sets the volume of each preset automatically when it is loaded (a short test riff through the amp averages -20 dBFS), so presets come out about equally loud. Use this knob to set your own level on top. It does not change the tone."
+      },
+      "quality": {
+        "label": "Quality", "type": "choice", "default": "8x",
+        "choices": {
+          "2x": "Lowest CPU use. Some harsh 'aliasing' noise on high-gain sounds.",
+          "4x": "Good for most sounds.",
+          "8x": "Best: clean even with lots of distortion. Uses the most CPU."
+        },
+        "short": "How much higher than the session sample rate the amp runs (oversampling).",
+        "tooltip": "Clipping makes very high harmonics. At the normal sample rate, the ones above the top of the hearing range fold back down as harsh, out-of-tune noise ('aliasing'). So the amp runs at a higher rate inside: 8x means 384 kHz in a 48 kHz session. The value is for 44.1/48 kHz sessions; at 88.2/96 kHz the plugin uses half of it, at 176.4/192 kHz a quarter, so the amp always runs at about the same rate and sounds the same. The oversampling adds a small delay (a few samples), which the DAW makes up for automatically. Changing it reloads the amp."
       }
     }
   }

@@ -386,7 +386,8 @@ class IRLoader(Block):
         ir, ir_sr = read_wav(Path(cfg["file"]))
         ir = ir.mean(axis=1)
         if ir_sr != sr:
-            ir = resample_fft(ir, ir_sr, sr)
+            # More samples per second means each sample must count less, or the cab gets louder.
+            ir = resample_fft(ir, ir_sr, sr) * (ir_sr / sr)
         self.ir = ir
         self.mix = cfg.get("mix", 1.0)
         self.level = db_to_gain(cfg.get("level_db", 0.0))

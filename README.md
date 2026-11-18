@@ -16,10 +16,33 @@ A guitar amp built from a few simple blocks that you can put in any order:
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
-This is a Python prototype. It works on `.wav` files, not live audio.
-A real-time plugin will come later.
+There are two versions:
+- **The plugin** (`plugin/`, C++ with JUCE): a VST3 and a standalone app for live playing.
+- **The Python prototype** (`ampsim/`): works on `.wav` files. It is the reference the plugin is checked against.
 
-## Setup
+## Plugin
+
+Build it on Windows with Visual Studio (or the free Build Tools) and its "Desktop development with C++" part:
+
+```
+git submodule update --init
+build.bat
+```
+
+The plugin is `build\CustomAmp_artefacts\Release\VST3\Custom Amp.vst3` (copy it to
+`C:\Program Files\Common Files\VST3\`); the standalone app is next to it in `Standalone\`.
+
+- Pick a built-in preset, or **Open file...** to load your own `.json` preset. The plugin watches that file:
+  edit it in any text editor, save, and the amp reloads by itself. A mistake in the file is shown in the
+  status box, and the last working amp keeps playing.
+- **Load IR...** loads a cab `.wav`. Without one, the built-in presets use a simple built-in test cab.
+- **Input**: hard strums should peak around -6 dBFS. **Output**: your own level on top of the automatic one
+  (every preset is set to about the same loudness when it loads). **Quality**: oversampling, 8x is best.
+- Hover over anything for help. The amp adds 6 samples of delay at 8x (0.13 ms at 48 kHz).
+
+In the plugin, a cab IR must be at the end of the chain (only eq and ir blocks after it).
+
+## Python setup
 
 Needs Python 3.14 and NumPy (see `requirements.txt`).
 

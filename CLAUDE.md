@@ -3,9 +3,9 @@
 A guitar amp built from a few blocks (EQ, gain stage, sag, feedback, cab IR) that can go in any order,
 so it can copy any amp. The idea: every amp is EQ and clipping, plus power supply sag and a feedback loop.
 
-**Final product:** a C++ JUCE plugin (VST3 + standalone app) for live playing.
-**Now:** a Python prototype that processes `.wav` files offline, to get the sound design right first.
-The Python code will stay as the reference: the plugin must give the same output for the same preset.
+**Final product:** a C++ JUCE plugin (VST3 + standalone app) for live playing. It is in `plugin/` and works.
+**Also:** a Python prototype (`ampsim/`) that processes `.wav` files offline, to get the sound design right.
+The Python code stays the reference: the plugin must give the same output for the same preset.
 
 ## Commands
 
@@ -19,6 +19,18 @@ python tools/check_settings.py                                        # settings
 
 `.wav` files are not in git (`.gitignore`). `audio/` test files can always be made again.
 
+C++ (JUCE 9.0.5 as a git submodule in `libs/JUCE`, same commit as stream-bridge; Build Tools 18 is installed):
+
+```
+build.bat                                                   # plugin (VST3 + standalone) + test programs, into build/
+build.bat --target EngineTest                               # only one target
+build\PluginTest_artefacts\Release\PluginTest.exe           # plugin like a DAW: presets, file watching, state, editor
+python tools/cpp_check.py                                   # C++ engine vs Python, block math (needs EngineTest)
+build\EngineTest_artefacts\Release\EngineTest.exe render presets/crunch.json audio/test_di.wav out/c.wav   # + CPU time
+```
+
+Clone with `git submodule update --init` to get JUCE.
+
 ## Layout
 
 - `ampsim/blocks.py`: all blocks (`EQ`, `Gain`, `Sag`, `Feedback`, `IRLoader`) and the clipping curves
@@ -30,6 +42,10 @@ python tools/check_settings.py                                        # settings
 - `ampsim/wavio.py`: wav read/write
 - `presets/*.json`: one file = one amp
 - `shared/settings.json`: help text for every setting (see below)
+- `plugin/Source/dsp/`: the C++ engine, one file per Python module (`Blocks`, `Curves`, `Filters`, `Circuit`),
+  plus `Convolver` (cab IR) and `Engine` (`Amp` = linked blocks, `Engine` = oversampling + auto level)
+- `plugin/Source/PluginProcessor.*`, `PluginEditor.*`: the plugin; `plugin/tests/`: the two test programs
+- `CMakeLists.txt`, `build.bat`: like stream-bridge's
 
 ## How the blocks work (keep these rules in the C++ version too)
 
@@ -134,17 +150,53 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
-Idea for later: turn these into a real `tests/` folder.
+C++ checks:
+- `tools/cpp_check.py`, 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
+  -159 to -210 dB below the output peak (-159 = the feedback solver's 1e-10 tolerance); tail (cab IR) -137 dB
+  (the `float` FFT in the convolver).
+- Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
+  share within 0.2 points on every preset at 8x and 4x; low/mid/high balance of the riff within 1%.
+- CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 3-13% of one core (feedback presets ~10-13%). Build time
+  36-216 ms. Latency 6 samples at 8x (0.13 ms at 48 kHz), 4 samples at 2x.
+- Cab IR level: the 48 kHz test IR gives 1 kHz at 9.48 dB in 44.1/48/96 kHz sessions (before the
+  `ir_rate / rate` fix: 8.76 / 9.48 / 15.50 dB). C++ vs Python tail at 96 and 44.1 kHz: -143 / -137 dB.
+- `PluginTest`: all built-in presets come out at -20 +/- 0.3 dBFS; a typo in a watched preset file shows the error
+  and keeps the old amp playing; fixing the file reloads it; quality, saved state and the editor work.
 
-## Plan for the C++ plugin
+Idea for later: turn the Python checks into a real `tests/` folder.
 
-- JUCE, exact version pinned. Needs Visual Studio and CMake (not installed on this machine yet).
-- Latency target: ~0.2 ms for the amp itself. Oversample the WHOLE amp once (up at the input, down at
-  the end) with minimum-phase filters, instead of per gain stage like the Python version.
-  EQ, sag and feedback add no latency. Use zero-latency convolution for the IR.
-- Smooth parameter changes over a few ms (no zipper noise). Use `double` for filter state
-  (low frequencies at 8x sample rate are not precise enough in `float`).
-- Load `shared/settings.json` as JUCE BinaryData for tooltips and knob ranges.
+## The C++ plugin (keep these rules)
+
+- **Same math as Python.** Every C++ block is a line-by-line copy of the Python one (same formulas, same
+  order, same error messages). When a Python block changes, change the C++ one in the same commit and run
+  `tools/cpp_check.py`. NumPy's `arange` is copied exactly (`numpyArange`) so the tube tables match.
+- **Oversampling:** the plugin oversamples the WHOLE amp once (JUCE `Oversampling<double>`, polyphase IIR,
+  integer latency) instead of per gain stage. Blocks ignore their own `oversample` setting in the plugin.
+  The Quality knob (2x/4x/8x) is for 44.1/48 kHz; at 88.2/96 kHz it uses half, at 176.4/192 kHz a quarter,
+  so the amp always runs at about the same rate. All filter state is `double`.
+- **Core and tail:** `tailStart()` cuts the chain at the first `ir` of the run of `ir`/`eq` blocks at the end.
+  Everything before runs oversampled ("core"), the rest at the normal rate ("tail"). So in the plugin an `ir`
+  block must be at the end and not inside split/feedback (Python allows it anywhere); a gate's `apply_after`
+  can not name a tail block. These are plugin-only errors.
+- **Cab IR:** own zero-latency convolver (`Convolver`: first 128 taps direct, the rest FFT in 128-sample
+  blocks), NOT `juce::dsp::Convolution` (it loads on its own thread, so tests and the auto level would
+  not be repeatable). IR resampling copies `resample_fft` (Bluestein DFT for any length), then multiplies by
+  `ir_rate / rate` (both versions), so a cab is equally loud at every session rate. IR file paths:
+  absolute, next to the preset, one folder up, or the current folder; not found -> built-in fake 4x12
+  (`makeFakeCabIr`, same as `make_test_audio.py`) with a note in the status. "Load IR" replaces every ir file.
+- **Auto level:** after building, the engine plays a short fake riff (0.5 V peak) and sets its output so it
+  averages -20 dBFS, then resets. Amp-style presets put out tens of volts, so this is needed.
+- **Threads:** engines are built on a background thread (`Builder`), handed to the audio thread through
+  `pendingEngine`, and the old one comes back through `retiredEngine` to be deleted on the message thread.
+  Nothing is allocated or freed on the audio thread. A failed build keeps the old engine playing and shows the
+  error. `prepareToPlay` builds synchronously. A preset loaded from a file is reloaded when the file changes.
+- Input is the average of the input channels (mono amp), output goes to all channels. Non-finite output
+  resets the engine (should never happen).
+- `COMPANY_NAME "Kursat"` and `PLUGIN_MANUFACTURER_CODE Kurs` are the same as stream-bridge (Ableton groups
+  plugins by maker). Never change `PLUGIN_CODE Camp`: saved DAW projects find the plugin by it.
+- Plugin knobs (Input, Output, Quality) have their help text in the `plugin` section of `shared/settings.json`.
+- Not done yet: editing block settings in the plugin window (the chain is shown read-only, with tooltips),
+  parameter smoothing for block settings, a real amp UI.
 
 ## Release plan (not started; the user said "later")
 
@@ -171,10 +223,14 @@ Pushed to `github.com/kuzunlu/custom-amp` (branch `main`).
 Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values), power (push-pull EL34/6L6GC/EL84/6V6GT), sag, feedback, split, gate, ir; `tools/check_settings.py`;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
-Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
+C++ plugin: the engine (all blocks), VST3 + standalone, preset menu (built-in presets) + open/watch a preset
+file, Load IR, Input/Output/Quality, status box, read-only chain view with tooltips. Checked (see above).
+Not yet tried in a real DAW by the user.
+Next ideas: edit block settings in the plugin window (knobs for each setting, from settings.json ranges);
+compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
 their datasheets like the others); a real `tests/` folder; positive feedback; sag targets before the sag
-block; then the C++ plugin and the release (see above).
+block; the release (see above; option B is now possible).
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.
 The user often can not listen to the output, so report measured numbers, not only "it sounds right".
