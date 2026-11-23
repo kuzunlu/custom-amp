@@ -1,6 +1,7 @@
 #include "Curves.h"
 
 #include <map>
+#include <mutex>
 
 namespace amp
 {
@@ -94,6 +95,21 @@ Curve makeTriodeCurve (const juce::String& tube, double plateV, double plateOhms
     if (biasV >= 0)
         throw PresetError ("triode bias_v must be below 0 (the grid sits below the cathode), got " + juce::String (biasV));
 
+    // The table takes a few ms to work out, and the plugin rebuilds the amp on every edit, so keep the tables.
+    static std::mutex cacheLock;
+    static std::map<std::string, std::pair<Curve, TriodeInfo>> cache;
+    const auto key = juce::String::formatted ("%s %.17g %.17g %.17g", tube.toRawUTF8(), plateV, plateOhms, biasV).toStdString();
+
+    {
+        const std::lock_guard<std::mutex> lock (cacheLock);
+
+        if (auto hit = cache.find (key); hit != cache.end())
+        {
+            info = hit->second.second;
+            return hit->second.first;
+        }
+    }
+
     const auto& p = found->second;
     const double step = 0.01;
     const auto grid = numpyArange (biasV - 60.0, biasV + 30.0 + step, step);
@@ -118,6 +134,13 @@ Curve makeTriodeCurve (const juce::String& tube, double plateV, double plateOhms
     info.plateV = v0;
     info.plateMa = (plateV - v0) / plateOhms * 1000;
     info.gain = gain;
+
+    const std::lock_guard<std::mutex> lock (cacheLock);
+
+    if (cache.size() > 200)
+        cache.clear();  // only happens after a lot of different tube settings
+
+    cache[key] = { c, info };
     return c;
 }
 

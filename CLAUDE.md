@@ -161,7 +161,19 @@ C++ checks:
 - Cab IR level: the 48 kHz test IR gives 1 kHz at 9.48 dB in 44.1/48/96 kHz sessions (before the
   `ir_rate / rate` fix: 8.76 / 9.48 / 15.50 dB). C++ vs Python tail at 96 and 44.1 kHz: -143 / -137 dB.
 - `PluginTest`: all built-in presets come out at -20 +/- 0.3 dBFS; a typo in a watched preset file shows the error
-  and keeps the old amp playing; fixing the file reloads it; quality, saved state and the editor work.
+  and keeps the old amp playing; fixing the file reloads it; quality, saved state and the editor work; all 120
+  blocks/paths of the built-in presets open in the inspector; moving the treble slider changes the preset and
+  keeps the level; Save as writes the change. Undo: a drag of 6 slider moves is one step (fails with the merge
+  window at 0 ms), the selection and the slider come back, a preset load comes back with its level, a new edit
+  clears redo, undo to an old file version is marked edited. Copy/paste: duplicating the feedback loop gives
+  nfb_2/pi_2/pa_2 and still builds, paste = same block, cut + undo, paste with nothing selected goes at the end,
+  id rules (inner sag targets follow, outside targets stay, nfb_2 -> nfb_3, block/path mix-ups refused). The test
+  saves and restores the clipboard text.
+- Click test (two plugins, the same plucked note in real time, one gets an edit you can not hear): biggest
+  difference -57 dB below the peak. Without warm-up and fade: -0.8 dB (a full click); warm-up alone: -27 dB.
+  (A first version of this test, "biggest step between samples" under a steady note, passed even without
+  warm-up: always check that a test fails when the thing it tests is switched off.)
+- `PluginTest --snapshot <folder>` saves pictures of the window (used for the walkthrough page).
 
 Idea for later: turn the Python checks into a real `tests/` folder.
 
@@ -195,8 +207,34 @@ Idea for later: turn the Python checks into a real `tests/` folder.
 - `COMPANY_NAME "Kursat"` and `PLUGIN_MANUFACTURER_CODE Kurs` are the same as stream-bridge (Ableton groups
   plugins by maker). Never change `PLUGIN_CODE Camp`: saved DAW projects find the plugin by it.
 - Plugin knobs (Input, Output, Quality) have their help text in the `plugin` section of `shared/settings.json`.
-- Not done yet: editing block settings in the plugin window (the chain is shown read-only, with tooltips),
-  parameter smoothing for block settings, a real amp UI.
+- **Editing in the window:** click a block (or a split path) in the chain (`ChainView`); the `Inspector` shows
+  every setting of that block from `settings.json` (set ones bright, defaults dim, `x` = back to default), with
+  a control per type (number = slider with the doc's range and `scale: log`, choice, toggle, text, id list,
+  band list = one line per band, tone stack parts typed like `470p`/`33k`). Only the settings of the chosen
+  `curve` are shown; changing the curve removes the other curve's settings. Unknown keys (typos) are listed so
+  they can be removed. Buttons: up, down, remove, add after, add inside (feedback/path), add path.
+  The editor edits its parsed copy of the preset in place (`juce::var` arrays and objects are shared), then
+  sends it as text (`setEditedPreset`). Rebuilding the chain view or inspector is always done later
+  (`AsyncUpdater`): the click that asked for it may come from a component that the rebuild deletes.
+- **Edits keep the output level** (only a preset load, a new IR or the Level button measure it again), so you
+  hear what an edit does to the volume. In-window edits make the source `edited:...`: the file is no longer
+  watched until **Save as...** (`saveEditedPreset`), and Reload goes back to the saved version.
+- **Undo/redo** lives in the processor (survives closing the window; cleared when a DAW project loads): every
+  `setPresetText` (load, reload, file change, edit) pushes {source, text, level}; undo restores the level too.
+  Undoing to a `file:` step whose text is no longer the file makes it `edited:` (or the watcher would replace it).
+  The editor merges small edits (no inspector rebuild) to the same block within 0.8 s into one step (a slider
+  drag). After undo or a reload, the editor finds the selected list's place in the new preset (`findList` /
+  `followPath`) and keeps the selection if the block type there is the same.
+- **Copy/paste:** the system clipboard holds the block (or split path) as JSON text, so it works between plugin
+  instances and with text editors. Paste goes after the selection (no selection: end of the main chain), through
+  `makePastedItem`: a block only into a chain, a path only after a path; ids that are taken get a number
+  (`v2` -> `v2_2`, `v2_2` -> `v2_3`), and `targets`/`apply_after` inside the pasted item follow the new names
+  (references to blocks outside it stay). Keys: Ctrl+C/X/V/D, Delete (removes without copying).
+- **Swapping engines without a click:** the new engine is warmed up with the last 0.25 s of input (a history
+  ring the audio thread writes), keeps catching up on the builder thread until less than one block is missing,
+  the audio thread plays it the last few samples just before the swap, then old and new cross-fade over 30 ms.
+  Triode tables are cached (they took most of the build time).
+- Not done yet: a real amp-style UI (knobs on a faceplate).
 
 ## Release plan (not started; the user said "later")
 
@@ -224,10 +262,9 @@ Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_vo
 values), power (push-pull EL34/6L6GC/EL84/6V6GT), sag, feedback, split, gate, ir; `tools/check_settings.py`;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
 C++ plugin: the engine (all blocks), VST3 + standalone, preset menu (built-in presets) + open/watch a preset
-file, Load IR, Input/Output/Quality, status box, read-only chain view with tooltips. Checked (see above).
-Not yet tried in a real DAW by the user.
-Next ideas: edit block settings in the plugin window (knobs for each setting, from settings.json ranges);
-compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
+file, Load IR, Input/Output/Quality, status box, chain view + inspector to edit every setting and add/move/remove
+blocks, Save as, Level, undo/redo, copy/paste/duplicate, click-free engine swaps. Checked (see above). Not yet tried in a real DAW by the user.
+Next ideas: an amp-style UI; compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
 their datasheets like the others); a real `tests/` folder; positive feedback; sag targets before the sag
 block; the release (see above; option B is now possible).

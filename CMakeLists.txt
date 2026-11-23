@@ -63,6 +63,9 @@ juce_add_binary_data(CustomAmpData SOURCES ${PRESET_FILES} shared/settings.json)
 target_sources(CustomAmp
     PRIVATE
         ${ENGINE_SOURCES}
+        plugin/Source/ChainView.cpp
+        plugin/Source/Help.cpp
+        plugin/Source/Inspector.cpp
         plugin/Source/PluginEditor.cpp
         plugin/Source/PluginProcessor.cpp)
 
@@ -91,6 +94,9 @@ juce_add_console_app(PluginTest
 target_sources(PluginTest
     PRIVATE
         ${ENGINE_SOURCES}
+        plugin/Source/ChainView.cpp
+        plugin/Source/Help.cpp
+        plugin/Source/Inspector.cpp
         plugin/Source/PluginEditor.cpp
         plugin/Source/PluginProcessor.cpp
         plugin/tests/PluginTest.cpp)

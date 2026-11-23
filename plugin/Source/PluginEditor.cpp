@@ -1,246 +1,57 @@
 #include "PluginEditor.h"
 
-#include "BinaryData.h"
+#include "Theme.h"
 
 namespace
 {
-const juce::Colour background { 0xff1e2124 };
-const juce::Colour panel { 0xff2a2e33 };
-const juce::Colour headerColour { 0xffe0a040 };
-const juce::Colour chipColour { 0xff3a4047 };
 const int fileItemId = 1000;
-}
+const int editedItemId = 1001;
+const juce::uint32 mergeEditsMs = 800;  // small edits to the same block closer than this are one undo step
 
-//==============================================================================
-SettingsHelp::SettingsHelp()
+// Where a list sits in the preset, as property names and list places, so the same place can be found
+// in a new copy of the preset (after undo, or a file reload).
+bool findList (const juce::var& node, const juce::Array<juce::var>* target, juce::StringArray& path)
 {
-    doc = juce::JSON::parse (juce::String::fromUTF8 (BinaryData::settings_json, BinaryData::settings_jsonSize));
-}
+    if (node.getArray() == target)
+        return true;
 
-juce::String SettingsHelp::entryTip (const juce::var& entry)
-{
-    if (! entry.isObject())
-        return {};
-
-    juce::String tip = entry.getProperty ("label", "").toString();
-    const auto shortText = entry.getProperty ("short", "").toString();
-
-    if (shortText.isNotEmpty())
-        tip << ": " << shortText;
-
-    tip << "\n\n" << entry.getProperty ("tooltip", "").toString();
-
-    const auto unit = entry.getProperty ("unit", "").toString();
-    juce::StringArray facts;
-
-    if (entry.hasProperty ("min") && entry.hasProperty ("max"))
-        facts.add ("Range " + entry["min"].toString() + " to " + entry["max"].toString() + (unit.isNotEmpty() ? " " + unit : ""));
-
-    if (entry.hasProperty ("default") && ! entry["default"].isVoid() && ! entry["default"].isArray())
-        facts.add ("default " + entry["default"].toString());
-
-    if (! facts.isEmpty())
-        tip << "\n\n" << facts.joinIntoString (", ") << ".";
-
-    return tip.trim();
-}
-
-juce::String SettingsHelp::blockTip (const juce::String& type) const
-{
-    return entryTip (doc["blocks"][type.toRawUTF8()]);
-}
-
-juce::String SettingsHelp::settingTip (const juce::String& type, const juce::String& key) const
-{
-    auto entry = doc["blocks"][type.toRawUTF8()]["settings"][key.toRawUTF8()];
-
-    if (! entry.isObject())
-        entry = doc["common"]["settings"][key.toRawUTF8()];
-
-    return entryTip (entry);
-}
-
-juce::String SettingsHelp::sectionTip (const juce::String& section) const
-{
-    return entryTip (doc[section.toRawUTF8()]);
-}
-
-juce::String SettingsHelp::sectionSettingTip (const juce::String& section, const juce::String& key) const
-{
-    return entryTip (doc[section.toRawUTF8()]["settings"][key.toRawUTF8()]);
-}
-
-//==============================================================================
-static juce::String formatNumber (double v)
-{
-    if (v == std::floor (v) && std::abs (v) < 1e15)
-        return juce::String ((juce::int64) v);
-
-    return juce::String (v, 6).trimCharactersAtEnd ("0");
-}
-
-juce::String ChainView::formatValue (const juce::String& key, const juce::var& value)
-{
-    if (value.isArray())
+    if (auto* array = node.getArray())
     {
-        juce::StringArray parts;
-
-        for (auto& v : *value.getArray())
+        for (int i = 0; i < array->size(); ++i)
         {
-            if (v.isObject() && v.hasProperty ("kind"))  // a filter band
-            {
-                juce::String band = v["kind"].toString() + " " + formatNumber ((double) v["freq"]) + " Hz";
+            path.add (juce::String (i));
 
-                if (v.hasProperty ("gain_db"))
-                    band << " " << ((double) v["gain_db"] >= 0 ? "+" : "") << formatNumber ((double) v["gain_db"]) << " dB";
+            if (findList (array->getReference (i), target, path))
+                return true;
 
-                if (v.hasProperty ("q"))
-                    band << " q " << formatNumber ((double) v["q"]);
-
-                parts.add (band);
-            }
-            else
-            {
-                parts.add (v.toString());
-            }
-        }
-
-        return key + ": " + (parts.isEmpty() ? juce::String ("none") : parts.joinIntoString (", "));
-    }
-
-    if (auto* obj = value.getDynamicObject())  // tonestack parts
-    {
-        juce::StringArray parts;
-
-        for (auto& p : obj->getProperties())
-            parts.add (p.name.toString() + " " + formatNumber ((double) p.value));
-
-        return key + ": " + parts.joinIntoString (", ");
-    }
-
-    if (value.isBool())
-        return key + ": " + juce::String ((bool) value ? "true" : "false");
-
-    if (value.isDouble() || value.isInt() || value.isInt64())
-        return key + ": " + formatNumber ((double) value);
-
-    return key + ": " + value.toString();
-}
-
-void ChainView::addItem (const juce::String& text, const juce::String& tip, int indent, bool startsRow, bool isHeader)
-{
-    Item item;
-    item.label = std::make_unique<juce::Label> (juce::String(), text);
-    item.label->setTooltip (tip);
-    item.label->setFont (juce::FontOptions (isHeader ? 15.0f : 13.0f, isHeader ? juce::Font::bold : juce::Font::plain));
-    item.label->setColour (juce::Label::textColourId, isHeader ? headerColour : juce::Colours::white);
-    item.label->setColour (juce::Label::backgroundColourId, isHeader ? juce::Colours::transparentBlack : chipColour);
-    item.label->setBorderSize ({ 1, 6, 1, 6 });
-    item.indent = indent;
-    item.startsRow = startsRow;
-    item.isHeader = isHeader;
-    addAndMakeVisible (*item.label);
-    items.push_back (std::move (item));
-}
-
-void ChainView::addBlocks (const juce::Array<juce::var>& blocks, int indent)
-{
-    int number = 0;
-
-    for (auto& block : blocks)
-    {
-        ++number;
-        const auto type = block.getProperty ("type", "?").toString();
-        const auto id = block.getProperty ("id", "").toString();
-        addItem (juce::String (number) + ". " + type + (id.isNotEmpty() ? "  " + id : juce::String()),
-                 help.blockTip (type), indent, true, true);
-
-        auto* obj = block.getDynamicObject();
-
-        if (obj == nullptr)
-            continue;
-
-        for (auto& p : obj->getProperties())
-        {
-            const auto key = p.name.toString();
-
-            if (key == "type" || key == "id" || key == "chain" || key == "paths")
-                continue;
-
-            addItem (formatValue (key, p.value), help.settingTip (type, key), indent, false, false);
-        }
-
-        if (type == "feedback")
-            addBlocks (block["chain"].getArray() != nullptr ? *block["chain"].getArray() : juce::Array<juce::var>(), indent + 1);
-
-        if (type == "split" && block["paths"].isArray())
-        {
-            int pathNumber = 0;
-
-            for (auto& path : *block["paths"].getArray())
-            {
-                addItem ("path " + juce::String (++pathNumber), help.sectionTip ("split_path"), indent + 1, true, true);
-
-                for (auto* key : { "level_db", "invert" })
-                    if (path.hasProperty (key))
-                        addItem (formatValue (key, path[key]), help.sectionSettingTip ("split_path", key), indent + 1, false, false);
-
-                addBlocks (path["chain"].getArray() != nullptr ? *path["chain"].getArray() : juce::Array<juce::var>(), indent + 2);
-            }
+            path.remove (path.size() - 1);
         }
     }
-}
-
-void ChainView::setPreset (const juce::var& preset)
-{
-    items.clear();
-
-    if (! preset.isObject())
+    else if (auto* object = node.getDynamicObject())
     {
-        addItem ("The preset is not valid JSON.", {}, 0, true, true);
-        return;
+        for (auto& property : object->getProperties())
+        {
+            path.add (property.name.toString());
+
+            if (findList (property.value, target, path))
+                return true;
+
+            path.remove (path.size() - 1);
+        }
     }
 
-    if (auto notes = preset["notes"].toString(); notes.isNotEmpty())
-        addItem ("Notes (hover to read)", notes, 0, true, true);
-
-    if (preset["chain"].isArray())
-        addBlocks (*preset["chain"].getArray(), 0);
+    return false;
 }
 
-void ChainView::layout (int width)
+juce::var followPath (juce::var node, const juce::StringArray& path)
 {
-    const int rowHeight = 22, gap = 4, indentWidth = 24;
-    int x = 0, y = 0;
+    for (auto& step : path)
+        node = node.isArray() ? node[step.getIntValue()] : node.getProperty (juce::Identifier (step), {});
 
-    for (auto& item : items)
-    {
-        auto& label = *item.label;
-        const int left = item.indent * indentWidth;
-        const int textWidth = juce::GlyphArrangement::getStringWidthInt (label.getFont(), label.getText()) + 14;
-        const int w = juce::jmin (textWidth, width - left);
-
-        if (item.startsRow)
-        {
-            if (&item != &items.front())
-                y += rowHeight + gap + (item.isHeader ? 6 : 0);
-
-            x = left;
-        }
-        else if (x + w > width)  // wrap the settings onto the next line, a little further in
-        {
-            y += rowHeight + gap;
-            x = left + 16;
-        }
-
-        label.setBounds (x, y, w, rowHeight);
-        x += w + gap;
-    }
-
-    setSize (width, y + rowHeight + gap);
+    return node;
+}
 }
 
-//==============================================================================
 CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p),
@@ -261,7 +72,7 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
 
     addAndMakeVisible (openButton);
     openButton.setTooltip ("Open a preset .json file. The plugin watches the file: edit it in any text editor, "
-                           "save, and the amp reloads by itself.");
+                           "save, and the amp reloads by itself (until you change something in this window).");
     openButton.onClick = [this]
     {
         chooser = std::make_unique<juce::FileChooser> ("Open a preset", processor.getPresetFile(), "*.json");
@@ -274,8 +85,36 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     };
 
     addAndMakeVisible (reloadButton);
-    reloadButton.setTooltip ("Load the preset again (and its IR file).");
+    reloadButton.setTooltip ("Load the preset again from where it came from. Throws away changes made in this window.");
     reloadButton.onClick = [this] { processor.reloadPreset(); };
+
+    addAndMakeVisible (saveButton);
+    saveButton.setTooltip ("Save the preset, with your changes, as a .json file. The plugin then watches that file.");
+    saveButton.onClick = [this]
+    {
+        auto start = processor.getPresetFile();
+
+        if (start == juce::File())
+            start = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("my_amp.json");
+
+        chooser = std::make_unique<juce::FileChooser> ("Save the preset", start, "*.json");
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+                              [this] (const juce::FileChooser& fc)
+                              {
+                                  auto file = fc.getResult();
+
+                                  if (file == juce::File())
+                                      return;
+
+                                  if (! processor.saveEditedPreset (file.withFileExtension ("json")))
+                                      statusBox.setText ("Could not write " + file.getFullPathName());
+                                  else
+                                      sentText = processor.getPresetText();
+
+                                  refreshPresetBox();
+                              });
+    };
 
     addAndMakeVisible (irButton);
     irButton.setTooltip (help.blockTip ("ir"));
@@ -294,6 +133,12 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     clearIrButton.setTooltip ("Forget the loaded IR file: each ir block uses its own file again "
                               "(or the built-in test cab if that file is not found).");
     clearIrButton.onClick = [this] { processor.setIrFile ({}); };
+
+    addAndMakeVisible (levelButton);
+    levelButton.setTooltip ("Measure the output level again, so this amp comes out about as loud as the others "
+                            "(a short test riff averages -20 dBFS). Done by itself when a preset is loaded, "
+                            "but not while you edit, so you can hear what each change does to the volume.");
+    levelButton.onClick = [this] { processor.measureLevel(); };
 
     for (auto [knob, label, key] : { std::tuple { &inputKnob, &inputLabel, "input_db" },
                                      std::tuple { &outputKnob, &outputLabel, "output_db" } })
@@ -319,19 +164,66 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     statusBox.setMultiLine (true);
     statusBox.setReadOnly (true);
     statusBox.setScrollbarsShown (true);
-    statusBox.setColour (juce::TextEditor::backgroundColourId, panel);
+    statusBox.setColour (juce::TextEditor::backgroundColourId, theme::panel);
     addAndMakeVisible (statusBox);
 
-    chainLabel.setText ("Chain (hover over anything for help)", juce::dontSendNotification);
+    chainLabel.setText ("Chain: click a block to edit it, hover for help", juce::dontSendNotification);
     addAndMakeVisible (chainLabel);
+
+    addAndMakeVisible (addBlockButton);
+    addBlockButton.setTooltip ("Add a block at the end of the chain.");
+    addBlockButton.onClick = [this]
+    {
+        if (! preset.isObject())
+            return;
+
+        if (! preset["chain"].isArray())
+            if (auto* obj = preset.getDynamicObject())
+                obj->setProperty ("chain", juce::Array<juce::var>());
+
+        juce::PopupMenu menu;
+        const auto types = help.blockTypes();
+
+        for (int i = 0; i < types.size(); ++i)
+            menu.addItem (i + 1, types[i] + "  -  " + help.blockInfo (types[i])["short"].toString());
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&addBlockButton), [this, types] (int result)
+        {
+            if (result <= 0)
+                return;
+
+            auto chain = preset["chain"];
+            chain.getArray()->add (makeBlock (types[result - 1]));
+            presetEdited (true);
+            select ({ chain, chain.size() - 1, false });
+        });
+    };
+
+    addAndMakeVisible (undoButton);
+    undoButton.setTooltip ("Take back the last change (Ctrl+Z): an edit, a loaded preset or a reload. "
+                           "A loaded preset comes back with the level it had.");
+    undoButton.onClick = [this] { processor.undo(); refresh(); };
+
+    addAndMakeVisible (redoButton);
+    redoButton.setTooltip ("Do the change you took back again (Ctrl+Y or Ctrl+Shift+Z).");
+    redoButton.onClick = [this] { processor.redo(); refresh(); };
+
+    chainView.onSelect = [this] (const Selection& s) { select (s); };
     chainViewport.setViewedComponent (&chainView, false);
     chainViewport.setScrollBarsShown (true, false);
     addAndMakeVisible (chainViewport);
 
+    inspector.onChanged = [this] (bool rebuild) { presetEdited (rebuild); };
+    inspector.onSelect = [this] (const Selection& s) { select (s); };
+    inspectorViewport.setViewedComponent (&inspector, false);
+    inspectorViewport.setScrollBarsShown (true, false);
+    addAndMakeVisible (inspectorViewport);
+
     processor.addChangeListener (this);
+    setWantsKeyboardFocus (true);  // for Ctrl+Z (keys a text field does not use come here too)
     setResizable (true, true);
-    setResizeLimits (640, 420, 2000, 1600);
-    setSize (860, 640);
+    setResizeLimits (760, 480, 2400, 1600);
+    setSize (1120, 720);
     refresh();
 }
 
@@ -342,7 +234,51 @@ CustomAmpEditor::~CustomAmpEditor()
 
 void CustomAmpEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    refresh();
+    // Our own edits come back as the same text: then only the status changes.
+    if (processor.getPresetText() != sentText)
+        refresh();
+    else
+        refreshStatus();
+
+    refreshPresetBox();
+}
+
+void CustomAmpEditor::select (const Selection& s)
+{
+    selection = s;
+    needChainView = needInspector = true;
+    triggerAsyncUpdate();  // not now: the click that called this may come from a component that gets rebuilt
+}
+
+void CustomAmpEditor::presetEdited (bool rebuildInspector)
+{
+    // A slider drag sends many small changes: one undo step for all of them. Changes that rebuild the
+    // inspector (add, remove, a new curve) are always a step of their own.
+    const auto now = juce::Time::getMillisecondCounter();
+    const bool merge = ! rebuildInspector && lastEditWasSmall && selection == lastEditSelection
+                       && now - lastEditTime < mergeEditsMs;
+    lastEditSelection = selection;
+    lastEditTime = now;
+    lastEditWasSmall = ! rebuildInspector;
+
+    sentText = juce::JSON::toString (preset, true);
+    processor.setEditedPreset (sentText, merge);
+    needChainView = true;
+    needInspector = needInspector || rebuildInspector;
+    triggerAsyncUpdate();
+    refreshPresetBox();
+}
+
+void CustomAmpEditor::handleAsyncUpdate()
+{
+    if (needChainView)
+        chainView.setPreset (preset, selection);
+
+    if (needInspector)
+        inspector.show (selection, preset);
+
+    needChainView = needInspector = false;
+    layoutViews();
 }
 
 void CustomAmpEditor::refreshPresetBox()
@@ -351,24 +287,29 @@ void CustomAmpEditor::refreshPresetBox()
     const auto source = processor.getPresetSource();
     const auto file = processor.getPresetFile();
 
-    if (file != juce::File())
+    if (processor.isEdited())
+        presetBox.addItem ("Edited: " + preset.getProperty ("name", "preset").toString() + " (not saved)", editedItemId);
+    else if (file != juce::File())
         presetBox.addItem ("File: " + file.getFileName(), fileItemId);
 
     for (int i = 0; i < builtIns.size(); ++i)
         presetBox.addItem (builtIns[i].name, i + 1);
 
-    if (file != juce::File())
+    if (processor.isEdited())
+        presetBox.setSelectedId (editedItemId, juce::dontSendNotification);
+    else if (file != juce::File())
         presetBox.setSelectedId (fileItemId, juce::dontSendNotification);
 
     for (int i = 0; i < builtIns.size(); ++i)
         if (source == "builtin:" + builtIns[i].fileName)
             presetBox.setSelectedId (i + 1, juce::dontSendNotification);
+
+    undoButton.setEnabled (processor.canUndo());
+    redoButton.setEnabled (processor.canRedo());
 }
 
-void CustomAmpEditor::refresh()
+void CustomAmpEditor::refreshStatus()
 {
-    refreshPresetBox();
-
     auto status = processor.getStatus();
     juce::String text = status.text;
     const auto ir = processor.getIrFile();
@@ -376,17 +317,67 @@ void CustomAmpEditor::refresh()
     if (ir != juce::File())
         text << "\nIR file (replaces the preset's): " << ir.getFullPathName();
 
-    statusBox.setColour (juce::TextEditor::textColourId, status.isError ? juce::Colour (0xffff7070) : juce::Colours::white);
+    const auto colour = status.isError ? theme::error : juce::Colours::white;
+    statusBox.setColour (juce::TextEditor::textColourId, colour);
     statusBox.setText (text, false);
-    statusBox.applyColourToAllText (status.isError ? juce::Colour (0xffff7070) : juce::Colours::white);
+    statusBox.applyColourToAllText (colour);
+}
 
-    chainView.setPreset (processor.getPresetData());
-    chainView.layout (juce::jmax (100, chainViewport.getWidth() - chainViewport.getScrollBarThickness() - 4));
+void CustomAmpEditor::refresh()
+{
+    // A new preset from outside (menu, file, reload, undo, DAW). The same block stays selected if the new
+    // preset has a block of the same type in the same place.
+    juce::StringArray path;
+    const bool found = selection.isValid() && findList (preset, selection.list.getArray(), path);
+    const auto oldType = selection.item()["type"];
+
+    preset = processor.getPresetData();
+    sentText = processor.getPresetText();
+    const Selection kept { followPath (preset, path), selection.index, selection.isPath };
+    selection = found && kept.isValid() && kept.item()["type"] == oldType ? kept : Selection {};
+    lastEditTime = 0;
+    lastEditWasSmall = false;
+    refreshPresetBox();
+    refreshStatus();
+    chainView.setPreset (preset, selection);
+    inspector.show (selection, preset);
+    layoutViews();
 }
 
 void CustomAmpEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (background);
+    g.fillAll (theme::background);
+}
+
+bool CustomAmpEditor::keyPressed (const juce::KeyPress& key)
+{
+    const auto command = juce::ModifierKeys::commandModifier, shift = juce::ModifierKeys::shiftModifier;
+
+    // A text field that has the focus gets these keys first (Ctrl+C there copies its text).
+    if (key == juce::KeyPress ('z', command, 0))
+        undoButton.triggerClick();
+    else if (key == juce::KeyPress ('y', command, 0) || key == juce::KeyPress ('z', command | shift, 0))
+        redoButton.triggerClick();
+    else if (key == juce::KeyPress ('c', command, 0))
+        return inspector.copySelected();
+    else if (key == juce::KeyPress ('x', command, 0))
+        return inspector.cutSelected();
+    else if (key == juce::KeyPress ('v', command, 0))
+        return inspector.pasteAfterSelected();
+    else if (key == juce::KeyPress ('d', command, 0))
+        return inspector.duplicateSelected();
+    else if (key == juce::KeyPress (juce::KeyPress::deleteKey) && inspector.getSelection().isValid())
+        inspector.removeSelected();
+    else
+        return false;
+
+    return true;
+}
+
+void CustomAmpEditor::layoutViews()
+{
+    chainView.layout (juce::jmax (100, chainViewport.getWidth() - chainViewport.getScrollBarThickness() - 4));
+    inspector.layout (juce::jmax (100, inspectorViewport.getWidth() - inspectorViewport.getScrollBarThickness() - 8));
 }
 
 void CustomAmpEditor::resized()
@@ -394,13 +385,14 @@ void CustomAmpEditor::resized()
     auto area = getLocalBounds().reduced (10);
 
     auto top = area.removeFromTop (28);
-    presetBox.setBounds (top.removeFromLeft (juce::jmin (320, top.getWidth() / 2)));
+    presetBox.setBounds (top.removeFromLeft (juce::jmin (330, top.getWidth() / 3)));
     top.removeFromLeft (8);
+    const int buttonWidth = juce::jmin (96, (top.getWidth() - 30) / 6);
 
-    for (auto* b : { &openButton, &reloadButton, &irButton, &clearIrButton })
+    for (auto* b : { &openButton, &reloadButton, &saveButton, &irButton, &clearIrButton, &levelButton })
     {
-        b->setBounds (top.removeFromLeft (juce::jmin (100, (top.getWidth() - 12) / 4)));
-        top.removeFromLeft (4);
+        b->setBounds (top.removeFromLeft (buttonWidth));
+        top.removeFromLeft (5);
     }
 
     area.removeFromTop (8);
@@ -414,7 +406,7 @@ void CustomAmpEditor::resized()
         knob->setBounds (column);
     }
 
-    auto qualityColumn = knobArea.removeFromLeft (90).withTrimmedTop (0);
+    auto qualityColumn = knobArea.removeFromLeft (90);
     qualityLabel.setBounds (qualityColumn.removeFromTop (18));
     qualityBox.setBounds (qualityColumn.removeFromTop (26).reduced (4, 0));
 
@@ -422,7 +414,18 @@ void CustomAmpEditor::resized()
     statusBox.setBounds (controls);
 
     area.removeFromTop (8);
-    chainLabel.setBounds (area.removeFromTop (20));
-    chainViewport.setBounds (area);
-    chainView.layout (juce::jmax (100, chainViewport.getWidth() - chainViewport.getScrollBarThickness() - 4));
+    auto header = area.removeFromTop (26);
+    addBlockButton.setBounds (header.removeFromRight (110));
+    header.removeFromRight (5);
+    redoButton.setBounds (header.removeFromRight (60));
+    header.removeFromRight (5);
+    undoButton.setBounds (header.removeFromRight (60));
+    chainLabel.setBounds (header);
+    area.removeFromTop (4);
+
+    auto left = area.removeFromLeft (area.getWidth() * 55 / 100);
+    chainViewport.setBounds (left);
+    area.removeFromLeft (12);
+    inspectorViewport.setBounds (area);
+    layoutViews();
 }

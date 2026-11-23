@@ -51,6 +51,7 @@ public:
         int maxBlock = 512;
         int factorLog2 = 3;  // 3 = 8x
         bool autoLevel = true;
+        double fixedLevel = 0.0;  // above 0: use this output gain instead of measuring one
     };
 
     explicit Engine (const Options& options);  // throws PresetError
@@ -64,6 +65,7 @@ public:
 
     Amp amp;
     double makeup = 1.0;
+    int heardUpTo = -1;  // for the plugin: where in its input history this engine's warm-up stopped
 
 private:
     double rate;

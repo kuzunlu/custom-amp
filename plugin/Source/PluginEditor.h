@@ -2,51 +2,14 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include "ChainView.h"
+#include "Help.h"
+#include "Inspector.h"
 #include "PluginProcessor.h"
 
-// Help text for every setting, from shared/settings.json (built into the plugin).
-class SettingsHelp
-{
-public:
-    SettingsHelp();
-
-    juce::String blockTip (const juce::String& type) const;
-    juce::String settingTip (const juce::String& type, const juce::String& key) const;
-    juce::String sectionTip (const juce::String& section) const;                 // "split_path", "band", ...
-    juce::String sectionSettingTip (const juce::String& section, const juce::String& key) const;
-
-private:
-    static juce::String entryTip (const juce::var& entry);
-    juce::var doc;
-};
-
-// The blocks of the preset, one row each, with every setting that is set. Hover for help.
-class ChainView final : public juce::Component
-{
-public:
-    explicit ChainView (const SettingsHelp& h) : help (h) {}
-
-    void setPreset (const juce::var& preset);
-    void layout (int width);  // sets its own height to fit
-
-private:
-    struct Item
-    {
-        std::unique_ptr<juce::Label> label;
-        int indent = 0;
-        bool startsRow = false, isHeader = false;
-    };
-
-    void addBlocks (const juce::Array<juce::var>& blocks, int indent);
-    void addItem (const juce::String& text, const juce::String& tip, int indent, bool startsRow, bool isHeader);
-    static juce::String formatValue (const juce::String& key, const juce::var& value);
-
-    const SettingsHelp& help;
-    std::vector<Item> items;
-};
-
 class CustomAmpEditor final : public juce::AudioProcessorEditor,
-                              private juce::ChangeListener
+                              private juce::ChangeListener,
+                              private juce::AsyncUpdater
 {
 public:
     explicit CustomAmpEditor (CustomAmpProcessor&);
@@ -54,25 +17,48 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress& key) override;
+
+    // Selects a block (or split path) for the inspector. Also used by the test program.
+    void select (const Selection& selection);
+    const Selection& getSelection() const { return selection; }
+    juce::var getEditedPreset() const { return preset; }
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void handleAsyncUpdate() override;
     void refresh();
     void refreshPresetBox();
+    void refreshStatus();
+    void layoutViews();
+    void presetEdited (bool rebuildInspector);
 
     CustomAmpProcessor& processor;
     SettingsHelp help;
     juce::TooltipWindow tooltips { this, 400 };
 
+    // The preset being shown and edited. Edits change it in place, then it is sent to the processor as text.
+    juce::var preset;
+    juce::String sentText;
+    Selection selection;
+    bool needChainView = false, needInspector = false;
+
+    // The last edit, to make quick small changes to the same block (a slider drag) one undo step.
+    Selection lastEditSelection;
+    juce::uint32 lastEditTime = 0;
+    bool lastEditWasSmall = false;
+
     juce::ComboBox presetBox;
-    juce::TextButton openButton { "Open file..." }, reloadButton { "Reload" };
-    juce::TextButton irButton { "Load IR..." }, clearIrButton { "Built-in IR" };
+    juce::TextButton openButton { "Open..." }, reloadButton { "Reload" }, saveButton { "Save as..." };
+    juce::TextButton irButton { "Load IR..." }, clearIrButton { "Built-in IR" }, levelButton { "Level" };
     juce::Slider inputKnob, outputKnob;
     juce::Label inputLabel, outputLabel, qualityLabel, chainLabel;
     juce::ComboBox qualityBox;
     juce::TextEditor statusBox;
-    juce::Viewport chainViewport;
+    juce::TextButton addBlockButton { "Add block..." }, undoButton { "Undo" }, redoButton { "Redo" };
+    juce::Viewport chainViewport, inspectorViewport;
     ChainView chainView { help };
+    Inspector inspector { help };
 
     juce::AudioProcessorValueTreeState::SliderAttachment inputAttachment, outputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> qualityAttachment;  // made after the items exist

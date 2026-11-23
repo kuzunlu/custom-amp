@@ -32,9 +32,18 @@ build.bat
 The plugin is `build\CustomAmp_artefacts\Release\VST3\Custom Amp.vst3` (copy it to
 `C:\Program Files\Common Files\VST3\`); the standalone app is next to it in `Standalone\`.
 
-- Pick a built-in preset, or **Open file...** to load your own `.json` preset. The plugin watches that file:
+- Pick a built-in preset, or **Open...** to load your own `.json` preset. The plugin watches that file:
   edit it in any text editor, save, and the amp reloads by itself. A mistake in the file is shown in the
   status box, and the last working amp keeps playing.
+- **Edit in the window:** click a block in the chain. The panel on the right shows all its settings; change
+  them with the sliders and menus and you hear it right away. Add, move and remove blocks with its buttons
+  (or **Add block...**). **Save as...** writes your amp to a `.json` file. While you edit, the volume is not
+  corrected; press **Level** to make the amp as loud as the others again.
+- **Undo** / **Redo** (Ctrl+Z, Ctrl+Y) take back any change: an edit (a whole slider drag is one step), a
+  loaded preset (it comes back with its level) or a reload.
+- **Copy**, **Paste after** and **Duplicate** (Ctrl+C, Ctrl+V, Ctrl+D; Ctrl+X cuts, Delete removes) work on the
+  selected block with everything inside it. The copy is JSON text, so you can paste it into another plugin or a
+  preset file. Ids that are already used get a number (`v2` becomes `v2_2`).
 - **Load IR...** loads a cab `.wav`. Without one, the built-in presets use a simple built-in test cab.
 - **Input**: hard strums should peak around -6 dBFS. **Output**: your own level on top of the automatic one
   (every preset is set to about the same loudness when it loads). **Quality**: oversampling, 8x is best.

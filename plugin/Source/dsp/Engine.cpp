@@ -226,7 +226,11 @@ Engine::Engine (const Options& options)
     oversampling.initProcessing ((size_t) blockSize);
     amp.prepare (blockSize, blockSize << factorLog2);
 
-    if (options.autoLevel)
+    if (options.fixedLevel > 0.0)
+    {
+        makeup = options.fixedLevel;
+    }
+    else if (options.autoLevel)
     {
         // Play a short riff through the amp, then set the output so it averages -20 dBFS.
         auto riff = makeLevelRiff (rate);

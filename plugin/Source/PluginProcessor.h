@@ -47,8 +47,22 @@ public:
     void reloadPreset();
     void setIrFile (const juce::File& file);  // juce::File() = use the preset's own IR
 
+    // An edit made in the plugin window. Keeps the output level, so you hear what the edit does.
+    // mergeWithLast = part of the last undo step (a slider being dragged), not a new one.
+    void setEditedPreset (const juce::String& text, bool mergeWithLast = false);
+    bool saveEditedPreset (const juce::File& file);
+    void measureLevel();
+
+    // Every preset change (load, reload, file change, edit) can be undone, with the level it had.
+    void undo();
+    void redo();
+    bool canUndo() const                   { return ! undoSteps.empty(); }
+    bool canRedo() const                   { return ! redoSteps.empty(); }
+
     juce::String getPresetSource() const   { return presetSource; }
-    juce::File getPresetFile() const;
+    juce::String getPresetText() const     { return presetText; }
+    bool isEdited() const                  { return presetSource.startsWith ("edited:"); }
+    juce::File getPresetFile() const;      // the file the preset came from (also when edited since)
     juce::File getIrFile() const           { return irFile; }
     juce::var getPresetData() const;       // the preset as parsed JSON (empty if it does not parse)
 
@@ -68,6 +82,8 @@ private:
         juce::File presetFolder, irFile;
         double sampleRate = 48000.0;
         int maxBlock = 512, factorLog2 = 3, generation = 0;
+        double fixedLevel = 0.0;  // 0 = measure the level
+        bool warmUp = false;      // play the last bit of input through it first
     };
 
     // Builds engines on its own thread, so the sound keeps going while a new preset is loaded.
@@ -86,12 +102,20 @@ private:
     };
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    static std::unique_ptr<amp::Engine> buildEngine (const BuildRequest& r, juce::String& message);
+    std::unique_ptr<amp::Engine> buildEngine (const BuildRequest& r, juce::String& message) const;
 
-    BuildRequest makeRequest();
-    void requestBuild();
+    BuildRequest makeRequest (bool measure);
+    void requestBuild (bool measure);
     void engineBuilt (std::unique_ptr<amp::Engine> built, const BuildRequest& r, const juce::String& message);
-    void setPresetText (const juce::String& source, const juce::String& text);
+    struct Step
+    {
+        juce::String source, text;
+        double level = 0.0;
+    };
+
+    void setPresetText (const juce::String& source, const juce::String& text, bool measure, bool newStep = true);
+    void restore (const Step& step);
+    void readPresetFile (const juce::File& file, bool measure);
     int factorLog2ForRate (double rate) const;
     void timerCallback() override;
 
@@ -99,22 +123,30 @@ private:
     std::atomic<float>* outputParam = nullptr;
     std::atomic<float>* qualityParam = nullptr;
 
-    // The engine belongs to the audio thread. A new one arrives in `pendingEngine`; the old one is
-    // handed back in `retiredEngine` and deleted on the message thread (never free memory on the audio thread).
-    std::unique_ptr<amp::Engine> engine;
+    // The engine belongs to the audio thread. A new one arrives in `pendingEngine`; the old one fades out
+    // in `fadingEngine`, then goes back through `retiredEngine` and is deleted on the message thread
+    // (never free memory on the audio thread).
+    std::unique_ptr<amp::Engine> engine, fadingEngine;
     std::atomic<amp::Engine*> pendingEngine { nullptr }, retiredEngine { nullptr };
+    int fadePos = 0, fadeLength = 1;
     juce::CriticalSection postLock;
     int latestGeneration = 0;
 
-    std::vector<double> mono;
+    // The last moments of input, so a new engine can be warmed up with it before it takes over.
+    std::vector<std::atomic<float>> history = std::vector<std::atomic<float>> (1 << 15);
+    std::atomic<int> historyWrite { 0 };
+
+    std::vector<double> mono, monoOld;
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> inputGain { 1.0 }, outputGain { 1.0 };
     double currentRate = 0.0;
     int currentBlock = 512;
 
-    juce::String presetSource, presetText;  // source: "builtin:<file name>" or "file:<full path>"
+    juce::String presetSource, presetText;  // source: "builtin:<file>", "file:<path>", or "edited:" + one of those
     juce::File irFile;
     juce::Time presetFileTime;
     int builtQuality = -1;
+    std::atomic<double> currentLevel { 0.0 };
+    std::vector<Step> undoSteps, redoSteps;
 
     mutable juce::CriticalSection statusLock;
     Status status;

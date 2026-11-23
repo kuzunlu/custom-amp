@@ -4,6 +4,9 @@
 #include "PluginEditor.h"
 
 static const juce::String defaultPreset = "brit_800.json";
+static constexpr double fadeSeconds = 0.03;    // old and new engine cross-fade this long
+static constexpr double warmUpSeconds = 0.25;  // a new engine hears this much of the recent input first
+static constexpr size_t maxUndoSteps = 200;
 
 CustomAmpProcessor::CustomAmpProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
@@ -94,11 +97,64 @@ juce::Array<CustomAmpProcessor::BuiltInPreset> CustomAmpProcessor::getBuiltInPre
     return list;
 }
 
-void CustomAmpProcessor::setPresetText (const juce::String& source, const juce::String& text)
+void CustomAmpProcessor::setPresetText (const juce::String& source, const juce::String& text, bool measure, bool newStep)
 {
+    if (newStep && presetText.isNotEmpty() && (source != presetSource || text != presetText))
+    {
+        undoSteps.push_back ({ presetSource, presetText, currentLevel.load() });
+
+        if (undoSteps.size() > maxUndoSteps)
+            undoSteps.erase (undoSteps.begin());
+    }
+
+    redoSteps.clear();
     presetSource = source;
     presetText = text;
-    requestBuild();
+    requestBuild (measure);
+}
+
+void CustomAmpProcessor::undo()
+{
+    if (undoSteps.empty())
+        return;
+
+    redoSteps.push_back ({ presetSource, presetText, currentLevel.load() });
+    const auto step = undoSteps.back();
+    undoSteps.pop_back();
+    restore (step);
+}
+
+void CustomAmpProcessor::redo()
+{
+    if (redoSteps.empty())
+        return;
+
+    undoSteps.push_back ({ presetSource, presetText, currentLevel.load() });
+    const auto step = redoSteps.back();
+    redoSteps.pop_back();
+    restore (step);
+}
+
+void CustomAmpProcessor::restore (const Step& step)
+{
+    presetSource = step.source;
+    presetText = step.text;
+
+    // A file that says something else by now: this text is no longer the file, so it counts as edited
+    // (otherwise the file watcher would replace it). If it still is the file, the watcher starts from now.
+    if (auto file = getPresetFile(); ! isEdited() && file != juce::File())
+    {
+        if (file.loadFileAsString() == step.text)
+            presetFileTime = file.getLastModificationTime();
+        else
+            presetSource = "edited:" + presetSource;
+    }
+
+    if (step.level > 0.0)
+        currentLevel = step.level;  // the level it had then
+
+    requestBuild (step.level <= 0.0);
+    statusChanged = true;
 }
 
 void CustomAmpProcessor::loadBuiltInPreset (const juce::String& fileName)
@@ -110,37 +166,69 @@ void CustomAmpProcessor::loadBuiltInPreset (const juce::String& fileName)
 
         int size = 0;
         const char* data = BinaryData::getNamedResource (BinaryData::namedResourceList[i], size);
-        setPresetText ("builtin:" + fileName, juce::String::fromUTF8 (data, size));
+        setPresetText ("builtin:" + fileName, juce::String::fromUTF8 (data, size), true);
         return;
     }
 }
 
 juce::File CustomAmpProcessor::getPresetFile() const
 {
-    return presetSource.startsWith ("file:") ? juce::File (presetSource.fromFirstOccurrenceOf ("file:", false, false))
-                                             : juce::File();
+    const auto source = isEdited() ? presetSource.fromFirstOccurrenceOf ("edited:", false, false) : presetSource;
+    return source.startsWith ("file:") ? juce::File (source.fromFirstOccurrenceOf ("file:", false, false)) : juce::File();
+}
+
+void CustomAmpProcessor::readPresetFile (const juce::File& file, bool measure)
+{
+    presetFileTime = file.getLastModificationTime();
+    setPresetText ("file:" + file.getFullPathName(), file.loadFileAsString(), measure);
 }
 
 void CustomAmpProcessor::loadPresetFile (const juce::File& file)
 {
-    presetFileTime = file.getLastModificationTime();
-    setPresetText ("file:" + file.getFullPathName(), file.loadFileAsString());
+    readPresetFile (file, true);
 }
 
 void CustomAmpProcessor::reloadPreset()
 {
+    const auto source = isEdited() ? presetSource.fromFirstOccurrenceOf ("edited:", false, false) : presetSource;
+
     if (getPresetFile().existsAsFile())
         loadPresetFile (getPresetFile());
-    else if (presetSource.startsWith ("builtin:"))
-        loadBuiltInPreset (presetSource.fromFirstOccurrenceOf ("builtin:", false, false));
+    else if (source.startsWith ("builtin:"))
+        loadBuiltInPreset (source.fromFirstOccurrenceOf ("builtin:", false, false));
     else
-        requestBuild();
+        requestBuild (true);
 }
 
 void CustomAmpProcessor::setIrFile (const juce::File& file)
 {
     irFile = file;
-    requestBuild();
+    requestBuild (true);  // cabs differ a lot in loudness
+}
+
+void CustomAmpProcessor::setEditedPreset (const juce::String& text, bool mergeWithLast)
+{
+    setPresetText (isEdited() ? presetSource : "edited:" + presetSource, text, false, ! mergeWithLast);
+}
+
+bool CustomAmpProcessor::saveEditedPreset (const juce::File& file)
+{
+    auto data = getPresetData();
+    const auto text = data.isObject() ? juce::JSON::toString (data) : presetText;
+
+    if (! file.replaceWithText (text + "\n"))
+        return false;
+
+    presetFileTime = file.getLastModificationTime();
+    presetSource = "file:" + file.getFullPathName();
+    presetText = text;
+    statusChanged = true;
+    return true;
+}
+
+void CustomAmpProcessor::measureLevel()
+{
+    requestBuild (true);
 }
 
 juce::var CustomAmpProcessor::getPresetData() const
@@ -156,7 +244,7 @@ CustomAmpProcessor::Status CustomAmpProcessor::getStatus() const
 }
 
 //==============================================================================
-CustomAmpProcessor::BuildRequest CustomAmpProcessor::makeRequest()
+CustomAmpProcessor::BuildRequest CustomAmpProcessor::makeRequest (bool measure)
 {
     BuildRequest r;
     r.presetText = presetText;
@@ -165,22 +253,24 @@ CustomAmpProcessor::BuildRequest CustomAmpProcessor::makeRequest()
     r.sampleRate = currentRate;
     r.maxBlock = currentBlock;
     r.factorLog2 = factorLog2ForRate (currentRate);
+    r.fixedLevel = measure ? 0.0 : currentLevel.load();
     builtQuality = (int) qualityParam->load();
     return r;
 }
 
-void CustomAmpProcessor::requestBuild()
+void CustomAmpProcessor::requestBuild (bool measure)
 {
     if (currentRate <= 0.0)
         return;  // prepareToPlay builds the first engine
 
     const juce::ScopedLock sl (postLock);
-    auto r = makeRequest();
+    auto r = makeRequest (measure);
     r.generation = ++latestGeneration;
+    r.warmUp = true;
     builder.request (r);
 }
 
-std::unique_ptr<amp::Engine> CustomAmpProcessor::buildEngine (const BuildRequest& r, juce::String& message)
+std::unique_ptr<amp::Engine> CustomAmpProcessor::buildEngine (const BuildRequest& r, juce::String& message) const
 {
     try
     {
@@ -197,13 +287,47 @@ std::unique_ptr<amp::Engine> CustomAmpProcessor::buildEngine (const BuildRequest
         options.sampleRate = r.sampleRate;
         options.maxBlock = r.maxBlock;
         options.factorLog2 = r.factorLog2;
+        options.fixedLevel = r.fixedLevel;
         auto built = std::make_unique<amp::Engine> (options);
+
+        if (r.warmUp)
+        {
+            // Play the last moments of input through it, so its filters and tubes are already in the right
+            // state when it takes over. The input keeps coming meanwhile, so catch up until less than one
+            // block is missing; the audio thread plays it that last bit just before the swap.
+            const int size = (int) history.size();
+            int from = historyWrite.load() - juce::jmin (size / 2, (int) (warmUpSeconds * r.sampleRate));
+            std::vector<double> chunk ((size_t) r.maxBlock);
+
+            for (int round = 0; round < 8; ++round)
+            {
+                const int to = historyWrite.load();
+                int count = (to - from + 2 * size) % size;
+
+                if (round > 0 && count <= r.maxBlock)
+                    break;
+
+                for (; count > 0; count -= r.maxBlock)
+                {
+                    const int n = juce::jmin (r.maxBlock, count);
+
+                    for (int i = 0; i < n; ++i)
+                        chunk[(size_t) i] = history[(size_t) ((from + i + 2 * size) % size)].load (std::memory_order_relaxed);
+
+                    built->process (chunk.data(), n);
+                    from = (from + n + size) % size;
+                }
+            }
+
+            built->heardUpTo = (from + size) % size;
+        }
 
         juce::StringArray lines;
         lines.add (built->amp.name.isNotEmpty() ? built->amp.name : juce::String ("(no name)"));
         lines.add ("Runs at " + juce::String (built->coreRate() / 1000.0, 1) + " kHz, latency "
                    + juce::String (built->latencySamples()) + " samples ("
-                   + juce::String (1000.0 * built->latencySamples() / r.sampleRate, 2) + " ms), auto level "
+                   + juce::String (1000.0 * built->latencySamples() / r.sampleRate, 2) + " ms), "
+                   + (r.fixedLevel > 0.0 ? "level kept at " : "auto level ")
                    + juce::String (juce::Decibels::gainToDecibels (built->makeup), 1) + " dB");
         lines.addArray (built->amp.report);
         message = lines.joinIntoString ("\n");
@@ -229,6 +353,7 @@ void CustomAmpProcessor::engineBuilt (std::unique_ptr<amp::Engine> built, const 
         if (built != nullptr)
         {
             newLatency = built->latencySamples();
+            currentLevel = built->makeup;
             delete pendingEngine.exchange (built.release());  // an engine the audio thread never took
         }
     }
@@ -264,7 +389,7 @@ void CustomAmpProcessor::Builder::run()
             continue;
 
         juce::String message;
-        auto built = buildEngine (*r, message);
+        auto built = owner.buildEngine (*r, message);
         owner.engineBuilt (std::move (built), *r, message);
     }
 }
@@ -280,13 +405,17 @@ void CustomAmpProcessor::timerCallback()
         sendChangeMessage();
 
     if ((int) qualityParam->load() != builtQuality)
-        requestBuild();
+        requestBuild (false);
 
     // A preset loaded from a file is loaded again when the file changes (edit it in any text editor).
+    // This counts as an edit: the level is kept. Not after edits in the plugin window, which would be lost.
     auto file = getPresetFile();
 
-    if (file.existsAsFile() && file.getLastModificationTime() != presetFileTime)
-        loadPresetFile (file);
+    if (! isEdited() && file.existsAsFile() && file.getLastModificationTime() != presetFileTime)
+    {
+        readPresetFile (file, false);
+        statusChanged = true;
+    }
 }
 
 //==============================================================================
@@ -296,18 +425,24 @@ void CustomAmpProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     ++latestGeneration;  // engines still being built for the old settings are thrown away
     delete pendingEngine.exchange (nullptr);
     delete retiredEngine.exchange (nullptr);
+    fadingEngine.reset();
 
     currentRate = sampleRate;
     currentBlock = juce::jmax (32, samplesPerBlock);
     mono.assign ((size_t) currentBlock, 0.0);
+    monoOld.assign ((size_t) currentBlock, 0.0);
+    fadeLength = juce::jmax (1, (int) (fadeSeconds * sampleRate));
     inputGain.reset (sampleRate, 0.02);
     outputGain.reset (sampleRate, 0.02);
 
     juce::String message;
-    engine = buildEngine (makeRequest(), message);
+    engine = buildEngine (makeRequest (currentLevel.load() <= 0.0), message);
 
     if (engine != nullptr)
+    {
         setLatencySamples (engine->latencySamples());
+        currentLevel = engine->makeup;
+    }
 
     const juce::ScopedLock sl2 (statusLock);
     status = engine == nullptr ? Status { true, message } : Status { false, message };
@@ -318,12 +453,35 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Take a new engine if one is waiting (and the message thread has deleted the last old one).
-    if (retiredEngine.load() == nullptr)
+    // An old engine that has faded out goes back to the message thread to be deleted.
+    if (fadingEngine != nullptr && fadePos >= fadeLength && retiredEngine.load() == nullptr)
+        retiredEngine = fadingEngine.release();
+
+    // Take a new engine if one is waiting; the current one fades out under it.
+    if (fadingEngine == nullptr)
         if (auto* fresh = pendingEngine.exchange (nullptr))
         {
-            retiredEngine = engine.release();
+            // Play it the few samples that arrived after its warm-up, so it has heard exactly what the old one heard.
+            const int size = (int) history.size();
+            const int now = historyWrite.load (std::memory_order_relaxed);
+            int missing = fresh->heardUpTo >= 0 ? (now - fresh->heardUpTo + size) % size : 0;
+
+            if (missing <= 4 * fresh->maxBlock())
+                for (int from = fresh->heardUpTo; missing > 0;)
+                {
+                    const int n = juce::jmin (missing, fresh->maxBlock());
+
+                    for (int i = 0; i < n; ++i)
+                        monoOld[(size_t) i] = history[(size_t) ((from + i) % size)].load (std::memory_order_relaxed);
+
+                    fresh->process (monoOld.data(), n);
+                    from = (from + n) % size;
+                    missing -= n;
+                }
+
+            fadingEngine = std::move (engine);
             engine.reset (fresh);
+            fadePos = fadingEngine != nullptr ? 0 : fadeLength;
         }
 
     const int numIn = getTotalNumInputChannels(), numOut = getTotalNumOutputChannels();
@@ -337,10 +495,12 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     inputGain.setTargetValue (juce::Decibels::decibelsToGain ((double) inputParam->load()));
     outputGain.setTargetValue (juce::Decibels::decibelsToGain ((double) outputParam->load()));
+    const int size = (int) history.size();
 
     for (int start = 0; start < numSamples; start += engine->maxBlock())
     {
         const int n = juce::jmin (engine->maxBlock(), numSamples - start);
+        int write = historyWrite.load (std::memory_order_relaxed);
 
         // The amp is mono: the average of the input channels.
         for (int i = 0; i < n; ++i)
@@ -351,9 +511,29 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 sum += (double) buffer.getSample (ch, start + i);
 
             mono[(size_t) i] = sum / numIn * inputGain.getNextValue();
+            history[(size_t) write].store ((float) mono[(size_t) i], std::memory_order_relaxed);
+            write = (write + 1) % size;
         }
 
+        historyWrite.store (write);
+        const bool fading = fadingEngine != nullptr && fadePos < fadeLength;
+
+        if (fading)
+            std::copy (mono.begin(), mono.begin() + n, monoOld.begin());
+
         engine->process (mono.data(), n);
+
+        if (fading)
+        {
+            fadingEngine->process (monoOld.data(), n);
+
+            for (int i = 0; i < n; ++i)
+            {
+                const double g = juce::jmin (1.0, (double) fadePos++ / fadeLength);
+                mono[(size_t) i] = g * mono[(size_t) i] + (1.0 - g) * monoOld[(size_t) i];
+            }
+        }
+
         bool finite = true;
 
         for (int i = 0; i < n; ++i)
@@ -362,6 +542,7 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if (! finite)  // should never happen; if it does, start clean instead of making a loud noise
         {
             engine->reset();
+            fadePos = fadeLength;
             std::fill (mono.begin(), mono.begin() + n, 0.0);
         }
 
@@ -387,6 +568,7 @@ void CustomAmpProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("presetSource", presetSource, nullptr);
     state.setProperty ("presetText", presetText, nullptr);
     state.setProperty ("irFile", irFile.getFullPathName(), nullptr);
+    state.setProperty ("level", currentLevel.load(), nullptr);
     state.appendChild (parameters.copyState(), nullptr);
 
     if (auto xml = state.createXml())
@@ -412,12 +594,18 @@ void CustomAmpProcessor::setStateInformation (const void* data, int sizeInBytes)
     irFile = path.isNotEmpty() ? juce::File (path) : juce::File();
     presetSource = state.getProperty ("presetSource").toString();
     presetText = state.getProperty ("presetText").toString();
+    currentLevel = (double) state.getProperty ("level", 0.0);
 
-    // A preset file that still exists is read again (it may have been edited since); otherwise the saved copy is used.
-    if (getPresetFile().existsAsFile())
-        loadPresetFile (getPresetFile());
+    // A preset file that still exists is read again (it may have been edited since); otherwise the saved
+    // copy is used. Edits made in the plugin window are only in the saved copy. The saved level is kept,
+    // so the project sounds exactly as it did.
+    if (! isEdited() && getPresetFile().existsAsFile())
+        readPresetFile (getPresetFile(), currentLevel.load() <= 0.0);
     else
-        requestBuild();
+        requestBuild (currentLevel.load() <= 0.0);
+
+    undoSteps.clear();  // a project was loaded: nothing before it to go back to
+    redoSteps.clear();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
