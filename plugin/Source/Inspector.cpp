@@ -1,6 +1,7 @@
 #include "Inspector.h"
 
 #include "Theme.h"
+#include "dsp/Engine.h"
 
 #include <map>
 #include <optional>
@@ -67,6 +68,45 @@ juce::var makeBlock (const juce::String& type)
     auto* obj = new juce::DynamicObject();
     obj->setProperty ("type", type);
     return juce::var (obj);
+}
+
+int endInsertIndex (const juce::var& chain, const juce::var& block)
+{
+    auto* array = chain.getArray();
+
+    if (array == nullptr)
+        return 0;
+
+    const auto type = block.getProperty ("type", {}).toString();
+    return type == "ir" || type == "eq" ? array->size() : amp::tailStart (*array);
+}
+
+// Only these can go inside a feedback loop (the loop solver needs blocks that work one sample at a time).
+static bool canGoInLoop (const juce::String& type)
+{
+    return juce::StringArray { "eq", "tonestack", "gain", "power" }.contains (type);
+}
+
+// True when `list` is the inner chain of a feedback loop somewhere in the preset.
+static bool isLoopChain (const juce::var& node, const juce::Array<juce::var>* list)
+{
+    if (auto* array = node.getArray())
+    {
+        for (auto& v : *array)
+            if (isLoopChain (v, list))
+                return true;
+    }
+    else if (auto* object = node.getDynamicObject())
+    {
+        if (node["type"].toString() == "feedback" && node["chain"].getArray() == list)
+            return true;
+
+        for (auto& p : object->getProperties())
+            if (isLoopChain (p.value, list))
+                return true;
+    }
+
+    return false;
 }
 
 // Every "id" in a preset, or in a part of one.
@@ -760,10 +800,15 @@ bool Inspector::copySelected()
     const auto text = juce::JSON::toString (selection.item());
     lastCopy() = text;
 
-    for (int attempt = 0; attempt < 5 && juce::SystemClipboard::getTextFromClipboard() != text; ++attempt)
+    // Other programs (like the clipboard history) read every new copy at once, so wait a moment before checking.
+    juce::SystemClipboard::copyTextToClipboard (text);
+
+    for (int attempt = 0; attempt < 5; ++attempt)
     {
-        if (attempt > 0)
-            juce::Thread::sleep (20);
+        juce::Thread::sleep (20);
+
+        if (juce::SystemClipboard::getTextFromClipboard() == text)
+            break;
 
         juce::SystemClipboard::copyTextToClipboard (text);
     }
@@ -821,7 +866,13 @@ bool Inspector::insertAfterSelected (const juce::String& text)
         return false;
     }
 
-    const int at = hasSelection ? selection.index + 1 : list.size();
+    if (! isPath && isLoopChain (preset, list.getArray()) && ! canGoInLoop (item["type"].toString()))
+    {
+        showProblem ("Only eq, tonestack, gain and power blocks can go inside a feedback loop.");
+        return false;
+    }
+
+    const int at = hasSelection ? selection.index + 1 : endInsertIndex (list, item);
     list.getArray()->insert (at, item);
     changed (true);
 
@@ -841,10 +892,9 @@ void Inspector::showAddMenu (juce::Component* button, juce::var list, int insert
 {
     juce::PopupMenu menu;
     const auto types = help.blockTypes();
-    const juce::StringArray loopTypes { "eq", "tonestack", "gain", "power" };
 
     for (int i = 0; i < types.size(); ++i)
-        if (! loopOnly || loopTypes.contains (types[i]))
+        if (! loopOnly || canGoInLoop (types[i]))
             menu.addItem (i + 1, types[i] + "  -  " + help.blockInfo (types[i])["short"].toString());
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (button),
@@ -882,7 +932,8 @@ void Inspector::show (const Selection& newSelection, const juce::var& presetIn)
                          juce::dontSendNotification);
 
         if (preset.isObject())
-            addButton ("Paste at the end", "Add the copied block at the end of the chain (Ctrl+V).", [this] { pasteAfterSelected(); });
+            addButton ("Paste at the end", "Add the copied block at the end of the chain (Ctrl+V), before the cab IR "
+                                          "(only eq and ir blocks can come after it).", [this] { pasteAfterSelected(); });
 
         return;
     }
@@ -924,8 +975,11 @@ void Inspector::show (const Selection& newSelection, const juce::var& presetIn)
 
         const int index = selection.index;
         const auto list = selection.list;
-        auto* addAfter = addButton ("Add after...", "Add a new block right after this one.", {});
-        addAfter->onClick = [this, list, index, addAfter] { showAddMenu (addAfter, list, index + 1, false); };
+        const bool inLoop = isLoopChain (preset, list.getArray());
+        auto* addAfter = addButton ("Add after...", inLoop ? "Add a new block right after this one (inside a feedback loop "
+                                                             "only eq, tonestack, gain and power can go)."
+                                                           : "Add a new block right after this one.", {});
+        addAfter->onClick = [this, list, index, addAfter, inLoop] { showAddMenu (addAfter, list, index + 1, inLoop); };
 
         if (type == "feedback")
             addInsideButton (item, true);

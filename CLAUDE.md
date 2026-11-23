@@ -168,7 +168,8 @@ C++ checks:
   clears redo, undo to an old file version is marked edited. Copy/paste: duplicating the feedback loop gives
   nfb_2/pi_2/pa_2 and still builds, paste = same block, cut + undo, paste with nothing selected goes at the end,
   id rules (inner sag targets follow, outside targets stay, nfb_2 -> nfb_3, block/path mix-ups refused). The test
-  saves and restores the clipboard text.
+  saves and restores the clipboard text. A gain stage pasted at the end lands before the cab IR and builds; a sag
+  can not be pasted into the feedback loop; duplicating `pi` inside it gives `pi_3`.
 - Click test (two plugins, the same plucked note in real time, one gets an edit you can not hear): biggest
   difference -57 dB below the peak. Without warm-up and fade: -0.8 dB (a full click); warm-up alone: -27 dB.
   (A first version of this test, "biggest step between samples" under a steady note, passed even without
@@ -230,6 +231,12 @@ Idea for later: turn the Python checks into a real `tests/` folder.
   `makePastedItem`: a block only into a chain, a path only after a path; ids that are taken get a number
   (`v2` -> `v2_2`, `v2_2` -> `v2_3`), and `targets`/`apply_after` inside the pasted item follow the new names
   (references to blocks outside it stay). Keys: Ctrl+C/X/V/D, Delete (removes without copying).
+  Windows lets one program at a time open the clipboard and JUCE tries once; other programs (clipboard history)
+  read every new copy at once. So copy waits 20 ms and checks (up to 5 times), and paste falls back to the
+  plugin's own last copy when the clipboard has no block. (Before this, the copy test failed 2 runs out of 3.)
+- **Where new blocks go:** "Add block..." and paste with nothing selected go at `endInsertIndex`: before the
+  cab (`amp::tailStart`), since only eq/ir can follow it; an eq or ir goes at the very end. Inside a feedback
+  loop (`isLoopChain`), "Add after..." offers only eq/tonestack/gain/power and paste refuses other blocks.
 - **Swapping engines without a click:** the new engine is warmed up with the last 0.25 s of input (a history
   ring the audio thread writes), keeps catching up on the builder thread until less than one block is missing,
   the audio thread plays it the last few samples just before the swap, then old and new cross-fade over 30 ms.
@@ -256,7 +263,8 @@ Like the user's `github.com/kuzunlu/stream-bridge`:
 
 ## Status
 
-Pushed to `github.com/kuzunlu/custom-amp` (branch `main`).
+Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). First release: tag `v0.1.0` pushed on 2026-11-23
+(the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
 Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values), power (push-pull EL34/6L6GC/EL84/6V6GT), sag, feedback, split, gate, ir; `tools/check_settings.py`;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).

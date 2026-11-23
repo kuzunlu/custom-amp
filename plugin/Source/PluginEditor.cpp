@@ -178,7 +178,7 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     addAndMakeVisible (chainLabel);
 
     addAndMakeVisible (addBlockButton);
-    addBlockButton.setTooltip ("Add a block at the end of the chain.");
+    addBlockButton.setTooltip ("Add a block at the end of the chain (before the cab IR: only eq and ir blocks can come after it).");
     addBlockButton.onClick = [this]
     {
         if (! preset.isObject())
@@ -200,9 +200,11 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
                 return;
 
             auto chain = preset["chain"];
-            chain.getArray()->add (makeBlock (types[result - 1]));
+            const auto block = makeBlock (types[result - 1]);
+            const int at = endInsertIndex (chain, block);
+            chain.getArray()->insert (at, block);
             presetEdited (true);
-            select ({ chain, chain.size() - 1, false });
+            select ({ chain, at, false });
         });
     };
 

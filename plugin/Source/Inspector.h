@@ -50,6 +50,10 @@ private:
 // A new block of each type, with the settings it can not work without.
 juce::var makeBlock (const juce::String& type);
 
+// Where a block added "at the end" of the main chain goes: before the cab IR, because in the plugin only eq and
+// ir blocks can come after it (an eq or ir block itself goes at the very end).
+int endInsertIndex (const juce::var& chain, const juce::var& block);
+
 // Turns copied text (JSON) into a block, or a split path when asPath, ready to go into `preset`: a new copy whose
 // ids are made unique (v2 -> v2_2), with its own sag targets and apply_after following the new names.
 // Returns an empty var and sets `problem` when the text is not a block (or a path).

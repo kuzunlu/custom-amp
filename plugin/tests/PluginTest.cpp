@@ -466,7 +466,13 @@ int main (int argc, char* argv[])
 
         // Copy the tone stack, paste it after the first block.
         selectAt (6);
-        check (key ('c') && juce::SystemClipboard::getTextFromClipboard().contains ("\"tonestack\""), "Ctrl+C copies it as JSON");
+        const bool copied = key ('c');
+        bool onClipboard = false;
+
+        for (int i = 0; i < 10 && ! onClipboard; ++i, juce::Thread::sleep (20))  // it may be busy for a moment
+            onClipboard = juce::SystemClipboard::getTextFromClipboard().contains ("\"tonestack\"");
+
+        check (copied && onClipboard, "Ctrl+C copies it as JSON");
         selectAt (0);
         check (key ('v'), "Ctrl+V pastes");
         pump (50);
@@ -495,13 +501,57 @@ int main (int argc, char* argv[])
         waitForBuild (*q);
         check (! q->getStatus().isError, "and the preset builds: " + firstLine());
 
+        // A gain stage pasted "at the end" goes before the cab (only eq and ir can follow it).
+        selectAt (0);
+        key ('c');
+        ed->select ({});
+        pump (50);
+        key ('v');
+        const int last = chain().size() - 1;
+        check (chain()[last - 2]["id"].toString() == "v1a_2" && chain()[last - 1]["type"].toString() == "ir",
+               "a gain stage pasted at the end goes before the cab IR");
+        waitForBuild (*q);
+        check (! q->getStatus().isError, "and the preset builds: " + firstLine());
+
+        const auto list = [] (const char* json) { return juce::JSON::parse (juce::String (json)); };
+        const auto gain = makeBlock ("gain"), eq = makeBlock ("eq");
+        check (endInsertIndex (list (R"([ { "type": "gain" }, { "type": "eq" }, { "type": "ir" }, { "type": "eq" } ])"), gain) == 2
+                   && endInsertIndex (list (R"([ { "type": "gain" }, { "type": "eq" }, { "type": "ir" }, { "type": "eq" } ])"), eq) == 4
+                   && endInsertIndex (list (R"([ { "type": "gain" }, { "type": "eq" } ])"), gain) == 2,
+               "end place: before the ir (eq right before it stays in front), at the very end with no ir");
+
+        // Inside the feedback loop only loop blocks can go.
+        int sagIndex = -1, loopIndex = -1;
+
+        for (int i = 0; i < chain().size(); ++i)
+        {
+            if (chain()[i]["type"].toString() == "sag")
+                sagIndex = i;
+
+            if (chain()[i]["id"].toString() == "nfb")
+                loopIndex = i;
+        }
+
+        selectAt (sagIndex);
+        key ('c');
+        const auto loop = chain()[loopIndex]["chain"];
+        const int loopSize = loop.size();
+        ed->select ({ loop, 0, false });
+        pump (50);
+        check (! key ('v') && loop.size() == loopSize, "a sag block can not be pasted into the feedback loop");
+        const bool duplicated = key ('d');
+        const auto newId = loop[1]["id"].toString();
+        check (duplicated && loop.size() == loopSize + 1 && newId == "pi_3", "a gain stage in the loop can be duplicated: " + newId);
+        waitForBuild (*q);
+        check (! q->getStatus().isError, "and the preset builds: " + firstLine());
+
         // The id rules, on their own.
         juce::String problem;
         const auto preset = ed->getEditedPreset();
-        auto split = makePastedItem (R"({ "type": "split", "paths": [ { "chain": [ { "type": "sag", "targets": [ "v1a", "pa" ] },
-                                         { "type": "gain", "id": "v1a" } ] } ] })", preset, false, problem);
+        auto split = makePastedItem (R"({ "type": "split", "paths": [ { "chain": [ { "type": "sag", "targets": [ "v1b", "pa" ] },
+                                         { "type": "gain", "id": "v1b" } ] } ] })", preset, false, problem);
         const auto inner = split["paths"][0]["chain"];
-        check (inner[1]["id"].toString() == "v1a_2" && inner[0]["targets"][0].toString() == "v1a_2"
+        check (inner[1]["id"].toString() == "v1b_2" && inner[0]["targets"][0].toString() == "v1b_2"
                    && inner[0]["targets"][1].toString() == "pa",
                "a sag inside the copy follows its block's new name; a target outside the copy stays");
         check (makePastedItem (R"({ "type": "feedback", "id": "nfb_2" })", preset, false, problem)["id"].toString() == "nfb_3",
