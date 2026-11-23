@@ -744,12 +744,30 @@ void Inspector::removeSelected()
         onSelect ({});
 }
 
+// The last copied block. Windows lets one program at a time open the clipboard, so a copy can fail when
+// another program is reading it just then: copying tries again, and pasting falls back to this.
+static juce::String& lastCopy()
+{
+    static juce::String text;
+    return text;
+}
+
 bool Inspector::copySelected()
 {
     if (! selection.isValid())
         return false;
 
-    juce::SystemClipboard::copyTextToClipboard (juce::JSON::toString (selection.item()));
+    const auto text = juce::JSON::toString (selection.item());
+    lastCopy() = text;
+
+    for (int attempt = 0; attempt < 5 && juce::SystemClipboard::getTextFromClipboard() != text; ++attempt)
+    {
+        if (attempt > 0)
+            juce::Thread::sleep (20);
+
+        juce::SystemClipboard::copyTextToClipboard (text);
+    }
+
     return true;
 }
 
@@ -764,7 +782,15 @@ bool Inspector::cutSelected()
 
 bool Inspector::pasteAfterSelected()
 {
-    return insertAfterSelected (juce::SystemClipboard::getTextFromClipboard());
+    // The system clipboard if it holds a block (it may come from another plugin or a text editor),
+    // otherwise the last block copied here.
+    auto text = juce::SystemClipboard::getTextFromClipboard();
+    juce::var parsed;
+
+    if (juce::JSON::parse (text, parsed).failed() || ! parsed.isObject())
+        text = lastCopy();
+
+    return insertAfterSelected (text);
 }
 
 bool Inspector::duplicateSelected()
