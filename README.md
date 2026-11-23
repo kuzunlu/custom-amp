@@ -22,7 +22,11 @@ There are two versions:
 
 ## Plugin
 
-Build it on Windows with Visual Studio (or the free Build Tools) and its "Desktop development with C++" part:
+**Install:** download `Custom-Amp-Setup-<version>.exe` from the repo's Releases page and run it. It installs the
+VST3 (your DAW lists it under **Kursat**), the standalone app (Start menu: **Custom Amp**), and the presets as files
+you can edit in `Public Documents\Custom Amp\Presets`. Then rescan plugins in your DAW.
+
+**Or build it yourself** on Windows with Visual Studio (or the free Build Tools) and its "Desktop development with C++" part:
 
 ```
 git submodule update --init

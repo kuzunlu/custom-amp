@@ -106,7 +106,8 @@ target_compile_definitions(PluginTest
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_MODAL_LOOPS_PERMITTED=1
-        "JucePlugin_Name=\"Custom Amp\"")
+        "JucePlugin_Name=\"Custom Amp\""
+        "CUSTOM_AMP_VERSION=\"${CUSTOM_AMP_VERSION_TEXT}\"")
 
 target_link_libraries(PluginTest
     PRIVATE

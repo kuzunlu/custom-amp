@@ -236,24 +236,23 @@ Idea for later: turn the Python checks into a real `tests/` folder.
   Triode tables are cached (they took most of the build time).
 - Not done yet: a real amp-style UI (knobs on a faceplate).
 
-## Release plan (not started; the user said "later")
+## Releases (option B chosen: the JUCE plugin)
 
-The user wants releases with an exe installer, following their repo `github.com/kuzunlu/stream-bridge`:
-- `.github/workflows/build.yml` on `windows-latest`: builds on every push; pushing a tag like `v0.1.0`
-  also runs `gh release create` with the files attached. Actions are pinned by commit SHA.
-- `installer/<Name>.iss` (Inno Setup 6, installed in CI with `choco install innosetup`), built with
-  `ISCC /DAppVersion=<tag without v>`; output in `build/installer/`. Fixed `AppId` (never change it).
-- Version from `git describe --tags --match "v[0-9]*"`; `v0.0.0` when there is no tag.
-- stream-bridge is a JUCE VST3 (JUCE as a git submodule, `build.bat` uses the Visual Studio CMake/Ninja,
-  static MSVC runtime). Its installer puts the `.vst3` into `{commoncf64}\VST3`.
-
-OPEN DECISION (ask the user before starting):
-- A. Release the Python prototype now: `custom-amp.exe` via PyInstaller (exact version pinned), plus
-  presets and `shared/settings.json`, in an Inno Setup installer. Recommended first step; the same
-  workflow can later ship the VST3.
-- B. Build the JUCE VST3 plugin first, then release it like stream-bridge.
-Also ask: version (suggested `v0.1.0`) and whether the repo is private (a release on a public repo can
-be downloaded by anyone). Pushing the release tag is the publishing step.
+Like the user's `github.com/kuzunlu/stream-bridge`:
+- `.github/workflows/build.yml` on `windows-latest`: every push builds (`build.bat`) and runs `PluginTest`;
+  pushing a tag like `v0.1.0` also runs `gh release create` with the installer and two zips (VST3, app).
+  Actions are pinned by commit SHA (the same ones as stream-bridge). The repo is private: a release is only
+  visible to people with access, and Actions minutes come from the user's allowance (Windows counts double).
+- `installer/CustomAmp.iss` (Inno Setup 6, installed in CI with `choco install innosetup`; not installed on
+  this machine), built with `ISCC /DAppVersion=<tag without v>`, output in `build/installer/`. Fixed `AppId`
+  `42251C65-E078-4E35-A11F-D050236631F0` (never change it). Installs the VST3 into `{commoncf64}\VST3`, the
+  standalone app into `{autopf}\Custom Amp` (Start menu entry), and the presets as editable files into
+  `{commondocs}\Custom Amp\Presets` (Public Documents: writable by every user; never overwritten by an
+  update, kept on uninstall). **Open...** starts in that folder when the current preset is a built-in one.
+- Version from `git describe --tags --match "v[0-9]*"` (CMake sets `CUSTOM_AMP_VERSION`, shown at the end of
+  the status box); `dev` / `v0.0.0` when there is no tag.
+- `.gitattributes` keeps `.bat` files CRLF (cmd misreads `goto` labels with LF).
+- Pushing the tag is the publishing step: always ask the user first.
 
 ## Status
 
@@ -267,7 +266,7 @@ blocks, Save as, Level, undo/redo, copy/paste/duplicate, click-free engine swaps
 Next ideas: an amp-style UI; compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
 their datasheets like the others); a real `tests/` folder; positive feedback; sag targets before the sag
-block; the release (see above; option B is now possible).
+block.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.
 The user often can not listen to the output, so report measured numbers, not only "it sounds right".

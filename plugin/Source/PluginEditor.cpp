@@ -75,7 +75,14 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
                            "save, and the amp reloads by itself (until you change something in this window).");
     openButton.onClick = [this]
     {
-        chooser = std::make_unique<juce::FileChooser> ("Open a preset", processor.getPresetFile(), "*.json");
+        // The installer puts editable copies of the presets here.
+        auto start = processor.getPresetFile();
+        const auto installed = juce::File::getSpecialLocation (juce::File::commonDocumentsDirectory).getChildFile ("Custom Amp/Presets");
+
+        if (start == juce::File() && installed.isDirectory())
+            start = installed;
+
+        chooser = std::make_unique<juce::FileChooser> ("Open a preset", start, "*.json");
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [this] (const juce::FileChooser& fc)
                               {
@@ -316,6 +323,8 @@ void CustomAmpEditor::refreshStatus()
 
     if (ir != juce::File())
         text << "\nIR file (replaces the preset's): " << ir.getFullPathName();
+
+    text << "\n\nCustom Amp " << CUSTOM_AMP_VERSION;  // the git tag of a release, "dev" otherwise
 
     const auto colour = status.isError ? theme::error : juce::Colours::white;
     statusBox.setColour (juce::TextEditor::textColourId, colour);

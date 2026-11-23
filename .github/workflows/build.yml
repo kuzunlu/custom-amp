@@ -1,0 +1,75 @@
+name: Build
+
+# Every push builds the plugin and runs its tests. Pushing a version tag (for example v0.1.0)
+# also publishes it as a GitHub Release, so anyone with access to the repo can download it.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          fetch-depth: 0    # all tags, so the build knows its version (git describe)
+
+      - name: Build
+        shell: cmd
+        run: build.bat
+
+      - name: Test the plugin
+        shell: cmd
+        run: build\PluginTest_artefacts\Release\PluginTest.exe
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Custom-Amp-VST3
+          path: build/CustomAmp_artefacts/Release/VST3/
+          if-no-files-found: error
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          $version = git describe --tags --match "v[0-9]*"
+          if ($LASTEXITCODE -ne 0 -or -not $version) { $version = "v0.0.0" }
+          & $iscc /Q "/DAppVersion=$($version.Substring(1))" installer\CustomAmp.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Custom-Amp-Installer
+          path: build/installer/*.exe
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          Compress-Archive -Path "build/CustomAmp_artefacts/Release/VST3/Custom Amp.vst3" -DestinationPath "Custom-Amp-VST3-$env:TAG.zip"
+          Compress-Archive -Path "build/CustomAmp_artefacts/Release/Standalone/Custom Amp.exe" -DestinationPath "Custom-Amp-App-$env:TAG.zip"
+          $installer = Get-ChildItem build/installer/*.exe | Select-Object -First 1
+          $notes = @(
+            "**Easiest:** run ``$($installer.Name)``, then rescan plugins in your DAW. It installs:"
+            "- the VST3 plugin (Ableton lists it under **Kursat**, next to Stream Bridge),"
+            "- the standalone app (Start menu: **Custom Amp**),"
+            "- the presets as files you can edit, in ``Public Documents\Custom Amp\Presets``."
+            ""
+            "**Or by hand:** unzip ``Custom-Amp-VST3-$env:TAG.zip`` and copy the ``Custom Amp.vst3`` folder to ``C:\Program Files\Common Files\VST3\``, then rescan plugins. ``Custom-Amp-App-$env:TAG.zip`` has the standalone app."
+            ""
+            "Put **Custom Amp** on a guitar track. Set **Input** so hard strums peak around -6 dBFS. Needs 64-bit Windows."
+          ) -join "`n"
+          gh release create "$env:TAG" "Custom-Amp-VST3-$env:TAG.zip" "Custom-Amp-App-$env:TAG.zip" $installer.FullName --title "Custom Amp $env:TAG" --notes "$notes"
