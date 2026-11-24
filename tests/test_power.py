@@ -15,7 +15,8 @@ def power(cfg, x):
 
 class PowerTubes(unittest.TestCase):
     def test_fitted_tubes_hit_their_datasheet_points(self):
-        sheet = {"EL34": (-13.5, 100, 11.0), "6L6GC": (-14.0, 72, 6.0), "EL84": (-7.3, 48, 11.3), "6V6GT": (-12.5, 45, 4.1)}
+        sheet = {"EL34": (-13.5, 100, 11.0), "6L6GC": (-14.0, 72, 6.0), "EL84": (-7.3, 48, 11.3), "6V6GT": (-12.5, 45, 4.1),
+                 "KT88": (-15.0, 140, 11.5), "6550": (-14.0, 140, 11.0)}
         for tube, (grid, ma, ma_per_v) in sheet.items():
             with self.subTest(tube=tube):
                 i = pentode_current(np.array([grid - 1e-3, grid, grid + 1e-3]), 250, 250, **PENTODES[tube])
@@ -26,7 +27,9 @@ class PowerTubes(unittest.TestCase):
         for cfg, watts in [(dict(tube="EL34", plate_v=450, bias_v=-38, raa_ohms=3400), 48),
                            (dict(tube="6L6GC", plate_v=460, bias_v=-50, raa_ohms=4200), 45),
                            (dict(tube="EL84", plate_v=320, bias_v=-10, raa_ohms=8000), 17),
-                           (dict(tube="6V6GT", plate_v=420, bias_v=-35, raa_ohms=8000), 22)]:
+                           (dict(tube="6V6GT", plate_v=420, bias_v=-35, raa_ohms=8000), 22),
+                           (dict(tube="KT88", plate_v=560, screen_v=300, bias_v=-45, raa_ohms=4500), 100),  # Svetlana sheets
+                           (dict(tube="6550", plate_v=600, screen_v=300, bias_v=-55, raa_ohms=5000), 100)]:
             with self.subTest(tube=cfg["tube"]):
                 self.assertAlmostEqual(Power(dict(type="power", **cfg), SR).tube_info["max_watts"], watts, delta=2)
 
@@ -59,7 +62,7 @@ class PowerTubes(unittest.TestCase):
         self.assertLess(np.max(np.abs(a - b)[48:-48]), 0.005 * np.max(np.abs(b)))
 
     def test_mistakes_are_errors(self):
-        for cfg in (dict(tube="KT88"), dict(bias_v=5), dict(mismatch=1.5)):
+        for cfg in (dict(tube="KT66"), dict(bias_v=5), dict(mismatch=1.5)):
             with self.subTest(cfg=cfg), self.assertRaises(ValueError):
                 Power(dict(type="power", **cfg), SR)
 

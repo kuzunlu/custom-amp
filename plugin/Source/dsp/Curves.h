@@ -111,6 +111,15 @@ struct PushPull
         return h * vmax * v / std::sqrt (std::sqrt (1 + v * v * v * v)) * scale;
     }
 
+    // The pair without its output soft limit, at full supply and no bias shift. The real pair is never
+    // steeper: sag scales its slope by pow (h, pentodeEx - 1) <= 1, the soft limit only flattens it.
+    double unlimited (double x) const noexcept
+    {
+        const double ia = lookup (gridClamp (bias + x));
+        const double ib = lookup (gridClamp (bias - x)) * weaker;
+        return quarter * (ia - ib) * scale;
+    }
+
     std::vector<double> current;
     double lo = -400.0, step = 0.05;
     double bias = -45, quarter = 850, vmax = 1, scale = 1, weaker = 1;

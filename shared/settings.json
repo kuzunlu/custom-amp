@@ -67,7 +67,7 @@
           "eq": "Tone shaping with filter bands.",
           "tonestack": "The real bass/mid/treble circuit of a tube amp, worked out from its part values.",
           "gain": "One gain stage: filter, clip, filter.",
-          "power": "A push-pull power amp: two power tubes (EL34, 6L6GC, EL84, 6V6GT) into an output transformer.",
+          "power": "A push-pull power amp: two power tubes (EL34, 6L6GC, EL84, 6V6GT, KT88, 6550) into an output transformer.",
           "sag": "Power supply sag: lowers the clipping ceiling of later gain stages when you play hard.",
           "feedback": "A loop around a few blocks, like the feedback loop of a power amp.",
           "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
@@ -147,7 +147,7 @@
     "power": {
       "label": "Power amp",
       "short": "A push-pull power amp: two power tubes into an output transformer.",
-      "tooltip": "The last tube stage of a tube amp. The phase inverter sends opposite signals to two power tubes; the output transformer passes on only the DIFFERENCE of their currents. Because of that, the even harmonics of the two tubes cancel (measured: 0.00% 2nd harmonic with matched tubes), so a power amp clips with a different, more 'open' sound than a preamp stage. The power tube type is one of the biggest differences between famous amps: EL34 (British amps), 6L6GC (big American amps and many high-gain amps), EL84 (small British 'chime' amps), 6V6GT (small American amps). The tube curves are fitted to each tube's datasheet. The plugin shows the idle current and the rough output power of your settings. Put a sag block before it, and usually a feedback block around it.",
+      "tooltip": "The last tube stage of a tube amp. The phase inverter sends opposite signals to two power tubes; the output transformer passes on only the DIFFERENCE of their currents. Because of that, the even harmonics of the two tubes cancel (measured: 0.00% 2nd harmonic with matched tubes), so a power amp clips with a different, more 'open' sound than a preamp stage. The power tube type is one of the biggest differences between famous amps: EL34 (British amps), 6L6GC (big American amps and many high-gain amps), EL84 (small British 'chime' amps), 6V6GT (small American amps), KT88 and 6550 (big 100 W and bass amps: huge clean headroom). The tube curves are fitted to each tube's datasheet. The plugin shows the idle current and the rough output power of your settings. Put a sag block before it, and usually a feedback block around it.",
       "settings": {
         "tube": {
           "label": "Power tubes", "type": "choice", "default": "EL34",
@@ -155,10 +155,12 @@
             "EL34": "British sound: strong upper mids, an aggressive 'crunch' when pushed, breaks up earlier. About 50 W from a pair at 450 V into 3.4k.",
             "6L6GC": "American sound: big clean headroom, deep bass, smooth highs, scooped feel. About 45 W from a pair at 460 V into 4.2k.",
             "EL84": "Small British 'chime': bright, breaks up early and sweetly, compressed. About 17 W from a pair at 320 V into 8k.",
-            "6V6GT": "Small American amps: warm, breaks up early and smoothly. About 22 W from a pair at 420 V into 8k."
+            "6V6GT": "Small American amps: warm, breaks up early and smoothly. About 22 W from a pair at 420 V into 8k.",
+            "KT88": "Big British and hi-fi 100 W amps: very tight bass, huge clean headroom, hard to push into breakup. About 100 W from a pair at 560 V into 4.5k (datasheet).",
+            "6550": "Big American amps and bass amps (the 6550 is the American cousin of the KT88): deep, punchy, lots of clean headroom. About 100 W from a pair at 600 V into 5k (datasheet)."
           },
           "short": "Which pair of power tubes.",
-          "tooltip": "Each tube's curve is fitted to its datasheet (current and gain at 250 V, matched exactly). Typical safe bias voltages (about 70% of the tube's maximum heat): EL34 at 450 V: -46 V; 6L6GC at 460 V: -47 V; EL84 at 320 V: -13 V; 6V6GT at 420 V: -40 V. When you change the tube, change the bias too."
+          "tooltip": "Each tube's curve is fitted to its datasheet (current and gain at 250 V, matched exactly). Typical safe bias voltages (about 70% of the tube's maximum heat): EL34 at 450 V: -46 V; 6L6GC at 460 V: -47 V; EL84 at 320 V: -13 V; 6V6GT at 420 V: -40 V; KT88 at 560 V: -66 V; 6550 at 600 V: -76 V (with the screen at the plate voltage; real KT88/6550 amps often run the screen lower, then less bias is needed). When you change the tube, change the bias too."
         },
         "plate_v": {
           "label": "Supply voltage (B+)", "type": "number", "unit": "V", "min": 150, "max": 700, "default": 450,
@@ -173,12 +175,12 @@
         "bias_v": {
           "label": "Bias voltage", "type": "number", "unit": "V", "min": -120, "max": -1, "default": -45,
           "short": "The grid voltage at rest. Sets the idle current: 'hot' (closer to 0) or 'cold' (more negative).",
-          "tooltip": "Hot (closer to 0 V): more idle current, a smooth, warm, 'class A'-like sound, but the tubes get hot. Cold (more negative): less heat, but crossover distortion at low and medium volume: a grainy, 'fizzy' edge on quiet notes. Measured with EL34 at 450 V and 10 V drive: -38 V gives 0.24% distortion, -45 V gives 1.6% (crossover). Typical safe values: EL34 at 450 V: -46 V; 6L6GC at 460 V: -47 V; EL84 at 320 V: -13 V; 6V6GT at 420 V: -40 V. The default (-45 V) suits the default EL34 at 450 V (about 39 mA per tube)."
+          "tooltip": "Hot (closer to 0 V): more idle current, a smooth, warm, 'class A'-like sound, but the tubes get hot. Cold (more negative): less heat, but crossover distortion at low and medium volume: a grainy, 'fizzy' edge on quiet notes. Measured with EL34 at 450 V and 10 V drive: -38 V gives 0.24% distortion, -45 V gives 1.6% (crossover). Typical safe values: EL34 at 450 V: -46 V; 6L6GC at 460 V: -47 V; EL84 at 320 V: -13 V; 6V6GT at 420 V: -40 V; KT88 at 560 V: -66 V; 6550 at 600 V: -76 V. The default (-45 V) suits the default EL34 at 450 V (about 39 mA per tube)."
         },
         "raa_ohms": {
           "label": "Load (plate to plate)", "type": "number", "unit": "ohm", "min": 1000, "max": 20000, "default": 3400, "scale": "log",
           "short": "The output transformer's load, seen from plate to plate.",
-          "tooltip": "From the output transformer data or the schematic. Typical: 3.4k for a pair of EL34, 4.2k for a pair of 6L6GC, 8k for a pair of EL84 or 6V6GT (four tubes = half the value). A lower load gives more current and a 'fatter', more compressed sound; a higher load gives more voltage swing and an earlier, brighter breakup. In a real amp, using a speaker with the wrong impedance changes this value."
+          "tooltip": "From the output transformer data or the schematic. Typical: 3.4k for a pair of EL34, 4.2k for a pair of 6L6GC, 8k for a pair of EL84 or 6V6GT, 4.5k for KT88, 5k for 6550 (four tubes = half the value). A lower load gives more current and a 'fatter', more compressed sound; a higher load gives more voltage swing and an earlier, brighter breakup. In a real amp, using a speaker with the wrong impedance changes this value."
         },
         "mismatch": {
           "label": "Tube mismatch", "type": "number", "unit": "", "min": 0, "max": 0.5, "default": 0,
@@ -231,28 +233,44 @@
 
     "tonestack": {
       "label": "Tone stack",
-      "short": "The real bass/mid/treble circuit of a tube amp, worked out from its part values.",
-      "tooltip": "Almost every famous tube amp uses the same passive tone circuit (3 capacitors, 1 resistor, 3 pots), only with different part values. This block works out that exact circuit, so the knobs behave like the real amp: they affect each other (for example, Mid also changes the treble level), there is a built-in mid scoop, and the whole circuit loses volume, as in the real amp. Checked against the published formula for this circuit (Yeh and Smith, 2006): same answer within 0.001 dB. Where to put it: after the first one or two gain stages in most British and American amps; BEFORE the gain stages in some amps (for example the Mesa Mark series), which makes the knobs change the distortion itself.",
+      "short": "The real passive tone circuit of a tube amp (bass/mid/treble, or bass/treble), worked out from its part values.",
+      "tooltip": "Almost every famous tube amp uses the same passive tone circuit (3 capacitors, 1 resistor, 3 pots), only with different part values. This block works out that exact circuit, so the knobs behave like the real amp: they affect each other (for example, Mid also changes the treble level), there is a built-in mid scoop, and the whole circuit loses volume, as in the real amp. Checked against the published formula for this circuit (Yeh and Smith, 2006): same answer within 0.001 dB. Two other circuits are there too: the 60s British 'top boost' (bass and treble only) and the 'James' bass/treble circuit (a passive Baxandall, flat with both knobs at 5). Where to put it: after the first one or two gain stages in most British and American amps; BEFORE the gain stages in some amps (for example the Mesa Mark series), which makes the knobs change the distortion itself.",
       "settings": {
         "style": {
           "label": "Part values", "type": "choice", "default": "british",
           "choices": {
             "british": "Values like the classic British 100 W amps: C1 470 pF, C2 22 nF, C3 22 nF, treble 220k, bass 1M, mid 25k, slope 33k. Less mid scoop (about -5 dB at 700 Hz with all knobs at 5), punchy mids.",
-            "american": "Values like the 1959 American tweed bass amp (the circuit the British amps copied): C1 250 pF, C2 20 nF, C3 20 nF, treble 250k, bass 1M, mid 25k, slope 56k. Deeper mid scoop (about -7 dB at 760 Hz with all knobs at 5)."
+            "american": "Values like the 1959 American tweed bass amp (the circuit the British amps copied): C1 250 pF, C2 20 nF, C3 20 nF, treble 250k, bass 1M, mid 25k, slope 56k. Deeper mid scoop (about -7 dB at 760 Hz with all knobs at 5).",
+            "top_boost": "The 60s British 'top boost' circuit (chime amps with EL84s): the same circuit without a mid knob. C1 50 pF, C2 22 nF, C3 22 nF, treble 1M log, bass 1M log, slope 100k, and a fixed 10k where the mid pot would be (that value is a guess: check the schematic). Bright and jangly, strong treble range.",
+            "james": "The 'James' bass/treble circuit (a passive Baxandall, as in many hi-fi and some guitar amps): bass and treble only, both 1M log pots. FLAT with both knobs at 5 (it then loses about 21 dB); bass +-15 dB at 40 Hz, treble +18/-15 dB at 8 kHz, and 1 kHz hardly moves. The part values are a design for this plugin, not copied from one amp."
           },
-          "short": "Which set of part values to start from.",
-          "tooltip": "The starting part values. Any single part can then be changed with 'Parts'. The values are from common published schematics; check them against the schematic of the exact amp you want to copy."
+          "circuits": { "british": "fmv", "american": "fmv", "top_boost": "fmv", "james": "james" },
+          "short": "Which circuit and set of part values to start from.",
+          "tooltip": "The starting circuit and part values. Any single part can then be changed with 'Parts'. The top_boost and james styles have no mid knob: setting 'mid' with them is an error. The values are from common published schematics; check them against the schematic of the exact amp you want to copy."
         },
         "parts": {
           "label": "Parts", "type": "parts", "default": {},
           "names": {
-            "C1": "Treble capacitor (farads, e.g. 470e-12 = 470 pF). Bigger = the treble knob reaches lower and the sound gets brighter.",
-            "C2": "Bass capacitor (farads, e.g. 22e-9 = 22 nF). Bigger = more low bass.",
-            "C3": "Mid capacitor (farads). Bigger = the mid knob works lower.",
-            "R1": "Treble pot total resistance (ohms).",
-            "R2": "Bass pot total resistance (ohms). Bigger = more bass range.",
-            "R3": "Mid pot total resistance (ohms). Bigger = more mids overall.",
-            "R4": "Slope resistor (ohms). The most important value for the character: smaller = more mids and more output (British), bigger = deeper scoop (American, and amps with a 100k slope resistor sound very scooped)."
+            "fmv": {
+              "C1": "Treble capacitor (farads, e.g. 470e-12 = 470 pF). Bigger = the treble knob reaches lower and the sound gets brighter.",
+              "C2": "Bass capacitor (farads, e.g. 22e-9 = 22 nF). Bigger = more low bass.",
+              "C3": "Mid capacitor (farads). Bigger = the mid knob works lower.",
+              "R1": "Treble pot total resistance (ohms).",
+              "R2": "Bass pot total resistance (ohms). Bigger = more bass range.",
+              "R3": "Mid pot total resistance (ohms). Bigger = more mids overall. In top_boost: the fixed resistor where the mid pot would be.",
+              "R4": "Slope resistor (ohms). The most important value for the character: smaller = more mids and more output (British), bigger = deeper scoop (American, and amps with a 100k slope resistor sound very scooped)."
+            },
+            "james": {
+              "C1": "Treble capacitor from the input to the top of the treble pot (farads). Bigger = the treble knob reaches lower.",
+              "C2": "Treble capacitor from the bottom of the treble pot to ground (farads). Keep it about 10 times C1.",
+              "C3": "Bass capacitor across the top half of the bass pot (farads). Bigger = the bass knob works higher up.",
+              "C4": "Bass capacitor across the bottom half of the bass pot (farads). Keep it about 10 times C3.",
+              "R1": "Treble pot total resistance (ohms).",
+              "R2": "Bass pot total resistance (ohms).",
+              "R3": "Input resistor before the bass pot (ohms). With R4 it sets the loss in the middle: about R4 / (R3 + R4).",
+              "R4": "Resistor from the bottom of the bass pot to ground (ohms). Keep R3 about 10 times R4.",
+              "R5": "Resistor from the bass pot's wiper to the output (ohms): keeps the bass and treble parts apart."
+            }
           },
           "short": "Change any single part value of the circuit.",
           "tooltip": "Only list the parts you want to change; the others come from the style. Units are farads and ohms: 470 pF = 470e-12, 22 nF = 22e-9, 220k = 220e3, 1M = 1e6. This is how you copy one exact amp from its schematic."
@@ -263,7 +281,7 @@
           "tooltip": "Moves the output pick-off point along the treble pot. Up = more highs, AND less mids and bass (the knobs share one circuit). Measured with British values and the other knobs at 5: 3 kHz goes from -10.5 dB (treble 0) to -1.7 dB (treble 10)."
         },
         "mid": {
-          "label": "Middle", "type": "number", "unit": "", "min": 0, "max": 10, "default": 5,
+          "label": "Middle", "type": "number", "unit": "", "min": 0, "max": 10, "default": 5, "styles": ["british", "american"],
           "short": "The middle knob, 0 to 10.",
           "tooltip": "Sets how much the mid pot holds the mids up. Up = more mids AND a louder sound overall, because more of the signal gets through. At 0 you get the deepest scoop and the lowest volume. Measured with British values: 500 Hz goes from -11.8 dB (mid 0) to -6.6 dB (mid 10), and 3 kHz moves too (-8.5 to -4.1 dB)."
         },
@@ -275,11 +293,11 @@
         "treble_taper": {
           "label": "Treble taper", "type": "choice", "default": "linear",
           "choices": { "linear": "Resistance changes evenly as you turn.", "log": "Audio taper: at the half-way point only 10% of the resistance. Most of the change is at the top of the knob." },
-          "short": "How the treble pot's resistance changes as you turn it.",
+          "short": "How the treble pot's resistance changes as you turn it (top_boost and james: log unless you set it).",
           "tooltip": "Real amps use either kind; the schematic says 'LIN' (linear, sometimes 'B') or 'LOG' (audio, sometimes 'A'). It changes where on the knob the sound changes most, not the range."
         },
         "mid_taper": {
-          "label": "Middle taper", "type": "choice", "default": "linear",
+          "label": "Middle taper", "type": "choice", "default": "linear", "styles": ["british", "american"],
           "choices": { "linear": "Resistance changes evenly as you turn.", "log": "Audio taper: at the half-way point only 10% of the resistance." },
           "short": "How the mid pot's resistance changes as you turn it.",
           "tooltip": "See Treble taper. Check the schematic of the amp you copy."
@@ -543,9 +561,9 @@
       "tooltip": "Most tube power amps send part of the speaker signal back to an earlier stage (negative feedback). This lowers the gain, makes the clipping cleaner and tighter, tightens the bass, and makes the amp sound less raw. Amps with little or no feedback sound loose, raw and aggressive; amps with a lot sound tight, clean and polished. The filters in Path decide which tones get less feedback, so those come out louder: that is how Presence and Resonance knobs work. Put the power amp gain stage (and its EQ) inside the loop.",
       "settings": {
         "amount": {
-          "label": "Amount", "type": "number", "unit": "", "min": 0, "max": 10, "default": 0.3,
-          "short": "How much of the output is fed back. More = tighter, cleaner, less gain.",
-          "tooltip": "0 = no feedback (raw, loose, like amps that have none). Small values (0.1-0.3) = most classic amps. Larger values = tight and polished, the clipping becomes harder at the edge (clean, then suddenly clipped). The gain drops as amount goes up, so raise the drive of the inner stages or the level to make up for it. Note: the effect also depends on the inner gain; the real loop gain is about amount x the gain of the inner chain."
+          "label": "Amount", "type": "number", "unit": "", "min": -1, "max": 10, "default": 0.3,
+          "short": "How much of the output is fed back. More = tighter, cleaner, less gain. Below 0 = positive feedback.",
+          "tooltip": "0 = no feedback (raw, loose, like amps that have none). Small values (0.1-0.3) = most classic amps. Larger values = tight and polished, the clipping becomes harder at the edge (clean, then suddenly clipped). The gain drops as amount goes up, so raise the drive of the inner stages or the level to make up for it. Note: the effect also depends on the inner gain; the real loop gain is about amount x the gain of the inner chain. BELOW 0 = positive feedback: more gain and a harder, more compressed feel (a gain of 2 with amount -0.25 becomes 4). It only works while the loop can never gain 1 or more within one sample (a real circuit would then latch or howl): the preset says so with an error and the loop gain it found. Keep the inner gain small; the limit uses the steepest point of every inner block, so it is on the safe side."
         },
         "path": {
           "label": "Path filters", "type": "band-list", "default": [],

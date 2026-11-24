@@ -7,7 +7,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `eq` | Boost or cut tones (high-pass, low-pass, shelves, peaks) |
 | `tonestack` | The real bass/mid/treble circuit of a tube amp, from its part values. The knobs affect each other like in the real amp |
 | `gain` | One gain stage: filter, then clip, then filter. Curves: `soft`, `tube`, `diode`, `hard`, `custom` (top and bottom set separately), `triode` (a real 12AX7/12AT7/12AU7 from tube equations). Optional bias shift: hard hits push the stage "colder" for a moment |
-| `power` | Push-pull power amp: two power tubes (EL34, 6L6GC, EL84, 6V6GT, fitted to their datasheets) into an output transformer |
+| `power` | Push-pull power amp: two power tubes (EL34, 6L6GC, EL84, 6V6GT, KT88, 6550, fitted to their datasheets) into an output transformer |
 | `sag` | Lowers the clipping ceiling of later gain and power blocks when you play hard |
 | `feedback` | Feeds the output of a group of blocks back to its input (like a power amp's feedback loop) |
 | `split` | Parallel paths: the same sound through several chains side by side, then mixed |
@@ -103,7 +103,7 @@ Harmonics' share of the sound for a 220 Hz note at 0.05 / 0.2 / 0.5 V (soft / me
 | Preset | Style | Power | Feedback | Soft / medium / hard |
 |---|---|---|---|---|
 | `us_blackface_clean.json` | American blackface-style clean | 2x 6L6GC | 8.5 dB | 0.6% / 2.5% / 7.2% |
-| `brit_top_boost.json` | British top-boost style, chime | 2x EL84 | none | 24% / 24% / 42% |
+| `brit_top_boost.json` | British top-boost style, chime | 2x EL84 | none | 26% / 23% / 40% |
 | `brit_plexi.json` | British Plexi-style 50 W, jumpered | 2x EL34 | 7.2 dB | 32% / 36% / 38% |
 | `brit_800.json` | British 800-style master volume | 2x EL34 | 7.2 dB | 39% / 47% / 66% |
 | `german_high_gain.json` | German high gain, tight | 2x EL34 | 8.4 dB | 36% / 38% / 60% |
@@ -152,7 +152,8 @@ When the signal gets loud, the gain blocks in `targets` get a lower clipping cei
 ```
 
 The inner `chain` gets: input minus `amount` times the `path`-filtered output.
-More `amount` = less gain, tighter and cleaner clipping.
+More `amount` = less gain, tighter and cleaner clipping. A NEGATIVE `amount` is positive feedback: more gain and a
+harder feel. It is only allowed while the loop can never gain 1 or more (the error says what loop gain it found).
 The `path` filters choose which tones get less feedback, so those come out louder:
 a high shelf cut works like a **presence** knob, a low shelf cut works like a **resonance** knob.
 
@@ -198,7 +199,8 @@ Two power tubes driven with opposite signals; the output transformer passes on t
 currents, so even harmonics cancel (unless `mismatch` is set) and a cold bias gives crossover distortion.
 The input is in volts at the grids: full power needs about as many volts as the bias. Full output is
 scaled to `|bias_v|`. Safe bias values (about 70% of the tube's maximum heat): EL34 at 450 V: -46 V,
-6L6GC at 460 V: -47 V, EL84 at 320 V: -13 V, 6V6GT at 420 V: -40 V. Sag can target it.
+6L6GC at 460 V: -47 V, EL84 at 320 V: -13 V, 6V6GT at 420 V: -40 V, KT88 at 560 V: -66 V, 6550 at 600 V: -76 V.
+Sag can target it.
 
 ### Tone stack
 
@@ -207,9 +209,17 @@ scaled to `|bias_v|`. Safe bias values (about 70% of the tube's maximum heat): E
 ```
 
 The classic passive tone circuit used by most tube amps, solved from its part values (`ampsim/circuit.py`).
-`style` picks the starting values (`british` or `american`); `parts` changes single parts (farads and ohms:
+`style` picks the circuit and its starting values; `parts` changes single parts (farads and ohms:
 470 pF = `470e-12`, 22 nF = `22e-9`, 33k = `33e3`). The knobs go from 0 to 10. Like the real circuit,
 it loses volume (about 5-20 dB), so raise `level_db` or the next stage's drive.
+
+| style | circuit | knobs |
+|---|---|---|
+| `british`, `american` | the classic bass/mid/treble circuit | treble, mid, bass |
+| `top_boost` | the 60s British top-boost unit: the classic circuit without a mid pot (a fixed 10k, unsure) | treble, bass |
+| `james` | a passive Baxandall-style circuit (C3/C4 and R3/R4 add parts): flat with both knobs at 5, about -21 dB | treble, bass |
+
+Setting `mid` with `top_boost` or `james` is an error.
 
 ### Gate
 

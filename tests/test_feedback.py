@@ -70,6 +70,30 @@ class Feedback(unittest.TestCase):
 
         self.assertLess(peak(True), 0.8 * peak(False))
 
+    def test_positive_feedback_matches_theory(self):
+        # gain 2 inside, amount -0.25 / -0.4: 2 / (1 - 0.5) = 4, 2 / (1 - 0.8) = 10
+        two = [{"type": "eq", "level_db": 20 * np.log10(2)}]
+        for amount, theory in ((-0.25, 4.0), (-0.4, 10.0)):
+            with self.subTest(amount=amount):
+                g = tone(second_half(loop(amount, inner=two).process(sine(1000, 0.01))), 1000) / 0.01
+                self.assertAlmostEqual(g, theory, delta=0.002 * theory)
+
+    def test_positive_feedback_with_clipping_stays_stable(self):
+        stage = [{"type": "gain", "drive_db": 6, "curve": "soft"}]  # steepest point: about 2
+        y = loop(-0.4, inner=stage).process(sine(220, 1.0, 1.0))
+        self.assertTrue(np.all(np.isfinite(y)))
+        small = tone(second_half(loop(-0.4, inner=stage).process(sine(220, 0.001, 1.0))), 220) / 0.001
+        two = 10 ** (6 / 20)
+        theory = two / (1 - 0.4 * two)  # small signals: the linear theory (9.87); the stage's 10 Hz high-pass shifts
+        self.assertAlmostEqual(small, theory, delta=0.05 * theory)  # the phase a little, measured 9.50
+
+    def test_positive_feedback_with_loop_gain_1_or_more_is_an_error(self):
+        two = [{"type": "eq", "level_db": 20 * np.log10(2)}]
+        with self.assertRaisesRegex(ValueError, "needs a loop gain below 1, but this loop can reach 1.20"):
+            loop(-0.6, inner=two)
+        with self.assertRaisesRegex(ValueError, "loop gain below 1"):
+            loop(-0.1, inner=[{"type": "gain", "drive_db": 30, "curve": "hard"}])
+
     def test_mistakes_are_errors(self):
         for chain, words in [
             ([{"type": "feedback", "chain": [{"type": "ir", "file": "x.wav"}]}], "ir"),

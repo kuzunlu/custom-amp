@@ -63,23 +63,44 @@ Tonestack::Tonestack (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "style", "parts", "treble", "mid", "bass", "treble_taper", "mid_taper", "bass_taper",
                         "source_ohms", "load_ohms", "level_db" })
 {
-    // Values as in common published schematics (Tonestack.STYLES in blocks.py).
-    static const std::map<juce::String, std::map<juce::String, double>> styles {
-        { "british", { { "C1", 470e-12 }, { "C2", 22e-9 }, { "C3", 22e-9 }, { "R1", 220e3 }, { "R2", 1e6 }, { "R3", 25e3 }, { "R4", 33e3 } } },
-        { "american", { { "C1", 250e-12 }, { "C2", 20e-9 }, { "C3", 20e-9 }, { "R1", 250e3 }, { "R2", 1e6 }, { "R3", 25e3 }, { "R4", 56e3 } } },
+    // Circuits, styles and their values: see Tonestack.CIRCUITS and STYLES in blocks.py.
+    struct Style
+    {
+        juce::String circuit;
+        std::map<juce::String, double> parts, fixed;
+        std::map<juce::String, juce::String> tapers;
     };
-    const auto style = cfg.text ("style", "british");
+    static const std::map<juce::String, std::vector<juce::String>> circuits {
+        { "fmv", { "treble", "mid", "bass" } },
+        { "james", { "treble", "bass" } },
+    };
+    static const std::map<juce::String, Style> styles {
+        { "british", { "fmv", { { "C1", 470e-12 }, { "C2", 22e-9 }, { "C3", 22e-9 }, { "R1", 220e3 }, { "R2", 1e6 }, { "R3", 25e3 }, { "R4", 33e3 } }, {}, {} } },
+        { "american", { "fmv", { { "C1", 250e-12 }, { "C2", 20e-9 }, { "C3", 20e-9 }, { "R1", 250e3 }, { "R2", 1e6 }, { "R3", 25e3 }, { "R4", 56e3 } }, {}, {} } },
+        { "top_boost", { "fmv", { { "C1", 50e-12 }, { "C2", 22e-9 }, { "C3", 22e-9 }, { "R1", 1e6 }, { "R2", 1e6 }, { "R3", 10e3 }, { "R4", 100e3 } },
+                         { { "mid", 10.0 } }, { { "treble", "log" }, { "bass", "log" } } } },
+        { "james", { "james", { { "C1", 220e-12 }, { "C2", 2.2e-9 }, { "C3", 4.7e-9 }, { "C4", 47e-9 },
+                                { "R1", 1e6 }, { "R2", 1e6 }, { "R3", 100e3 }, { "R4", 10e3 }, { "R5", 100e3 } },
+                     {}, { { "treble", "log" }, { "bass", "log" } } } },
+    };
+    const auto styleName = cfg.text ("style", "british");
 
-    if (styles.count (style) == 0)
-        throw PresetError ("tonestack: unknown style '" + style + "'. Use one of: british, american");
+    if (styles.count (styleName) == 0)
+        throw PresetError ("tonestack: unknown style '" + styleName + "'. Use one of: british, american, top_boost, james");
 
-    auto parts = styles.at (style);
+    const auto& style = styles.at (styleName);
+    auto parts = style.parts;
     const auto partsCfg = cfg.get ("parts");
 
     if (! partsCfg.isVoid())
     {
         Cfg custom (partsCfg, "tonestack parts");
-        custom.checkKeys ({ "C1", "C2", "C3", "R1", "R2", "R3", "R4" });
+        std::set<juce::String> names;
+
+        for (auto& p : parts)
+            names.insert (p.first);
+
+        custom.checkKeys (names);
 
         for (auto& [name, value] : parts)
             value = custom.number (name.toRawUTF8(), value);
@@ -87,15 +108,27 @@ Tonestack::Tonestack (const Cfg& cfg, const BuildContext& ctx)
 
     std::map<juce::String, double> knobs;
     const std::map<juce::String, juce::String> tapers { { "treble", "linear" }, { "mid", "linear" }, { "bass", "log" } };
+    const auto& knobNames = circuits.at (style.circuit);
 
     for (auto* knob : { "treble", "mid", "bass" })
     {
+        const auto tapeKey = juce::String (knob) + "_taper";
+
+        if (std::find (knobNames.begin(), knobNames.end(), knob) == knobNames.end() || style.fixed.count (knob) > 0)
+        {
+            if (cfg.has (knob) || cfg.has (tapeKey.toRawUTF8()))
+                throw PresetError ("tonestack: the " + styleName + " style has no " + knob + " knob");
+
+            knobs[knob] = (style.fixed.count (knob) > 0 ? style.fixed.at (knob) : 0.0) / 10;
+            continue;
+        }
+
         const double value = cfg.number (knob, 5.0);
 
         if (value < 0 || value > 10)
             throw PresetError (juce::String ("tonestack: ") + knob + " must be from 0 to 10, got " + juce::String (value));
 
-        const auto taper = cfg.text ((juce::String (knob) + "_taper").toRawUTF8(), tapers.at (knob));
+        const auto taper = cfg.text (tapeKey.toRawUTF8(), style.tapers.count (knob) > 0 ? style.tapers.at (knob) : tapers.at (knob));
 
         if (taper != "log" && taper != "linear")
             throw PresetError (juce::String ("tonestack: ") + knob + "_taper must be 'log' or 'linear'");
@@ -106,17 +139,31 @@ Tonestack::Tonestack (const Cfg& cfg, const BuildContext& ctx)
 
     const double t = knobs["treble"], m = knobs["mid"], l = knobs["bass"];
     const double r = 1.0;  // a pot turned fully to one end still has a tiny resistance
-    const std::vector<Part> netlist {
-        { 'C', parts["C1"], "in", "top" },
-        { 'R', std::max (parts["R1"] * (1 - t), r), "top", "out" },
-        { 'R', std::max (parts["R1"] * t, r), "out", "x" },
-        { 'R', std::max (parts["R2"] * l, r), "x", "y" },
-        { 'R', std::max (parts["R3"] * (1 - m), r), "y", "w" },
-        { 'R', std::max (parts["R3"] * m, r), "w", "gnd" },
-        { 'R', parts["R4"], "in", "z" },
-        { 'C', parts["C2"], "z", "x" },
-        { 'C', parts["C3"], "z", "w" },
-    };
+    const std::vector<Part> netlist = style.circuit == "fmv"
+        ? std::vector<Part> {
+              { 'C', parts["C1"], "in", "top" },
+              { 'R', std::max (parts["R1"] * (1 - t), r), "top", "out" },
+              { 'R', std::max (parts["R1"] * t, r), "out", "x" },
+              { 'R', std::max (parts["R2"] * l, r), "x", "y" },
+              { 'R', std::max (parts["R3"] * (1 - m), r), "y", "w" },
+              { 'R', std::max (parts["R3"] * m, r), "w", "gnd" },
+              { 'R', parts["R4"], "in", "z" },
+              { 'C', parts["C2"], "z", "x" },
+              { 'C', parts["C3"], "z", "w" },
+          }
+        : std::vector<Part> {
+              { 'R', parts["R3"], "in", "a" },
+              { 'R', std::max (parts["R2"] * (1 - l), r), "a", "m" },
+              { 'R', std::max (parts["R2"] * l, r), "m", "b" },
+              { 'R', parts["R4"], "b", "gnd" },
+              { 'C', parts["C3"], "a", "m" },
+              { 'C', parts["C4"], "m", "b" },
+              { 'R', parts["R5"], "m", "out" },
+              { 'C', parts["C1"], "in", "t" },
+              { 'R', std::max (parts["R1"] * (1 - t), r), "t", "out" },
+              { 'R', std::max (parts["R1"] * t, r), "out", "u" },
+              { 'C', parts["C2"], "u", "gnd" },
+          };
 
     std::vector<double> b, a;
     digitalFilter (netlist, ctx.rate, cfg.number ("source_ohms", 1000.0), cfg.number ("load_ohms", 1e6), b, a);
@@ -546,13 +593,57 @@ static double solveFalling (Function f, double y0, double tol = 1e-10, int maxSt
     return c;
 }
 
+//==============================================================================
+// The positive feedback check (steepest, first_gain and max_slope in blocks.py).
+static constexpr int slopePoints = 200000;        // how finely steepest() samples a curve
+static constexpr double gainSlopeRange = 100.0;   // gain curves are sampled on -100..100
+
+// The steepest slope of fn on -halfRange..halfRange, on the same points as NumPy's version.
+template <typename Fn>
+static double steepest (Fn fn, double halfRange)
+{
+    double worst = 0.0, last = fn (-halfRange + 2.0 * halfRange * 0 / slopePoints);
+
+    for (int i = 1; i <= slopePoints; ++i)
+    {
+        const double y = fn (-halfRange + 2.0 * halfRange * i / slopePoints);
+        worst = std::max (worst, std::abs (y - last));
+        last = y;
+    }
+
+    return worst / (2.0 * halfRange / slopePoints);
+}
+
+// How much of the current sample a list of filters passes at once (the product of their b0).
+static double firstGain (const FilterList& list)
+{
+    double g = 1.0;
+
+    for (auto& f : list.filters)
+        g *= std::abs (f.b0);
+
+    return g;
+}
+
+double EqBlock::maxSlope() const { return firstGain (filters) * level; }
+
+double Tonestack::maxSlope() const { return std::abs (filter.b[0]) * level; }
+
+double Gain::maxSlope() const
+{
+    // h (sag) and the bias shift only move along the curve: its steepest point is the limit
+    return firstGain (pre) * drive * steepest ([this] (double x) { return curve (x); }, gainSlopeRange) * firstGain (post) * level;
+}
+
+double Power::maxSlope() const
+{
+    const double pair = steepest ([this] (double x) { return tubes.unlimited (x); }, 4 * std::abs (tubes.bias));
+    return firstGain (pre) * drive * pair * firstGain (post) * level;
+}
+
 Feedback::Feedback (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "amount", "path", "chain", "oversample", "level_db" })
 {
     amount = cfg.number ("amount", 0.3);
-
-    if (amount < 0)
-        throw PresetError ("feedback amount must be 0 or more (positive feedback is not supported yet)");
-
     level = dbToGain (cfg.number ("level_db", 0.0));
     path = makeFilters (cfg.list ("path"), ctx);
     int i = 0;
@@ -576,6 +667,20 @@ Feedback::Feedback (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "am
             blocks.push_back (std::make_unique<Gain> (innerCfg, ctx));
         else
             blocks.push_back (std::make_unique<Power> (innerCfg, ctx));
+    }
+
+    if (amount < 0)
+    {
+        // Positive feedback: the loop equation has exactly one answer only while the loop can never gain 1 or
+        // more within one sample. Above that a real circuit latches or oscillates, and the solver can not work.
+        double gain = -amount * firstGain (path);
+
+        for (auto& b : blocks)
+            gain *= b->maxSlope();
+
+        if (gain >= 1)
+            throw PresetError ("feedback: positive feedback (amount below 0) needs a loop gain below 1, but this loop can reach "
+                               + juce::String (gain, 2) + ". Use a smaller amount or less gain inside the loop");
     }
 }
 

@@ -47,6 +47,9 @@ public:
     virtual void beginSample (int n) noexcept { juce::ignoreUnused (n); }  // n = sample index in this buffer
     virtual double peek (double v) const noexcept = 0;   // the output for v, without moving on
     virtual double commit (double v) noexcept = 0;       // the output for v, and move on to the next sample
+
+    // The most the output can move per unit of input within one sample (for the positive feedback check).
+    virtual double maxSlope() const = 0;
 };
 
 // Gain and power blocks can be the target of a sag block.
@@ -65,6 +68,7 @@ public:
     void reset() noexcept override { filters.reset(); }
     double peek (double v) const noexcept override { return filters.peek (v) * level; }
     double commit (double v) noexcept override { return filters.tick (v) * level; }
+    double maxSlope() const override;
 
 private:
     FilterList filters;
@@ -80,6 +84,7 @@ public:
     void reset() noexcept override { filter.reset(); }
     double peek (double v) const noexcept override { return filter.peek (v) * level; }
     double commit (double v) noexcept override { return filter.tick (v) * level; }
+    double maxSlope() const override;
 
 private:
     Iir filter;
@@ -96,6 +101,7 @@ public:
     void beginSample (int n) noexcept override { h = headroom != nullptr ? headroom[n] : 1.0; }
     double peek (double v) const noexcept override;
     double commit (double v) noexcept override;
+    double maxSlope() const override;
     juce::String describe() const override;
 
 private:
@@ -128,6 +134,7 @@ public:
     void beginSample (int n) noexcept override;
     double peek (double v) const noexcept override;
     double commit (double v) noexcept override;
+    double maxSlope() const override;
     juce::String describe() const override;
 
 private:

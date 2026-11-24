@@ -156,11 +156,13 @@ static const std::map<juce::String, PentodeModel>& pentodes()
         { "6L6GC", { 8.7, 1603.0, 44.8, 520.0 } },
         { "EL84", { 19.5, 624.0, 158.7, 450.0 } },
         { "6V6GT", { 9.8, 2205.0, 45.0, 830.0 } },
+        { "KT88", { 8.0, 911.0, 71.9, 203.0 } },
+        { "6550", { 8.2, 938.3, 52.0, 250.0 } },
     };
     return tubes;
 }
 
-juce::StringArray pentodeNames() { return { "EL34", "6L6GC", "EL84", "6V6GT" }; }
+juce::StringArray pentodeNames() { return { "EL34", "6L6GC", "EL84", "6V6GT", "KT88", "6550" }; }
 
 static constexpr double pentodeKvb = 24.0;
 

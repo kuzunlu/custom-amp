@@ -78,6 +78,12 @@ PENTODES = {
     "6L6GC": {"mu": 8.7, "kg1": 1603.0, "kp": 44.8, "rsat": 520.0},
     "EL84": {"mu": 19.5, "kg1": 624.0, "kp": 158.7, "rsat": 450.0},
     "6V6GT": {"mu": 9.8, "kg1": 2205.0, "kp": 45.0, "rsat": 830.0},
+    # KT88: JJ sheet, 250 V / 250 V / -15 V: 140 mA, 11.5 mA/V (mu 8). rsat from the Svetlana sheet's
+    # 100 W at 560 V into 4.5k (fixed bias). 6550: 250 V / 250 V / -14 V: 140 mA, 11 mA/V; mu 8.2 (the sheets
+    # say "about 8"; with exactly 8 this model can not reach 11 mA/V at 140 mA). rsat from Svetlana's 6550C:
+    # 100 W at 600 V into 5k (fixed bias).
+    "KT88": {"mu": 8.0, "kg1": 911.0, "kp": 71.9, "rsat": 203.0},
+    "6550": {"mu": 8.2, "kg1": 938.3, "kp": 52.0, "rsat": 250.0},
 }
 PENTODE_EX = 1.35
 PENTODE_KVB = 24.0
@@ -157,7 +163,14 @@ def make_pushpull(tube, plate_v, screen_v, bias_v, raa_ohms, mismatch):
         "idle_watts": idle * plate_v,  # heat in each tube when not playing
         "max_watts": swing**2 / (2 * quarter),  # rough clean output power of the pair
     }
-    return shape, scalar_shape, info
+    def unlimited(x):
+        """The pair without its output soft limit, at full supply and no bias shift. The real pair is never
+        steeper: sag scales its slope by h ** (PENTODE_EX - 1) <= 1, the soft limit only flattens it."""
+        ia = np.interp(grid_clamp(bias_v + x), grid, current)
+        ib = np.interp(grid_clamp(bias_v - x), grid, current) * weaker
+        return quarter * (ia - ib) * scale
+
+    return shape, scalar_shape, unlimited, info
 
 
 def make_triode(tube, plate_v, plate_ohms, bias_v):

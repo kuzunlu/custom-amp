@@ -17,7 +17,7 @@ SR = 48000
 # Settings a block can not be built without, and attributes that can not be compared simply.
 REQUIRED = {"ir": {"file": str(ROOT / "audio" / "fake_4x12.wav")}, "split": {"paths": [{}]}}
 SKIP = {"blocks", "path", "paths", "pre", "post", "filters", "filter", "targets", "target_ids", "ir", "curve", "scalar_curve",
-        "shape", "scalar_shape"}
+        "shape", "scalar_shape", "unlimited"}
 
 
 def main():
@@ -65,8 +65,16 @@ def main():
     tonestack = doc["blocks"]["tonestack"]["settings"]
     if set(tonestack["style"]["choices"]) != set(Tonestack.STYLES):
         problems.append("tonestack style choices differ")
-    if set(tonestack["parts"]["names"]) != set(Tonestack.STYLES["british"]):
-        problems.append("tonestack part names differ")
+    if tonestack["style"]["circuits"] != {style: spec["circuit"] for style, spec in Tonestack.STYLES.items()}:
+        problems.append("tonestack style circuits differ")
+    for style, spec in Tonestack.STYLES.items():
+        if set(tonestack["parts"]["names"].get(spec["circuit"], {})) != set(spec["parts"]):
+            problems.append(f"tonestack part names of style '{style}' differ")
+    with_mid = [style for style, spec in Tonestack.STYLES.items()
+                if "mid" in Tonestack.CIRCUITS[spec["circuit"]] and "mid" not in spec.get("fixed", {})]
+    for key in ("mid", "mid_taper"):
+        if tonestack[key].get("styles") != with_mid:
+            problems.append(f"tonestack '{key}' should list the styles with a mid knob: {with_mid}")
     band = doc["band"]["settings"]
     if set(band) != BAND_SETTINGS:
         problems.append("band setting names differ")

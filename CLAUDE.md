@@ -88,6 +88,10 @@ Clone with `git submodule update --init` to get JUCE.
   `I(vg, h*Vs) = h**1.35 * I(vg/h, Vs)` (Koren's model allows this exactly). Each grid has its own bias
   shift. Full output is scaled to |bias_v|. Default bias -45 V: -35/-38 V ran an EL34 at 450 V far
   above its 25 W limit in this model.
+  KT88 (JJ sheet: 250/250/-15 V, 140 mA, 11.5 mA/V, mu 8) and 6550 (250/250/-14 V, 140 mA, 11 mA/V; mu 8.2 because
+  with 8 this model can not reach 11 mA/V at 140 mA) were fitted the same way; their `rsat` comes from the
+  Svetlana sheets' fixed-bias rows: 100 W at 560 V into 4.5k (KT88), 100 W at 600 V into 5k (6550C).
+  Safe bias (70% of max plate heat, screen = plate): KT88 at 560 V -66 V, 6550 at 600 V -76 V.
 - **Bias shift** (in gain): `g = drive*x/h + bias`; the curve gets `g + s`. When `g + s > 1` (past the top of
   the curve; really `g + s > top`), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
   release time. `s` is worked out at the normal rate in `process` (Python loop) and per sample in `tick`.
@@ -100,12 +104,24 @@ Clone with `git submodule update --init` to get JUCE.
   this to a 1-sample delay: that oscillates when loop gain is above 1, and real amps run 2-10.
   Filters have `tick(v, commit=False)` to try a value without moving on. Only `eq`, `tonestack`, `gain` and
   `power` can go inside. `amount` must be >= 0 and every inner block must rise with its input (first filter
-  coefficient b0 > 0), or the solver can find a wrong answer. Positive feedback is not done yet.
+  coefficient b0 > 0), or the solver can find a wrong answer.
+  Positive feedback = a NEGATIVE `amount`. The loop equation has exactly one answer only while the loop can never
+  gain 1 or more within one sample, so the block checks |amount| x first_gain(path) x the product of every inner
+  block's `max_slope()` < 1 (else an error naming the value). `max_slope` = the product of the filters' b0 x drive
+  x level x the steepest point of the curve (`steepest()`: the same 200001 points on -100..100 in Python and C++)
+  or, for power, of `unlimited` (the pair without its soft limit at full supply: sag and the limit only flatten
+  it). The C++ loop runs at the core rate, Python at its `oversample` rate, so the b0s and the value differ a little.
 - **Tonestack**: the classic passive circuit as a netlist, solved by `circuit.py` (nodal analysis ->
   H(s) polynomials via FFT on a circle -> bilinear transform -> `IIR`). The MID POT IS A 3-TERMINAL POT:
   bass pot -> mid pot top, mid pot bottom -> ground, C3 -> mid pot wiper. Wiring it as a variable resistor
   was wrong by up to 78 dB against the published formula (Yeh & Smith 2006). Default tapers: treble and
   mid linear, bass log (all-log made "all at 5" far too dark). New tone circuits = a new netlist.
+  Each style names its circuit (`CIRCUITS`): `british`/`american`/`top_boost` = "fmv", `james` = a passive
+  Baxandall (designed here: 10:1 ratios, log pots, flat within 0.8 dB at 5/5). `top_boost` = fmv without a mid pot
+  (`fixed` mid 10 with R3 = 10k: that 10k is a guess), 50p/22n/22n/100k/1M log pots from published summaries.
+  A knob or taper the style does not have is an error. settings.json: `style.circuits`, `parts.names` per
+  circuit, `styles` on mid/mid_taper; the inspector hides what the style lacks and a style change removes it.
+  brit_top_boost uses it (treble 8, bass 3: the eq it replaced was brighter at 6/4).
 - **Split**: every path gets the same input; outputs are added (`sign * level` per path). Any block can go in
   a path. Every block has `children()`; `chain.flatten` walks into feedback loops and split paths, so sag
   targets and unique ids work everywhere. `build_chain` lives in `blocks.py` (Split needs it).
@@ -157,12 +173,13 @@ These are now tests in `tests/` (each limit is written next to the measured valu
   changes (chatter), 3 = 2 (clean), 6 = 1 (never closes: closing point under the hiss peaks).
 - Tonestack: circuit solver vs the Yeh & Smith closed form, 12 knob settings x 2 styles: within 0.0003 dB.
   Digital vs analog: 0.01 dB up to 10 kHz at 48 kHz. All knobs at 5: mid dip at ~700 Hz (british, -4.7 dB)
-  and ~760 Hz (american, -6.9 dB). b0 > 0 for all 54 tested settings at 48 and 192 kHz.
+  and ~760 Hz (american, -6.9 dB). b0 > 0 for all tested settings of every style at 48 and 192 kHz.
+  James at 5/5: flat within 0.8 dB (40 Hz-8 kHz); bass/treble beyond +-12 dB; top_boost = the fmv netlist at mid 10.
 - Triode 12AX7, 300 V, 100k, -1.5 V: plate 205 V, 0.95 mA, gain 61 (real tube data: ~190-205 V, ~60).
   At 0.5 V: 2.6% 2nd / 0.1% 3rd harmonic. Cold bias -2.5 V at 2 V: 24% 2nd harmonic.
   Bias shift on a triode starts at grid current (1.2 V peak: none, 1.8 V: yes).
 - Power: datasheet points hit exactly (EL34 100 mA 11 mA/V, 6L6GC 72/6, EL84 48/11.3, 6V6GT 45/4.1).
-  Max output: EL34 pair 48 W, 6L6GC 45 W, EL84 17 W, 6V6GT 22 W. Matched pair: 0.00% 2nd harmonic;
+  Max output: EL34 pair 48 W, 6L6GC 45 W, EL84 17 W, 6V6GT 22 W, KT88 and 6550 100 W (their sheets). Matched pair: 0.00% 2nd harmonic;
   10% mismatch: 0.95%. EL34 450 V, 10 V drive: bias -38 V 0.24%, -45 V 1.61% (crossover).
   Bias shift 0.5: soft note after a loud part 5.4% vs 3.1% alone, normal again after ~250 ms.
 - After any change: all presets must still equal their `out/*.wav` files when the change should not
@@ -172,6 +189,9 @@ C++ checks:
 - `tools/cpp_check.py` (leaves the `panel` out of the core/tail parts; fails above -120 dB), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
   -159 to -210 dB below the output peak (-159 = the feedback solver's 1e-10 tolerance); tail (cab IR) -137 dB
   (the `float` FFT in the convolver).
+  It also runs `tests/cpp_presets/` (test-only presets for parts no built-in preset uses): KT88 + james -125 dB,
+  6550 + top_boost + positive feedback -182 dB. The james circuit alone is -132 dB: a 4th-order filter at 384 kHz
+  is very sensitive to the last digits of its coefficients (not a wiring difference: that would be near 0 dB).
 - Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
   share within 0.2 points on every preset at 8x and 4x; low/mid/high balance of the riff within 1%.
 - CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 3-13% of one core (feedback presets ~10-13%). Build time
@@ -300,15 +320,18 @@ Like the user's `github.com/kuzunlu/stream-bridge`:
 Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). Releases: tags `v0.1.0` and `v0.1.1` pushed on 2026-11-23
 (the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
 Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
-values), power (push-pull EL34/6L6GC/EL84/6V6GT), sag, feedback, split, gate, ir; `tools/check_settings.py`;
+values; styles british, american, top_boost, james), power (push-pull EL34/6L6GC/EL84/6V6GT/KT88/6550), sag,
+feedback (also positive), split, gate, ir; `tools/check_settings.py`;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
 C++ plugin: the engine (all blocks), VST3 + standalone, preset menu (built-in presets) + open/watch a preset
 file, Load IR, Input/Output/Quality, status box, chain view + inspector to edit every setting and add/move/remove
 blocks, Save as, Level, undo/redo, copy/paste/duplicate, front panel (8 automatable knobs), click-free engine swaps. Checked (see above). Not yet tried in a real DAW by the user.
 Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
-when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
-their datasheets like the others); positive feedback; sag targets before the sag
-block.
+when played softly, see its notes); sag targets before the sag block (real amps: the power stage's current
+sags the preamp supply too). NOT done because Python runs each block over the whole file before the next one, and
+its per-stage oversampling can not run in small pieces: an earlier target would need the sag value from later in the
+chain, sample by sample. It needs Python's oversampling made streaming first (then both versions run the chain in
+small fixed pieces, the earlier targets using the sag of the piece before).
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.
 The user often can not listen to the output, so report measured numbers, not only "it sounds right".

@@ -633,7 +633,8 @@ private:
 class PartsRow final : public Inspector::Row
 {
 public:
-    PartsRow (juce::var objectIn, const juce::var& entry, std::function<void (bool)> changedIn)
+    // partNames: the parts of the block's circuit, with their help text.
+    PartsRow (juce::var objectIn, const juce::var& entry, const juce::var& partNames, std::function<void (bool)> changedIn)
         : object (objectIn), changed (std::move (changedIn))
     {
         const auto tipText = SettingsHelp::tip (entry);
@@ -646,7 +647,7 @@ public:
         styleNote (note);
         addAndMakeVisible (note);
 
-        if (auto* names = entry["names"].getDynamicObject())
+        if (auto* names = partNames.getDynamicObject())
             for (auto& n : names->getProperties())
             {
                 auto part = std::make_unique<Part>();
@@ -1056,6 +1057,9 @@ void Inspector::addRowsForBlock (const juce::var& block)
         if (entry.hasProperty ("curve") && entry["curve"].toString() != curve)
             continue;  // a setting of another clipping curve
 
+        if (auto* styles = entry["styles"].getArray(); styles != nullptr && ! styles->contains (block.getProperty ("style", "british")))
+            continue;  // a knob this tone stack style does not have
+
         if (kind == "band-list")
         {
             auto bandsRow = std::make_unique<BandsRow> (block, key, entry, help.section ("band"), changedFn);
@@ -1066,7 +1070,9 @@ void Inspector::addRowsForBlock (const juce::var& block)
 
         if (kind == "parts")
         {
-            rows.push_back (std::make_unique<PartsRow> (block, entry, changedFn));
+            // Each circuit has its own parts.
+            const auto circuit = settings["style"]["circuits"][block.getProperty ("style", "british").toString().toRawUTF8()];
+            rows.push_back (std::make_unique<PartsRow> (block, entry, entry["names"][circuit.toString().toRawUTF8()], changedFn));
             continue;
         }
 
@@ -1076,6 +1082,7 @@ void Inspector::addRowsForBlock (const juce::var& block)
             note = "Only used by the Python version. The plugin uses the Quality menu for the whole amp.";
 
         const bool isCurve = key == "curve";
+        const bool isStyle = key == "style" && type == "tonestack";
         auto row = std::make_unique<ValueRow> (block, key, entry, note, isCurve ? std::function<void (bool)> ([this, block] (bool)
         {
             // Settings of the old curve would stop the preset with an error, so they go.
@@ -1085,6 +1092,34 @@ void Inspector::addRowsForBlock (const juce::var& block)
                 for (auto& s : help.blockSettings ("gain").getDynamicObject()->getProperties())
                     if (s.value.hasProperty ("curve") && s.value["curve"].toString() != newCurve)
                         o->removeProperty (s.name);
+
+            changed (true);
+        }) : isStyle ? std::function<void (bool)> ([this, block, settings] (bool)
+        {
+            // Knobs and parts the new style does not have would stop the preset with an error, so they go.
+            const auto newStyle = block.getProperty ("style", "british");
+            auto* o = block.getDynamicObject();
+
+            if (o == nullptr)
+                return;
+
+            for (auto& s : settings.getDynamicObject()->getProperties())
+                if (auto* styles = s.value["styles"].getArray(); styles != nullptr && ! styles->contains (newStyle))
+                    o->removeProperty (s.name);
+
+            const auto names = settings["parts"]["names"][settings["style"]["circuits"][newStyle.toString().toRawUTF8()].toString().toRawUTF8()];
+
+            if (auto* parts = block["parts"].getDynamicObject())
+            {
+                juce::StringArray gone;
+
+                for (auto& p : parts->getProperties())
+                    if (! names.hasProperty (p.name))
+                        gone.add (p.name.toString());
+
+                for (auto& name : gone)
+                    parts->removeProperty (name);
+            }
 
             changed (true);
         }) : changedFn, false);

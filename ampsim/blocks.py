@@ -90,14 +90,22 @@ class EQ(Block):
             v = f.tick(v, commit)
         return v * self.level
 
+    def max_slope(self):
+        """The most the output can move per unit of input within one sample (for positive feedback)."""
+        return first_gain(self.filters) * self.level
+
 
 class Tonestack(Block):
-    """The classic passive bass/mid/treble circuit, worked out from its real part values.
+    """A passive tone circuit of a tube amp, worked out from its real part values.
 
-    The circuit (used by most tube amps, with different values):
+    Two circuits:
+    "fmv", the classic bass/mid/treble circuit used by most tube amps, with different values:
         in --C1-- treble pot top . treble pot wiper = out . treble pot bottom = x
         x --bass pot (variable resistor)-- y = mid pot top . mid pot wiper = w . mid pot bottom = ground
         in --R4-- z,   z --C2-- x,   z --C3-- w
+    "james", the passive Baxandall-style bass/treble circuit (E. J. James, 1949):
+        bass:   in --R3-- a,  a --bass pot-- b (wiper m),  b --R4-- ground,  C3 across a-m,  C4 across m-b,  m --R5-- out
+        treble: in --C1-- treble pot top,  treble pot bottom --C2-- ground,  wiper = out
     The knobs affect each other, just like in the real amp. The output level is the real (lossy) one.
     """
 
@@ -105,12 +113,23 @@ class Tonestack(Block):
         "style", "parts", "treble", "mid", "bass", "treble_taper", "mid_taper", "bass_taper",
         "source_ohms", "load_ohms", "level_db",
     }
+    CIRCUITS = {"fmv": ("treble", "mid", "bass"), "james": ("treble", "bass")}
     # Pot tapers as common schematics list them: linear treble and mid, audio ("log") bass.
     TAPERS = {"treble": "linear", "mid": "linear", "bass": "log"}
     STYLES = {
         # Values as in common published schematics. Check them against the schematic of the amp you copy.
-        "british": {"C1": 470e-12, "C2": 22e-9, "C3": 22e-9, "R1": 220e3, "R2": 1e6, "R3": 25e3, "R4": 33e3},
-        "american": {"C1": 250e-12, "C2": 20e-9, "C3": 20e-9, "R1": 250e3, "R2": 1e6, "R3": 25e3, "R4": 56e3},
+        "british": {"circuit": "fmv", "parts": {"C1": 470e-12, "C2": 22e-9, "C3": 22e-9, "R1": 220e3, "R2": 1e6, "R3": 25e3, "R4": 33e3}},
+        "american": {"circuit": "fmv", "parts": {"C1": 250e-12, "C2": 20e-9, "C3": 20e-9, "R1": 250e3, "R2": 1e6, "R3": 25e3, "R4": 56e3}},
+        # The 60s British top-boost unit: the same circuit without a mid pot. 50 pF, 22 nF, 22 nF, 100k slope and
+        # 1M log pots from published summaries; the fixed 10k where the mid pot would be is NOT checked against
+        # the original schematic.
+        "top_boost": {"circuit": "fmv", "parts": {"C1": 50e-12, "C2": 22e-9, "C3": 22e-9, "R1": 1e6, "R2": 1e6, "R3": 10e3, "R4": 100e3},
+                      "fixed": {"mid": 10.0}, "tapers": {"treble": "log", "bass": "log"}},
+        # A design, not copied from one amp: 10:1 resistor and capacitor ratios and log pots, so all knobs at 5
+        # are flat (within 0.8 dB, 40 Hz-8 kHz, about -21 dB); bass +-15 dB at 40 Hz, treble +18/-15 dB at 8 kHz.
+        "james": {"circuit": "james", "parts": {"C1": 220e-12, "C2": 2.2e-9, "C3": 4.7e-9, "C4": 47e-9,
+                                                "R1": 1e6, "R2": 1e6, "R3": 100e3, "R4": 10e3, "R5": 100e3},
+                  "tapers": {"treble": "log", "bass": "log"}},
     }
     MIN_OHMS = 1.0  # a pot turned fully to one end still has a tiny resistance
 
@@ -119,15 +138,21 @@ class Tonestack(Block):
         style = cfg.get("style", "british")
         if style not in self.STYLES:
             raise ValueError(f"tonestack: unknown style '{style}'. Use one of: {', '.join(self.STYLES)}")
-        parts = dict(self.STYLES[style])
+        spec = self.STYLES[style]
+        parts = dict(spec["parts"])
         check_keys(cfg.get("parts", {}), set(parts), "tonestack parts")
         parts.update(cfg.get("parts", {}))
         knobs = {}
         for knob in ("treble", "mid", "bass"):
+            if knob not in self.CIRCUITS[spec["circuit"]] or knob in spec.get("fixed", {}):
+                if knob in cfg or f"{knob}_taper" in cfg:
+                    raise ValueError(f"tonestack: the {style} style has no {knob} knob")
+                knobs[knob] = spec.get("fixed", {}).get(knob, 0.0) / 10
+                continue
             value = cfg.get(knob, 5.0)
             if not 0 <= value <= 10:
                 raise ValueError(f"tonestack: {knob} must be from 0 to 10, got {value}")
-            taper = cfg.get(f"{knob}_taper", self.TAPERS[knob])
+            taper = cfg.get(f"{knob}_taper", spec.get("tapers", {}).get(knob, self.TAPERS[knob]))
             if taper not in ("log", "linear"):
                 raise ValueError(f"tonestack: {knob}_taper must be 'log' or 'linear'")
             # Audio ("log") taper: half way round gives 10% of the resistance, like real tone pots.
@@ -135,17 +160,32 @@ class Tonestack(Block):
 
         t, m, l = knobs["treble"], knobs["mid"], knobs["bass"]
         p, r = parts, self.MIN_OHMS
-        self.parts = [
-            ("C", p["C1"], "in", "top"),
-            ("R", max(p["R1"] * (1 - t), r), "top", "out"),
-            ("R", max(p["R1"] * t, r), "out", "x"),
-            ("R", max(p["R2"] * l, r), "x", "y"),
-            ("R", max(p["R3"] * (1 - m), r), "y", "w"),
-            ("R", max(p["R3"] * m, r), "w", "gnd"),
-            ("R", p["R4"], "in", "z"),
-            ("C", p["C2"], "z", "x"),
-            ("C", p["C3"], "z", "w"),
-        ]
+        if spec["circuit"] == "fmv":
+            self.parts = [
+                ("C", p["C1"], "in", "top"),
+                ("R", max(p["R1"] * (1 - t), r), "top", "out"),
+                ("R", max(p["R1"] * t, r), "out", "x"),
+                ("R", max(p["R2"] * l, r), "x", "y"),
+                ("R", max(p["R3"] * (1 - m), r), "y", "w"),
+                ("R", max(p["R3"] * m, r), "w", "gnd"),
+                ("R", p["R4"], "in", "z"),
+                ("C", p["C2"], "z", "x"),
+                ("C", p["C3"], "z", "w"),
+            ]
+        else:
+            self.parts = [
+                ("R", p["R3"], "in", "a"),
+                ("R", max(p["R2"] * (1 - l), r), "a", "m"),
+                ("R", max(p["R2"] * l, r), "m", "b"),
+                ("R", p["R4"], "b", "gnd"),
+                ("C", p["C3"], "a", "m"),
+                ("C", p["C4"], "m", "b"),
+                ("R", p["R5"], "m", "out"),
+                ("C", p["C1"], "in", "t"),
+                ("R", max(p["R1"] * (1 - t), r), "t", "out"),
+                ("R", max(p["R1"] * t, r), "out", "u"),
+                ("C", p["C2"], "u", "gnd"),
+            ]
         self.source_ohms = cfg.get("source_ohms", 1000.0)
         self.load_ohms = cfg.get("load_ohms", 1e6)
         self.filter = IIR(*digital_filter(self.parts, sr, self.source_ohms, self.load_ohms))
@@ -157,6 +197,9 @@ class Tonestack(Block):
     def tick(self, v, h=1.0, commit=True):
         # h (headroom) is not used: a tone stack does not clip.
         return self.filter.tick(v, commit) * self.level
+
+    def max_slope(self):
+        return abs(self.filter.b[0]) * self.level
 
 
 class Gain(Block):
@@ -259,6 +302,10 @@ class Gain(Block):
             v = f.tick(v, commit)
         return v * self.level
 
+    def max_slope(self):
+        # h (sag) and the bias shift only move along the curve: its steepest point is the limit
+        return first_gain(self.pre) * self.drive * steepest(self.curve, GAIN_SLOPE_RANGE) * first_gain(self.post) * self.level
+
 
 class Power(Block):
     """A push-pull power amp: two power tubes driven with opposite signals into an output transformer.
@@ -277,7 +324,7 @@ class Power(Block):
         super().__init__(cfg, sr)
         plate_v = cfg.get("plate_v", 450.0)
         self.bias_v = cfg.get("bias_v", -45.0)  # about 39 mA idle for the default EL34 pair at 450 V
-        self.shape, self.scalar_shape, self.tube_info = make_pushpull(
+        self.shape, self.scalar_shape, self.unlimited, self.tube_info = make_pushpull(
             cfg.get("tube", "EL34"), plate_v, cfg.get("screen_v") or plate_v, self.bias_v,
             cfg.get("raa_ohms", 3400.0), cfg.get("mismatch", 0.0))
         self.offset = self.scalar_shape(0.0, 1.0, 0.0, 0.0)  # mismatched tubes leave a step at rest
@@ -333,6 +380,10 @@ class Power(Block):
         for f in self.post:
             out = f.tick(out, commit)
         return out * self.level
+
+    def max_slope(self):
+        pair = steepest(self.unlimited, 4 * abs(self.bias_v))
+        return first_gain(self.pre) * self.drive * pair * first_gain(self.post) * self.level
 
 
 class Sag(Block):
@@ -397,6 +448,24 @@ class IRLoader(Block):
         return ((1 - self.mix) * x + self.mix * wet) * self.level
 
 
+SLOPE_POINTS = 200000  # how finely steepest() samples a curve
+GAIN_SLOPE_RANGE = 100.0  # gain curves are sampled on -100..100 (their steepest part is near 0)
+
+
+def steepest(fn, half_range):
+    """The steepest slope of fn on -half_range..half_range, sampled finely (for the positive feedback check)."""
+    x = -half_range + 2 * half_range * np.arange(SLOPE_POINTS + 1) / SLOPE_POINTS
+    return float(np.max(np.abs(np.diff(fn(x))))) / (2 * half_range / SLOPE_POINTS)
+
+
+def first_gain(filters):
+    """How much of the current sample a list of filters passes at once (the product of their b0)."""
+    g = 1.0
+    for f in filters:
+        g *= abs(f.b0)
+    return g
+
+
 def solve_falling(g, y0, tol=1e-10, max_steps=60):
     """Find y where g(y) = 0, for a g that always goes down as y goes up (so there is exactly one answer).
 
@@ -434,6 +503,8 @@ class Feedback(Block):
     Positive amount = negative feedback, like the global feedback loop of a tube power amp:
     less gain, tighter and cleaner clipping. The path filters choose which tones get less feedback,
     so they come out louder (a high shelf cut = "presence", a low shelf cut = "resonance").
+    Negative amount = positive feedback: more gain and a harder, more compressed feel. Only allowed while the
+    loop can never gain 1 or more (checked when the block is built, from each inner block's max_slope()).
 
     There is no delay in the loop (a delay makes strong feedback oscillate). Instead, the output of each
     sample is found by solving the loop equation. It runs one sample at a time at `oversample` times
@@ -446,8 +517,6 @@ class Feedback(Block):
     def __init__(self, cfg, sr):
         super().__init__(cfg, sr)
         self.amount = cfg.get("amount", 0.3)
-        if self.amount < 0:
-            raise ValueError("feedback amount must be 0 or more (positive feedback is not supported yet)")
         self.factor = cfg.get("oversample", 4)
         self.level = db_to_gain(cfg.get("level_db", 0.0))
         loop_sr = sr * self.factor
@@ -461,6 +530,16 @@ class Feedback(Block):
             if "oversample" in inner:
                 raise ValueError("feedback: gain blocks inside the loop can not set 'oversample'. Set it on the feedback block")
             self.blocks.append(self.INNER_TYPES[kind](inner, loop_sr))
+
+        if self.amount < 0:
+            # Positive feedback: the loop equation has exactly one answer only while the loop can never gain 1 or
+            # more within one sample. Above that a real circuit latches or oscillates, and the solver can not work.
+            gain = -self.amount * first_gain(self.path)
+            for b in self.blocks:
+                gain *= b.max_slope()
+            if gain >= 1:
+                raise ValueError(f"feedback: positive feedback (amount below 0) needs a loop gain below 1, but this loop can "
+                                 f"reach {gain:.2f}. Use a smaller amount or less gain inside the loop")
 
     def process(self, x):
         factor = self.factor

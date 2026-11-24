@@ -38,7 +38,8 @@ def yeh(f, t, m, l, C1, C2, C3, R1, R2, R3, R4):
 class ToneStack(unittest.TestCase):
     def test_circuit_solver_matches_the_published_formula(self):
         freqs = np.geomspace(20, 20000, 200)
-        for style, p in Tonestack.STYLES.items():
+        for style in ("british", "american"):
+            p = Tonestack.STYLES[style]["parts"]
             for knobs in [(5, 5, 5), (0, 0, 0), (10, 10, 10), (10, 0, 3), (2, 8, 10), (7, 1, 0)]:
                 with self.subTest(style=style, knobs=knobs):
                     ts = Tonestack({"type": "tonestack", "style": style, "treble": knobs[0], "mid": knobs[1], "bass": knobs[2],
@@ -55,8 +56,46 @@ class ToneStack(unittest.TestCase):
         # needed inside a feedback loop: the block must rise with its input
         for style, rate, knobs in itertools.product(Tonestack.STYLES, (48000, 192000), itertools.product((0, 5, 10), repeat=3)):
             with self.subTest(style=style, rate=rate, knobs=knobs):
-                ts = Tonestack({"type": "tonestack", "style": style, "treble": knobs[0], "mid": knobs[1], "bass": knobs[2]}, rate)
-                self.assertGreater(ts.filter.b[0], 0)
+                cfg = {"type": "tonestack", "style": style, "treble": knobs[0], "bass": knobs[2]}
+                if style in ("british", "american"):
+                    cfg["mid"] = knobs[1]
+                self.assertGreater(Tonestack(cfg, rate).filter.b[0], 0)
+
+    def response_db(self, freqs, **knobs):
+        ts = Tonestack({"type": "tonestack", **knobs}, SR)
+        return 20 * np.log10(np.abs(analog_response(ts.parts, freqs, ts.source_ohms, ts.load_ohms)))
+
+    def test_james_is_flat_at_5_and_boosts_and_cuts(self):
+        freqs = [40, 100, 300, 1000, 3000, 8000]
+        flat = self.response_db(freqs, style="james")
+        self.assertLess(np.max(flat) - np.min(flat), 1.0)  # measured 0.8 dB
+        bass_up, bass_down = self.response_db([40], style="james", bass=10), self.response_db([40], style="james", bass=0)
+        treble_up, treble_down = self.response_db([8000], style="james", treble=10), self.response_db([8000], style="james", treble=0)
+        self.assertGreater(bass_up[0] - flat[0], 12)
+        self.assertLess(bass_down[0] - flat[0], -12)
+        self.assertGreater(treble_up[0] - flat[-1], 12)
+        self.assertLess(treble_down[0] - flat[-1], -12)
+        mid_moves = [self.response_db([1000], style="james", treble=a, bass=b)[0] - flat[3] for a, b in ((10, 0), (0, 10), (0, 0))]
+        self.assertLess(np.max(np.abs(mid_moves)), 6)  # 1 kHz hardly moves
+
+    def test_styles_without_a_mid_knob(self):
+        for style in ("top_boost", "james"):
+            for key in ("mid", "mid_taper"):
+                with self.subTest(style=style, key=key), self.assertRaisesRegex(ValueError, f"the {style} style has no mid knob"):
+                    Tonestack({"type": "tonestack", "style": style, key: 5 if key == "mid" else "log"}, SR)
+
+    def test_top_boost_is_the_classic_circuit_without_a_mid_pot(self):
+        # its fixed 10k = a 10k linear mid pot turned fully up
+        tb = Tonestack({"type": "tonestack", "style": "top_boost", "treble": 7, "bass": 3}, SR)
+        parts = dict(Tonestack.STYLES["top_boost"]["parts"])
+        same = Tonestack({"type": "tonestack", "style": "british", "parts": parts, "treble": 7, "bass": 3, "mid": 10,
+                          "treble_taper": "log", "bass_taper": "log"}, SR)
+        self.assertEqual(tb.parts, same.parts)
+
+    def test_unknown_parts_are_errors(self):
+        with self.assertRaisesRegex(ValueError, "C4"):
+            Tonestack({"type": "tonestack", "style": "british", "parts": {"C4": 1e-9}}, SR)
+        Tonestack({"type": "tonestack", "style": "james", "parts": {"C4": 1e-9}}, SR)
 
 
 if __name__ == "__main__":

@@ -96,7 +96,9 @@ def main():
     di, sr = read_wav(ROOT / "audio" / "test_di.wav")
     di = di.mean(axis=1)[: int(args.seconds * sr)]
     di_high = upsample(di, args.factor)
-    presets = [Path(p) for p in args.presets] or sorted((ROOT / "presets").glob("*.json"))
+    # the built-in presets, plus test-only presets that cover parts no built-in preset uses
+    presets = [Path(p) for p in args.presets] or (sorted((ROOT / "presets").glob("*.json"))
+                                                  + sorted((ROOT / "tests" / "cpp_presets").glob("*.json")))
 
     print(f"Difference C++ vs Python, dB below the output peak ({args.seconds} s of the test DI)")
     print(f"{'preset':24} {'core @ ' + str(sr * args.factor // 1000) + ' kHz':>16} {'tail @ ' + str(sr // 1000) + ' kHz':>14}")

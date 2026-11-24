@@ -375,6 +375,35 @@ int main (int argc, char* argv[])
                    + juce::String (juce::Decibels::gainToDecibels (worstBefore / peak, -200.0), 1) + " dB)");
         }
 
+        // A new tone stack style without a mid knob: the mid settings must go, or the preset stops with an error.
+        {
+            auto tone = ed->getEditedPreset()["chain"][6];
+            tone.getDynamicObject()->setProperty ("mid", 7);
+            ed->select ({ ed->getEditedPreset()["chain"], 6, false });
+            pump (50);
+            auto* style = findControl<juce::ComboBox> (*editor, "style");
+            check (style != nullptr, "the tone stack's style menu is there");
+
+            if (style != nullptr)
+            {
+                for (int i = 0; i < style->getNumItems(); ++i)
+                    if (style->getItemText (i) == "james")
+                        style->setSelectedItemIndex (i, juce::sendNotificationSync);
+
+                pump (50);
+                waitForBuild (*q);
+                const auto now = q->getPresetData()["chain"][6];
+                check (now["style"].toString() == "james" && ! now.hasProperty ("mid") && ! q->getStatus().isError,
+                       "switching the tone stack to james removes its mid knob and builds: "
+                           + q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false));
+                check (findControl<juce::Slider> (*editor, "mid") == nullptr && findControl<juce::Slider> (*editor, "bass") != nullptr,
+                       "the inspector shows no mid slider for james");
+            }
+
+            q->undo();
+            waitForBuild (*q);
+        }
+
         auto saved = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("custom_amp_saved.json");
         check (q->saveEditedPreset (saved) && ! q->isEdited() && q->getPresetFile() == saved, "Save as writes the file and watches it");
         juce::var reread;
