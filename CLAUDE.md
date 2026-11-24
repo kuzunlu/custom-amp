@@ -87,8 +87,18 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   gets ~17 V). Needs a real amp recording to decide if that is right.
 - **Power** (push-pull): grid A = `bias + sa + x`, grid B = `bias + sb - x`; each current from Koren's
   pentode model (`PENTODES`: kg1/kp FITTED to each datasheet's class A point, which they match exactly;
-  my remembered Koren numbers for EL34/6L6 were 3-12% off). The output transformer passes no DC: a 1st-order 10 Hz
-  high-pass always ends the block (presets add their own transformer low end with post `highpass1`). Output = (Raa/4)(IA - IB), soft-limited at
+  my remembered Koren numbers for EL34/6L6 were 3-12% off). **Output transformer** (before the post filters): its
+  winding is an inductor across the load and its core holds only so much flux (volts x time). Flux lambda' = out,
+  out = y - w m(lambda), w = 2 pi `transformer_low_hz` (default 10), m = lambda (1 + (lambda / lambdaSat)^4) (the
+  magnetizing current, twice the linear one at lambdaSat), lambdaSat = |bias_v| / (2 pi `transformer_sat_hz`) (a
+  full-power note at that frequency just reaches it; 0 = never saturates, the default). One backward-Euler step per
+  sample (stable however hard it saturates); out = the flux's change; in a loop the committed try's y moves the flux.
+  Checked (EngineTest): small signal at the 10 Hz corner -3.008 dB (theory -3.010); core full at 40 Hz (20 V into an
+  EL34 pair, sat 90 Hz): 400 Hz and a quiet 40 Hz unchanged, a loud 40 Hz -0.95 dB with 3rd harmonic 3.7% -> 17.2%.
+  With the pair ALSO clipping hard their 3rd harmonics partly cancel (40 V, sat 40 Hz: 7.9% -> 3.0%): clipping flattens
+  the peaks, the core bends the wave a quarter cycle later. Presets: sat 40 Hz (50 W, 40 W), 30 Hz (100 W), 70 Hz
+  (EL84): GUESSES from the amp's size. Presets keep their own post `highpass1` (50-70 Hz) for the rest of the low end.
+  Output = (Raa/4)(IA - IB), soft-limited at
   `plate_v * (Raa/4) / (Raa/4 + rsat)`. `rsat` was worked back from known amp outputs (EL34 pair 50 W
   etc.), so the output-power check is a consistency check, not independent proof. Sag scales the supply:
   `I(vg, h*Vs) = h**1.35 * I(vg/h, Vs)` (Koren's model allows this exactly). Each grid has its own bias

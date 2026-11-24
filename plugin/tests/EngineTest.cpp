@@ -315,6 +315,37 @@ void preampSupplyChecks()
            "it recovers through the 100 ms filter: " + juce::String (ratio, 3) + " of its drop is left after 100 ms (theory e^-1 = 0.368)");
 }
 
+void transformerChecks()
+{
+    std::cout << "Output transformer: a 1st-order bass roll-off, and a core that saturates on loud low notes\n";
+    const double rate = 96000.0;
+    const auto pair = [rate] (double satHz, double freq, double level)
+    {
+        const auto chain = R"([ { "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -45, "raa_ohms": 3400, "transformer_sat_hz": )"
+                           + juce::String (satHz) + " } ]";
+        return runJson (chain, sine (freq, level, 1.0, rate), rate);
+    };
+    const auto db = [] (double a, double b) { return 20 * std::log10 (a / b); };
+
+    // A small signal (the pair is almost straight): 10 Hz against 1 kHz = the 10 Hz corner of a 1st-order high-pass.
+    const double corner = db (tone (pair (0, 10, 1.0), 10, rate), tone (pair (0, 1000, 1.0), 1000, rate));
+    check (std::abs (corner + 3.0103) < 0.02, "small signal at the 10 Hz corner: " + juce::String (corner, 3) + " dB (theory -3.010 dB)");
+
+    // The pair below clipping (20 V), a core that saturates at 90 Hz: a 40 Hz note at that level fills it. A 400 Hz
+    // note at the same level and a quiet 40 Hz note do not change; the loud 40 Hz note loses bass, gains odd harmonics.
+    // (With the pair clipping hard as well, their 3rd harmonics partly cancel: 40 V at 40 Hz, core at 40 Hz: 7.9% -> 3.0%.
+    // Clipping flattens the peaks, the core bends the wave a quarter cycle later, around the zero crossings.)
+    const auto high = db (tone (pair (90, 400, 20.0), 400, rate), tone (pair (0, 400, 20.0), 400, rate));
+    const auto quiet = db (tone (pair (90, 40, 2.0), 40, rate), tone (pair (0, 40, 2.0), 40, rate));
+    const auto loudSat = pair (90, 40, 20.0), loud = pair (0, 40, 20.0);
+    const auto low = db (tone (loudSat, 40, rate), tone (loud, 40, rate));
+    const double third = harmonicPercent (loudSat, 40, 3, rate), thirdBefore = harmonicPercent (loud, 40, 3, rate);
+    check (std::abs (high) < 0.05 && std::abs (quiet) < 0.1 && low < -0.5 && third > thirdBefore + 5,
+           "core full at 40 Hz: 400 Hz " + juce::String (high, 3) + " dB, quiet 40 Hz " + juce::String (quiet, 3)
+               + " dB, 40 Hz " + juce::String (low, 2) + " dB with its 3rd harmonic " + juce::String (thirdBefore, 1) + "% -> "
+               + juce::String (third, 1) + "%");
+}
+
 void powerChecks()
 {
     std::cout << "Power tubes against their datasheets\n";
@@ -815,6 +846,7 @@ int main (int argc, char* argv[])
             couplingChecks();
             powerChecks();
             preampSupplyChecks();
+            transformerChecks();
             settingsChecks (root);
             referenceChecks (root);
             std::cout << (failures == 0 ? "All passed\n" : juce::String (failures) + " failed\n");

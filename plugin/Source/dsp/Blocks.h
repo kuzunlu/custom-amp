@@ -162,6 +162,8 @@ private:
     void nextShifts (double v) noexcept;
     void setHeadroom (double fromSag) noexcept;
     void stepSupply (double draw) noexcept;
+    double nextFlux (double y) const noexcept;
+    double transformer (double y) const noexcept;
 
     PushPull tubes;
     FilterList pre, post;
@@ -169,6 +171,8 @@ private:
     mutable double triedU = 0, triedDraw = 0;  // the drive and current of the last peek(), for commitTried()
     double supplyOhms = 0, supplyUf = 47, supplyIdle = 450, supplyNoLoad = 450, supplyV = 450, supplyDecay = 0;
     double preampCoeff = 0;
+    double otDt = 0, otW = 0, otPerSat = 0, otLambda = 0;  // the output transformer: 1 / rate, 2 pi low_hz, 1 / flux at saturation, flux
+    mutable double triedY = 0;                             // the pair's output in the last peek()
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, sa = 0, sb = 0;
     double h = 1.0;
     PushPull::Supply supply;  // tubes.supply (h)

@@ -249,6 +249,16 @@
           "label": "Preamp supply filter", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 100, "scale": "log",
           "short": "How slowly the preamp's voltage follows the supply (the decoupling filters).",
           "tooltip": "The time constant of the decoupling filters between the main supply and the preamp: resistor x capacitor, for example 10k x 10 uF = 100 ms. Real amps have several in a row (one per stage or pair of stages), so the preamp follows the supply smoothly over 50-500 ms: it does not ripple with each note, it swells and recovers with your playing."
+        },
+        "transformer_low_hz": {
+          "label": "Transformer low end", "type": "number", "unit": "Hz", "min": 1, "max": 200, "default": 10, "scale": "log",
+          "short": "Where the output transformer starts to lose the bass (a gentle 1st-order roll-off).",
+          "tooltip": "The output transformer's winding is an inductor across the speaker load, so the lowest notes leak away through it: a gentle (6 dB per octave) bass cut that starts here. A big transformer: 5-20 Hz. A small one: 30-80 Hz. It also means no DC reaches the speaker."
+        },
+        "transformer_sat_hz": {
+          "label": "Transformer saturation", "type": "number", "unit": "Hz", "min": 0, "max": 300, "default": 0,
+          "short": "How small the transformer core is: the lowest note it passes at full power before the core saturates. 0 = never.",
+          "tooltip": "A transformer core holds only so much magnetism, and the magnetism grows with the voltage AND the time it lasts: so a loud LOW note fills the core much more than a loud high one. When the core is full (saturated), the winding stops working as an inductor: the bass of loud low notes collapses and distorts (odd harmonics), while high notes and quiet playing are unchanged. This is the number: at this frequency a full-power note just reaches saturation; lower or louder notes go into it. A big, generous transformer: 20-30 Hz. A small or cheap one: 60-120 Hz. 0 = the core never saturates."
         }
       }
     },

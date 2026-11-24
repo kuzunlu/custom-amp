@@ -344,7 +344,8 @@ juce::String Gain::describe() const
 Power::Power (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
                         "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
-                        "supply_ohms", "supply_uf", "preamp_targets", "preamp_filter_ms" })
+                        "supply_ohms", "supply_uf", "preamp_targets", "preamp_filter_ms", "transformer_low_hz",
+                        "transformer_sat_hz" })
 {
     const double plateV = cfg.number ("plate_v", 450.0);
     const double screenV = cfg.number ("screen_v", 0.0);
@@ -390,8 +391,18 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     level = dbToGain (cfg.number ("level_db", 0.0));
     pre = makeFilters (cfg.list ("pre"), ctx);
     post = makeFilters (cfg.list ("post"), ctx);
-    // The output transformer passes no DC: its lowest end as a 1st-order roll-off at 10 Hz (more with post filters).
-    post.filters.push_back (Biquad::make ("highpass1", 10, ctx.rate, 0.707, 0.0, ctx.checkRate));
+    // The output transformer: its winding is an inductor across the load, a 1st-order high-pass at transformer_low_hz
+    // (it passes no DC). Its core holds only so much flux (volts x time), so loud LOW notes saturate it: at
+    // transformer_sat_hz a full-power note just reaches that flux. Flux lambda' = out, out = y - w m (lambda),
+    // m = lambda (1 + (lambda / lambdaSat)^4) (the magnetizing current: twice the linear one at lambdaSat).
+    const double lowHz = cfg.number ("transformer_low_hz", 10.0), satHz = cfg.number ("transformer_sat_hz", 0.0);
+
+    if (lowHz <= 0 || satHz < 0)
+        throw PresetError ("power: transformer_low_hz must be above 0 and transformer_sat_hz 0 or more");
+
+    otDt = 1.0 / ctx.rate;
+    otW = 2 * juce::MathConstants<double>::pi * lowHz;
+    otPerSat = satHz > 0 ? 2 * juce::MathConstants<double>::pi * satHz / std::abs (tubes.bias) : 0.0;  // full output = |bias_v|
 
     shiftAmount = cfg.number ("bias_shift", 0.0);
 
@@ -411,6 +422,7 @@ void Power::reset() noexcept
     supply = tubes.supply (1.0);
     supplyV = supplyIdle;
     preampHeadroom = 1.0;
+    otLambda = 0.0;
 }
 
 void Power::setHeadroom (double fromSag) noexcept
@@ -467,8 +479,23 @@ void Power::process (double* x, int n) noexcept
         if (supplyOhms > 0)
             stepSupply (draw);
 
-        x[i] = post.tick (y) * level;
+        const double flux = nextFlux (y), out = (flux - otLambda) / otDt;
+        otLambda = flux;
+        x[i] = post.tick (out) * level;
     }
+}
+
+// The transformer, one step of backward Euler (stable however hard the core saturates): the new flux is
+// (lambda + dt y) / (1 + dt w (1 + (lambda / lambdaSat)^4)), and the output is the flux's change per second.
+double Power::nextFlux (double y) const noexcept
+{
+    const double s = otLambda * otPerSat, s2 = s * s;
+    return (otLambda + otDt * y) / (1 + otDt * otW * (1 + s2 * s2));
+}
+
+double Power::transformer (double y) const noexcept
+{
+    return (nextFlux (y) - otLambda) / otDt;
 }
 
 void Power::beginSample (int n) noexcept
@@ -480,7 +507,8 @@ double Power::peek (double v) const noexcept
 {
     const double u = pre.peek (v) * drive;
     triedU = u;
-    return post.peek (tubes.shape (u, supply, sa, sb, triedDraw) - offset) * level;
+    triedY = tubes.shape (u, supply, sa, sb, triedDraw) - offset;
+    return post.peek (transformer (triedY)) * level;
 }
 
 void Power::commitTried() noexcept
@@ -493,6 +521,7 @@ void Power::commitTried() noexcept
     if (supplyOhms > 0)
         stepSupply (triedDraw);
 
+    otLambda = nextFlux (triedY);
     post.commitTried();
 }
 
