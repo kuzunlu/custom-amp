@@ -1,9 +1,11 @@
 name: Build
 
-# Every push builds the plugin and runs its tests. Pushing a version tag (for example v0.1.0)
-# also publishes it as a GitHub Release, so anyone with access to the repo can download it.
+# Pushing a version tag (for example v0.1.0) builds the plugin, runs its tests and publishes it as a GitHub
+# Release, so anyone with access to the repo can download it. Normal pushes do not build, to save Actions
+# minutes (the repo is private; Windows minutes count double). "Run workflow" on the Actions page builds any branch.
 on:
   push:
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
