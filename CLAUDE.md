@@ -16,7 +16,14 @@ python tools/make_test_audio.py                                       # fake DI 
 python run.py presets/crunch.json audio/test_di.wav out/crunch.wav    # run a preset
 python tools/check_settings.py                                        # settings.json matches the code?
 python tools/check_panel.py                                           # front panel rules (shared cases) + every preset's panel
+python -m unittest discover -s tests -t .                             # all Python tests (~40 s; tests/, standard unittest)
+check.bat                                                             # EVERY check: Python tests, build, PluginTest, cpp_check
 ```
+
+Run `check.bat` before pushing: GitHub only builds release tags. A Python test file per subject in `tests/`
+(oversample, sag, feedback, bias_shift, split, gate, tonestack, curves, power, presets); `tests/common.py` has the
+tone measuring helpers. `test_presets` compares the first 0.4 s of every preset with its `out/*.wav` (scaled, 24-bit
+rounding), so a change that is MEANT to change the sound needs the files made again with `run.py`.
 
 `.wav` files are not in git (`.gitignore`). `audio/` test files can always be made again.
 
@@ -128,7 +135,7 @@ Write the text in plain, simple English (the user is not a native English speake
 
 ## Checks done so far (redo them after changing the DSP)
 
-Tests are small scripts run from the scratchpad, comparing results with theory:
+These are now tests in `tests/` (each limit is written next to the measured value), comparing results with theory:
 
 - Oversampling: hard clip of a 4.5 kHz tone, fold-back noise 21 dB below the harmonics at 1x, 62 dB at 8x.
 - Chunked oversampling equals one-piece processing (difference ~1e-15).
@@ -162,7 +169,7 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
 C++ checks:
-- `tools/cpp_check.py` (leaves the `panel` out of the core/tail parts), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
+- `tools/cpp_check.py` (leaves the `panel` out of the core/tail parts; fails above -120 dB), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
   -159 to -210 dB below the output peak (-159 = the feedback solver's 1e-10 tolerance); tail (cab IR) -137 dB
   (the `float` FFT in the convolver).
 - Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
@@ -192,7 +199,6 @@ C++ checks:
   warm-up: always check that a test fails when the thing it tests is switched off.)
 - `PluginTest --snapshot <folder>` saves pictures of the window (used for the walkthrough page).
 
-Idea for later: turn the Python checks into a real `tests/` folder.
 
 ## The C++ plugin (keep these rules)
 
@@ -301,7 +307,7 @@ file, Load IR, Input/Output/Quality, status box, chain view + inspector to edit 
 blocks, Save as, Level, undo/redo, copy/paste/duplicate, front panel (8 automatable knobs), click-free engine swaps. Checked (see above). Not yet tried in a real DAW by the user.
 Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
-their datasheets like the others); a real `tests/` folder; positive feedback; sag targets before the sag
+their datasheets like the others); positive feedback; sag targets before the sag
 block.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.

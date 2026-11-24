@@ -222,6 +222,16 @@ Put the gate first and set `apply_after` to the last gain stage: it decides on t
 high-gain amp hears the amplified hiss as playing and does not close. Set the threshold above the hiss
 peaks (about 10 dB above the average hiss level).
 
+## Tests
+
+```
+python -m unittest discover -s tests -t .    # the Python tests (about 40 s)
+check.bat                                    # everything (about 11 minutes): Python tests, plugin build, plugin test, C++ vs Python
+```
+
+The tests compare the blocks with theory (feedback loop gain, the tone stack's published formula, tube datasheet
+points, ...) and check that every preset still sounds the same as its `out/*.wav` file.
+
 ## Setting help
 
 Every setting is explained in `shared/settings.json` (range, default, a one-line help and a detailed tooltip).

@@ -115,7 +115,13 @@ def main():
                     cells.append(f"{result[0]:.0f} dB")
             print(f"{path.stem:24} {cells[0]:>16} {cells[1]:>14}", flush=True)
     print(f"Worst: {worst:.0f} dB")
+    if worst > LIMIT_DB:
+        print(f"FAIL: C++ and Python differ by more than {LIMIT_DB} dB")
+        return 1
+    return 0
 
+
+LIMIT_DB = -120  # today the worst is -137 dB (the float FFT in the convolver); a real difference is far above this
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
