@@ -1079,7 +1079,7 @@ void Inspector::addRowsForBlock (const juce::var& block)
         juce::String note = entry["short"].toString();
 
         if (key == "oversample")
-            note = "Only used by the Python version. The plugin uses the Quality menu for the whole amp.";
+            note = "Does nothing: the Quality menu oversamples the whole amp. Kept so older presets still load.";
 
         const bool isCurve = key == "curve";
         const bool isStyle = key == "style" && type == "tonestack";

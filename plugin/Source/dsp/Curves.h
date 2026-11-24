@@ -7,14 +7,14 @@
 namespace amp
 {
 
-// log(1 + exp(z)) without overflow (numpy's logaddexp(0, z)).
+// log(1 + exp(z)) without overflow.
 inline double softplus (double z) noexcept
 {
     return std::max (z, 0.0) + std::log1p (std::exp (-std::abs (z)));
 }
 
 // Grid current: above 0 V the grid voltage can only rise slowly (about 2% of the input) after a soft
-// corner about 0.1 V wide (GRID_SLOPE and GRID_KNEE_V in curves.py).
+// corner about 0.1 V wide.
 constexpr double gridSlope = 0.02;
 constexpr double gridKneeV = 0.1;
 
@@ -83,7 +83,7 @@ juce::StringArray triodeNames();
 
 constexpr double pentodeEx = 1.35;
 
-// A push-pull pair of power tubes into an output transformer (make_pushpull in curves.py).
+// A push-pull pair of power tubes into an output transformer.
 struct PushPull
 {
     static PushPull make (const juce::String& tube, double plateV, double screenV, double biasV,
@@ -143,7 +143,11 @@ struct PushPull
 
 juce::StringArray pentodeNames();
 
-// np.arange (start, stop, step): the same count and the same values as NumPy makes them.
+// One power tube's plate current in amps (Koren's pentode model with the tube's fitted values), for the theory checks.
+double pentodeCurrent (const juce::String& tube, double vg, double screenV, double plateV);
+
+// np.arange (start, stop, step): the same count and values as NumPy makes them. The tube tables were first made
+// with NumPy; keeping its grid keeps the sound exactly the same.
 std::vector<double> numpyArange (double start, double stop, double step);
 
 } // namespace amp

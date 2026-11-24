@@ -1,2 +1,4 @@
 # cmd.exe can misread labels (goto) in a .bat file with Unix line endings.
 *.bat text eol=crlf
+# The reference recordings (tests/reference) are raw float data.
+*.f32 binary

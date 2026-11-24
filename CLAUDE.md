@@ -3,76 +3,64 @@
 A guitar amp built from a few blocks (EQ, gain stage, sag, feedback, cab IR) that can go in any order,
 so it can copy any amp. The idea: every amp is EQ and clipping, plus power supply sag and a feedback loop.
 
-**Final product:** a C++ JUCE plugin (VST3 + standalone app) for live playing. It is in `plugin/` and works.
-**Also:** a Python prototype (`ampsim/`) that processes `.wav` files offline. It was used to get the sound design right.
+**The product:** a C++ JUCE plugin (VST3 + standalone app) for live playing, in `plugin/`. The user's goal: the
+plugin as fast and plain as possible, and behaving as correctly as possible (they want to LEARN what affects what).
 
-**Python is FROZEN (decided 2026-11-24).** It is never part of the plugin; it only costs development time (every
-feature written twice, slow checks, and its whole-file design blocks features like sag before the sag block).
-So: the blocks that exist today stay in Python as a check (`cpp_check.py` keeps comparing them with C++; keep
-them working). NEW features are written in C++ only, with their tests on the C++ engine (EngineTest/PluginTest).
-The user's goal: the final plugin as fast and plain as possible.
+**There is no Python any more (removed 2026-11-24, the user's call: "it's just a weight").** A Python prototype
+(`ampsim/`) was a second, independent copy of the math; C++ matched it to -131 dB or better for every block before it
+was deleted (see git history for it and its tests). Its checks were replaced by `EngineTest check`: theory and
+datasheet checks ported to C++, a settings.json check, and reference recordings of every preset (`tests/reference/`).
+When this file says "(Python: ...)" or "checked in Python", it is history: the number was measured there.
 
 ## Commands
-
-Use `C:\Python314\python.exe`. Only NumPy is used (no SciPy; filters and resampling are written by hand).
-
-```
-python tools/make_test_audio.py                                       # fake DI riff + fake cab IR into audio/
-python run.py presets/crunch.json audio/test_di.wav out/crunch.wav    # run a preset
-python tools/check_settings.py                                        # settings.json matches the code?
-python tools/check_panel.py                                           # front panel rules (shared cases) + every preset's panel
-python -m unittest discover -s tests -t .                             # all Python tests (~40 s; tests/, standard unittest)
-check.bat                                                             # EVERY check: Python tests, build, PluginTest, cpp_check
-```
-
-Run `check.bat` before pushing: GitHub only builds release tags. A Python test file per subject in `tests/`
-(oversample, sag, feedback, bias_shift, split, gate, tonestack, curves, power, presets); `tests/common.py` has the
-tone measuring helpers. `test_presets` compares the first 0.4 s of every preset with its `out/*.wav` (scaled, 24-bit
-rounding), so a change that is MEANT to change the sound needs the files made again with `run.py`.
-
-`.wav` files are not in git (`.gitignore`). `audio/` test files can always be made again.
 
 C++ (JUCE 9.0.5 as a git submodule in `libs/JUCE`, same commit as stream-bridge; Build Tools 18 is installed):
 
 ```
 build.bat                                                   # plugin (VST3 + standalone) + test programs, into build/
 build.bat --target EngineTest                               # only one target
-build\PluginTest_artefacts\Release\PluginTest.exe           # plugin like a DAW: presets, file watching, state, editor
-python tools/cpp_check.py                                   # C++ engine vs Python, block math (needs EngineTest)
+build\EngineTest_artefacts\Release\EngineTest.exe check .    # theory, settings.json, every preset vs its reference recording
+build\EngineTest_artefacts\Release\EngineTest.exe record .   # record the references again (ONLY after a change meant to change the sound)
+build\EngineTest_artefacts\Release\EngineTest.exe make-audio .   # audio/test_di.wav (10 s fake riff) + audio/fake_4x12.wav
 build\EngineTest_artefacts\Release\EngineTest.exe render presets/crunch.json audio/test_di.wav out/c.wav   # + CPU time
+build\PluginTest_artefacts\Release\PluginTest.exe           # plugin like a DAW: presets, file watching, state, editor
+check.bat                                                   # EVERY check: build, EngineTest check, PluginTest (~5 min)
 ```
 
-Clone with `git submodule update --init` to get JUCE.
+Run `check.bat` before pushing: GitHub only builds release tags. Clone with `git submodule update --init` to get JUCE.
+`.wav` files are not in git (`.gitignore`); `make-audio` makes them again (its riff uses juce::Random, so it is not
+the same riff the CPU numbers below were first measured with; it is the same kind of riff).
+`C:\Python314\python.exe` (NumPy, Pillow, OpenCV) is still on this machine for one-off measuring in the scratchpad,
+never in the project.
+
+**Reference recordings** (`tests/reference/<preset>.f32`, raw float32): the first 0.3 s of the level riff through the
+whole engine (48 kHz, 8x, fixed level 1, always the built-in test cab). `check` fails above -100 dB from them. A change
+that is NOT meant to change the sound must pass untouched; one that IS meant to: run `record`, and say so in the
+commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fails.)
 
 ## Layout
 
-- `ampsim/blocks.py`: all blocks (`EQ`, `Gain`, `Sag`, `Feedback`, `IRLoader`) and the clipping curves
-- `ampsim/chain.py`: builds an amp from a preset, links sag blocks to their targets
-- `ampsim/filters.py`: biquad filters (RBJ cookbook), general `IIR`, FFT convolution, resampling, `check_keys`
-- `ampsim/circuit.py`: turns a resistor/capacitor netlist into a digital filter (used by the tone stack)
-- `ampsim/curves.py`: the `custom` and `triode` clipping curves, and the push-pull power tube pair
-- `ampsim/oversample.py`: oversampling for clipping (chunked) and up/down for the feedback loop
-- `ampsim/wavio.py`: wav read/write
-- `ampsim/panel.py`: checks a preset's front panel (`panel` list) against `settings.json`
-- `presets/*.json`: one file = one amp
+- `presets/*.json`: one file = one amp; `tests/presets/*.json`: test-only presets for parts no built-in preset uses
 - `shared/settings.json`: help text for every setting (see below)
-- `plugin/Source/dsp/`: the C++ engine, one file per Python module (`Blocks`, `Curves`, `Filters`, `Circuit`),
-  plus `Convolver` (cab IR) and `Engine` (`Amp` = linked blocks, `Engine` = oversampling + auto level)
+- `plugin/Source/dsp/`: the engine: `Blocks` (all blocks), `Curves` (clipping curves, triode and pentode models, the
+  push-pull pair), `Filters` (biquads, general IIR), `Circuit` (resistor/capacitor netlist -> digital filter, used by
+  the tone stack), `Convolver` (cab IR) and `Engine` (`Amp` = linked blocks, `Engine` = oversampling + auto level)
 - `plugin/Source/PluginProcessor.*`, `PluginEditor.*`: the plugin; `PanelView` (front panel), `Panel` (reads/edits the
   panel list), `ChainView` + `Inspector` (chain editor), `SignalView` (each block's waveform or spectrum);
-  `plugin/tests/`: the two test programs and `panel_cases.json`
-- `CMakeLists.txt`, `build.bat`: like stream-bridge's
+  `plugin/tests/`: `EngineTest` (engine checks, references, CPU, test audio), `PluginTest` and `panel_cases.json`
+- `tests/reference/`: the reference recordings
+- `CMakeLists.txt`, `build.bat`, `check.bat`: like stream-bridge's
 
-## How the blocks work (keep these rules in the C++ version too)
+## How the blocks work (keep these rules)
 
 - **Gain**: pre filters -> drive -> `curve(x + bias) - curve(bias)` at 8x -> post filters -> level.
   A 10 Hz high-pass is always added at the end, because uneven clipping leaves a DC offset.
-- **Curves**: `soft`, `tube`, `diode`, `hard` (fixed shapes in `CURVES` / `SCALAR_CURVES`), plus
-  `custom` and `triode` built in `ampsim/curves.py` from their settings (`Gain.CURVE_DEFAULTS`; a setting
+- **Curves**: `soft`, `tube`, `diode`, `hard` (fixed shapes in `Curve`), plus
+  `custom` and `triode` built in `Curves.cpp` from their settings (a setting
   for one curve used with another curve is an error). `triode`: Koren 1996 model + plate resistor load
   line, solved by bisection into a table at start-up; input = grid swing in volts around `bias_v`;
   output = plate swing / small-signal gain, flipped upright (real stages invert; we do not).
-  Grid current above 0 V: slope 2% after a 0.1 V soft corner (fixed numbers in curves.py).
+  Grid current above 0 V: slope 2% after a 0.1 V soft corner (`gridSlope`, `gridKneeV` in Curves.h).
   Each curve has a `top` (where the top starts clipping); bias shift starts there.
   `plate_volts: true` multiplies the output by the stage's real gain (output = plate swing in volts), so
   the next stage's `drive_db` is just the pot or divider between the tubes, as on a schematic.
@@ -103,16 +91,19 @@ Clone with `git submodule update --init` to get JUCE.
   `PushPull::shape`). Each sample, exactly: V moves towards `V0 - I R` with time constant R C (`stepSupply`);
   `plate_v` is the voltage at idle (V0 = plate_v + idle current x R). Its headroom `V / plate_v` multiplies the sag
   block's (`setHeadroom`), one sample late (the supply is an RC of milliseconds, so that does not matter); inside a
-  loop the committed try's current is used. 0 ohm (default) = bit-identical to before. settings.json marks the two
-  settings `cpp_only` (check_settings.py skips them). Not modelled: screen current, the mains ripple, a tube
+  loop the committed try's current is used. 0 ohm (default) = bit-identical to before. Not modelled: screen current, the mains ripple, a tube
   rectifier's drop growing slower than the current, the preamp's supply. Checked (PluginTest): EL34 pair, 450 V,
   250 ohm, 47 uF, 40 V then 10 V at 110 Hz: B+ 450 -> 401 V loud, 446 V soft; peak 47.1 V vs 49.5 V without; it
   recovers in 9.2 ms = R C / (1 + g R) = 9.14 ms, g = 1.14 mA/V (the tubes take more current as the voltage comes
-  back, like a resistor across C: worked out with Python's tube model). In brit_800 (sag block replaced by 250 ohm):
+  back, like a resistor across C: worked out with the (then still present) Python tube model). In brit_800 (sag block replaced by 250 ohm):
   450 -> about 375 V when played hard, and it jumps back up while v2a blocks after the loud part.
+  The 7 amp-style presets use it INSTEAD of their old sag block (which only targeted `pa`), with GUESSED values (each
+  preset's notes say so): silicon 80 ohm / 50 uF (brit_800, brit_plexi), silicon stiff 60 / 100 (german_high_gain,
+  us_hotrod_lead), GZ34 170 / 70 (us_blackface_clean), GZ34 170 / 32 (brit_top_boost), two 5U4G 200 / 47
+  (us_modern_high_gain). The simple presets (clean, crunch, high_gain) keep their sag block (no push-pull pair).
 - **Bias shift** (in gain): `g = drive*x/h + bias`; the curve gets `g + s`. When `g + s > 1` (past the top of
   the curve; really `g + s > top`), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
-  release time. `s` is worked out at the normal rate in `process` (Python loop) and per sample in `tick`.
+  release time. `s` is worked out per sample, in `process` and in the loop's `peek`/`commitTried`.
   This is a memory effect: EQ + clipping alone can not do it.
 - **Sag**: listens where it sits (sound passes through unchanged). Envelope with attack/release, then
   `headroom = 1 - amount * tanh(env * sens)`. Targets clip as `h * curve(x / h + bias)`, so quiet
@@ -126,10 +117,10 @@ Clone with `git submodule update --init` to get JUCE.
   Positive feedback = a NEGATIVE `amount`. The loop equation has exactly one answer only while the loop can never
   gain 1 or more within one sample, so the block checks |amount| x first_gain(path) x the product of every inner
   block's `max_slope()` < 1 (else an error naming the value). `max_slope` = the product of the filters' b0 x drive
-  x level x the steepest point of the curve (`steepest()`: the same 200001 points on -100..100 in Python and C++)
+  x level x the steepest point of the curve (`steepest()`: 200001 points on -100..100)
   or, for power, of `unlimited` (the pair without its soft limit at full supply: sag and the limit only flatten
-  it). The C++ loop runs at the core rate, Python at its `oversample` rate, so the b0s and the value differ a little.
-- **Tonestack**: the classic passive circuit as a netlist, solved by `circuit.py` (nodal analysis ->
+  it). The loop runs at the core rate, so the b0s and the value depend a little on the Quality setting.
+- **Tonestack**: the classic passive circuit as a netlist, solved by `Circuit.cpp` (nodal analysis ->
   H(s) polynomials via FFT on a circle -> bilinear transform -> `IIR`). The MID POT IS A 3-TERMINAL POT:
   bass pot -> mid pot top, mid pot bottom -> ground, C3 -> mid pot wiper. Wiring it as a variable resistor
   was wrong by up to 78 dB against the published formula (Yeh & Smith 2006). Default tapers: treble and
@@ -141,8 +132,8 @@ Clone with `git submodule update --init` to get JUCE.
   circuit, `styles` on mid/mid_taper; the inspector hides what the style lacks and a style change removes it.
   brit_top_boost uses it (treble 8, bass 3: the eq it replaced was brighter at 6/4).
 - **Split**: every path gets the same input; outputs are added (`sign * level` per path). Any block can go in
-  a path. Every block has `children()`; `chain.flatten` walks into feedback loops and split paths, so sag
-  targets and unique ids work everywhere. `build_chain` lives in `blocks.py` (Split needs it).
+  a path. Every block has `children()`; `flatten()` walks into feedback loops and split paths, so sag
+  targets and unique ids work everywhere. `buildChain` lives in `Blocks.cpp` (Split needs it).
 - **Gate**: level = biggest |x| in the last 20 ms (sliding max). Do not use a fast-falling peak follower:
   it dips between the peaks of a low note (low E = 12 ms per cycle) and the gate chatters.
   Opens above threshold, closes below threshold - hysteresis after `hold`; gain moves with attack/release.
@@ -153,23 +144,27 @@ Clone with `git submodule update --init` to get JUCE.
   (found anywhere: main chain, feedback chains, split paths); `setting` = a NUMBER setting from `settings.json`, or a
   dot path into a band list or split paths (`path.0.gain_db`, `bands.1.gain_db`, `paths.0.level_db`); `range` = the
   values at knob 0 and 10 (may run backwards: Presence `[0, -12]`), default = the setting's min/max in settings.json.
-  It does not change the sound. Python only checks it (`ampsim/panel.py`, after the chain is built); the plugin uses
-  it, with the same checks and messages (`Panel.cpp`); `plugin/tests/panel_cases.json` holds the shared cases.
+  It does not change the sound. `Panel.cpp` reads and checks it; `plugin/tests/panel_cases.json` holds the cases
+  whose exact error messages PluginTest checks.
   Built-in presets: signal-flow order (Gain, Bass, Middle, Treble, Presence, Master); gain `drive_db` knobs use
   `[0, 40]`, level knobs `[-40, 0]`, eq-band tone knobs `[-12, 12]`.
-- `SCALAR_CURVES` (used in the loop) must stay the same as `CURVES` (used with NumPy).
 
 ## shared/settings.json: the one place for help text
 
 Every setting has: label, type, unit, min/max (plugin knob range), default, `short` (one line) and
-`tooltip` (detailed). The plugin will show these as hover tooltips. **When you add, rename or change the
+`tooltip` (detailed). The plugin shows these as hover tooltips. **When you add, rename or change the
 default of a setting, update this file in the same change.** Names, choices and defaults must match the code:
-run `tools/check_settings.py`. Each block class lists its setting names in `SETTINGS`.
+`EngineTest check` compares them (the names from each block's "Allowed:" error, every default by playing a block
+with and without it, every choice by building it).
 Write the text in plain, simple English (the user is not a native English speaker).
 
 ## Checks done so far (redo them after changing the DSP)
 
-These are now tests in `tests/` (each limit is written next to the measured value), comparing results with theory:
+Most of these were Python tests (deleted 2026-11-24; see git history). The ones `EngineTest check` still runs on the
+C++ engine: the tone stack against Yeh and Smith (0.00034 dB), the 12AX7 operating point and harmonics (204.7 V,
+0.953 mA, gain 60.9; H2 2.64%, H3 0.126%; cold -2.5 V at 2 V: 24.0%), the feedback equation (5.0000; shelf 5.003 /
+8.051; loop gain 63: 0.4922; positive 4.0000 / 10.0000), the six datasheet points exactly, output power (47.9 / 45.1 /
+17.1 / 22.0 / 100.0 / 100.0 W), even-harmonic cancelling (0.0000%, 0.95% at 10% mismatch). The rest are history:
 
 - Oversampling: hard clip of a 4.5 kHz tone, fold-back noise 21 dB below the harmonics at 1x, 62 dB at 8x.
 - Chunked oversampling equals one-piece processing (difference ~1e-15).
@@ -200,14 +195,14 @@ These are now tests in `tests/` (each limit is written next to the measured valu
   Max output: EL34 pair 48 W, 6L6GC 45 W, EL84 17 W, 6V6GT 22 W, KT88 and 6550 100 W (their sheets). Matched pair: 0.00% 2nd harmonic;
   10% mismatch: 0.95%. EL34 450 V, 10 V drive: bias -38 V 0.24%, -45 V 1.61% (crossover).
   Bias shift 0.5: soft note after a loud part 5.4% vs 3.1% alone, normal again after ~250 ms.
-- After any change: all presets must still equal their `out/*.wav` files when the change should not
-  affect them (difference ~1.6e-7 = 24-bit rounding).
+- After any change: every preset must still equal its reference recording when the change should not affect it
+  (`EngineTest check`; today: -300 dB, identical).
 
 C++ checks:
-- `tools/cpp_check.py` (leaves the `panel` out of the core/tail parts; fails above -120 dB), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
+- C++ against Python (`tools/cpp_check.py`, until 2026-11-24), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
   -159 to -210 dB below the output peak (-159 = the feedback solver's 1e-10 tolerance); tail (cab IR) -137 dB
   (the `float` FFT in the convolver).
-  It also runs `tests/cpp_presets/` (test-only presets for parts no built-in preset uses): KT88 + james -131 dB,
+  It also ran `tests/presets/` (test-only presets for parts no built-in preset uses): KT88 + james -131 dB,
   6550 + top_boost + positive feedback -180 dB. The james circuit alone is -132 dB: a 4th-order filter at 384 kHz
   is very sensitive to the last digits of its coefficients (not a wiring difference: that would be near 0 dB), and it
   makes last-digit differences in its input about 67 dB bigger.
@@ -215,7 +210,7 @@ C++ checks:
   kt88_james had feedback 0.05 and rang at 10 Hz on its own after 1 s (35 V rms in silence, Python the same): the two
   10 Hz high-passes in its loop (each a 2nd-order filter) turn the phase by 180 degrees at 10 Hz. It rings from 0.04
   up, so it now uses 0.02. Every built-in preset goes quiet (about 3e-11) after the input stops.
-- Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
+- Full plugin engine vs Python with its own per-stage oversampling (history), 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
   share within 0.2 points on every preset at 8x and 4x; low/mid/high balance of the riff within 1%.
 - CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 2.6-8.7% of one core (feedback presets 5.7-8.7%; they were
   10-13.8% before the faster solver of 2026-11-24, then 6.8-9.8% before the divides came out of the loop).
@@ -233,7 +228,7 @@ C++ checks:
   id rules (inner sag targets follow, outside targets stay, nfb_2 -> nfb_3, block/path mix-ups refused). The test
   saves and restores the clipboard text. A gain stage pasted at the end lands before the cab IR and builds; a sag
   can not be pasted into the feedback loop; duplicating `pi` inside it gives `pi_3`. Front panel: the 19 shared
-  cases give Python's exact errors; every built-in preset has its own panel and builds; brit_800's knobs show
+  cases give their exact errors; every built-in preset has its own panel and builds; brit_800's knobs show
   the preset (Gain 7.00 = -12 dB of -40..0, Master 5.75); moving knob parameters from the DAW writes master 0 dB and
   presence -12 dB (backwards range) with the level kept; 5 knob moves 150 ms apart are one undo step; a preset without
   a panel gets 4 guessed knobs that work; Put on the front panel adds ids, stops at 8; a wrong panel shows
@@ -244,32 +239,35 @@ C++ checks:
   warm-up: always check that a test fails when the thing it tests is switched off.)
 - `PluginTest --snapshot <folder>` saves pictures of the window (used for the walkthrough page), and of the signal
   view of brit_800 (220 Hz sine at 0.1 and 0.5 V, time and spectrum; 110 Hz loud-then-soft).
-- Signal view (PluginTest): brit_800 gives 14 strips (input + 13 blocks, the loop's two indented); the input sine is
-  0.500 V with H2 at 1e-6; the sag strip is its headroom; the loop's power block is recorded at the core rate; a click
-  selects the block; one 12AX7 stage (300 V, 100k, -1.5 V) at 0.5 V shows H2 2.64% and H3 0.126% = Python's numbers;
-  a broken preset shows its error. What it showed about brit_800: even a 0.1 V sine comes out of v2a as a square wave,
-  and its sag sits at 0.85 (fully down) for any playing level, so it never "breathes" (worth a look).
+- Signal view (PluginTest): brit_800 gives 14 strips (input, 12 blocks with the loop's two indented, and "supply of
+  pa"); the input sine is 0.500 V with H2 at 1e-6; the supply strip is B+ / plate_v (0.5 V sine: 443 -> 436 V with its
+  80 ohm silicon supply); the loop's power block is recorded at the core rate; a click selects the block; one 12AX7
+  stage (300 V, 100k, -1.5 V) at 0.5 V shows H2 2.64% and H3 0.126% = the old Python version's numbers; a broken
+  preset shows its error. What it showed about brit_800: even a 0.1 V sine comes out of v2a as a square wave, and its
+  OLD sag block sat at 0.85 (fully down) for any playing level, so it never "breathed": that is why the presets now
+  use the rectifier supply. PluginTest finds brit_800's blocks by place (nfb = 9th block): a change to brit_800's
+  chain needs those places changed too.
 
 
 ## The C++ plugin (keep these rules)
 
-- **Same math as Python.** Every C++ block is a line-by-line copy of the Python one (same formulas, same
-  order, same error messages). When a Python block changes, change the C++ one in the same commit and run
-  `tools/cpp_check.py`. NumPy's `arange` is copied exactly (`numpyArange`) so the tube tables match.
+- **The math was checked against a Python copy** (until 2026-11-24) and is now checked against theory and the
+  reference recordings. `numpyArange` copies NumPy's `arange` exactly: the tube tables were first made with NumPy,
+  and keeping its grid keeps the sound the same. Keep the error messages exact: `panel_cases.json` and the
+  settings check read them.
 - **Oversampling:** the plugin oversamples the WHOLE amp once (JUCE `Oversampling<double>`, polyphase IIR,
   integer latency) instead of per gain stage. Blocks ignore their own `oversample` setting in the plugin.
   The Quality knob (2x/4x/8x) is for 44.1/48 kHz; at 88.2/96 kHz it uses half, at 176.4/192 kHz a quarter,
   so the amp always runs at about the same rate. All filter state is `double`.
 - **Core and tail:** `tailStart()` cuts the chain at the first `ir` of the run of `ir`/`eq` blocks at the end.
   Everything before runs oversampled ("core"), the rest at the normal rate ("tail"). So in the plugin an `ir`
-  block must be at the end and not inside split/feedback (Python allows it anywhere); a gate's `apply_after`
-  can not name a tail block. These are plugin-only errors.
+  block must be at the end and not inside split/feedback; a gate's `apply_after` can not name a tail block.
 - **Cab IR:** own zero-latency convolver (`Convolver`: first 128 taps direct, the rest FFT in 128-sample
   blocks), NOT `juce::dsp::Convolution` (it loads on its own thread, so tests and the auto level would
   not be repeatable). IR resampling copies `resample_fft` (Bluestein DFT for any length), then multiplies by
   `ir_rate / rate` (both versions), so a cab is equally loud at every session rate. IR file paths:
   absolute, next to the preset, one folder up, or the current folder; not found -> built-in fake 4x12
-  (`makeFakeCabIr`, same as `make_test_audio.py`) with a note in the status. "Load IR" replaces every ir file.
+  (`makeFakeCabIr`; `EngineTest make-audio` writes the same one to audio/) with a note in the status. "Load IR" replaces every ir file.
 - **Auto level:** after building, the engine plays a short fake riff (0.5 V peak) and sets its output so it
   averages -20 dBFS, then resets. Amp-style presets put out tens of volts, so this is needed.
 - **Threads:** engines are built on a background thread (`Builder`), handed to the audio thread through
@@ -310,7 +308,7 @@ C++ checks:
 - **Where new blocks go:** "Add block..." and paste with nothing selected go at `endInsertIndex`: before the
   cab (`amp::tailStart`), since only eq/ir can follow it; an eq or ir goes at the very end. Inside a feedback
   loop (`isLoopChain`), "Add after..." offers only eq/tonestack/gain/power and paste refuses other blocks.
-- **Feedback solver (C++ only, faster than Python's, same answer within 1e-10):** `solveFallingFast` first guesses
+- **Feedback solver (same answer as the plain search within 1e-10, much faster):** `solveFallingFast` first guesses
   from the last three answers (3y1 - 3y2 + y3), then jumps with the slope the last sample ended with (Newton with an
   old slope, at most 2 jumps), else falls back to the plain bracketing search. 2.48 tries per sample on brit_800
   (was about 5). The answer is always the LAST value tried, so `commitTried()` moves every filter and tube on from
@@ -333,7 +331,7 @@ C++ checks:
   (`applyKnobChanges`): a knob more than 0.01 from where the preset puts it is written into the preset as an edit
   (level kept, undo, click-free swap); moves of the same knob within 0.8 s are one undo step. Every preset change
   (`updatePanel`) moves the parameters to the preset's values. A wrong panel is a preset error (checked in
-  `buildEngine` after the engine, like Python). Right-click a number slider or band slider in the inspector:
+  `buildEngine` after the engine). Right-click a number slider or band slider in the inspector:
   "Put on the front panel" (`MenuSlider`); a guessed panel is first written into the preset (blocks get ids like
   `tonestack`). Right-click a knob: rename (or double-click its name), remove, show in the chain editor.
   The block keys (Ctrl+C/X/V/D, Delete) only work in the chain editor.
@@ -347,7 +345,7 @@ C++ checks:
   Sine: 0.5 s run-up so it has settled; notes start from silence. Time view: min/max per pixel column. Frequency
   view: 0.171 s (2^16 samples at 384 kHz), Blackman-Harris window, dB of a sine's peak volts; for a sine the summary
   gives THD and H2-H4. Harmonic levels ADD the power of the bins around k x the note: the highest bin alone was up to
-  0.8 dB off (220 Hz falls between bins, 440 Hz on one), which showed 2.84% instead of Python's 2.64%.
+  0.8 dB off (220 Hz falls between bins, 440 Hz on one), which showed 2.84% instead of the true 2.64%.
   Running it costs nothing while it is hidden (it runs when shown); the probes cost the audio path one pointer check
   per block and one store per loop try.
 
@@ -377,7 +375,7 @@ Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). Releases: tags `v0.1.
 (the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
 Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values; styles british, american, top_boost, james), power (push-pull EL34/6L6GC/EL84/6V6GT/KT88/6550), sag,
-feedback (also positive), split, gate, ir; `tools/check_settings.py`;
+feedback (also positive), split, gate, ir, rectifier supply on the power block;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
 C++ plugin: the engine (all blocks), VST3 + standalone, preset menu (built-in presets) + open/watch a preset
 file, Load IR, Input/Output/Quality, status box, chain view + inspector to edit every setting and add/move/remove
@@ -385,10 +383,8 @@ blocks, Save as, Level, undo/redo, copy/paste/duplicate, front panel (8 automata
 signal view (every block's waveform or spectrum for a test signal). Checked (see above). Not yet tried in a real DAW by the user.
 Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); sag targets before the sag block (real amps: the power stage's current
-sags the preamp supply too). NOT done because Python runs each block over the whole file before the next one, and
-its per-stage oversampling can not run in small pieces: an earlier target would need the sag value from later in the
-chain, sample by sample. It needs Python's oversampling made streaming first (then both versions run the chain in
-small fixed pieces, the earlier targets using the sag of the piece before).
+sags the preamp supply too). Python's whole-file design was what blocked it; in C++ it can be done by letting
+earlier blocks use the supply of the block (or sample) before.
 The fake DI uses a triangle pluck shape plus a pickup low-pass. A white-noise pluck was far too bright
 (half its energy above 2 kHz) and made the presets look wrong.
 The user often can not listen to the output, so report measured numbers, not only "it sounds right".

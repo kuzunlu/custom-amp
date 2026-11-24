@@ -398,7 +398,7 @@ std::unique_ptr<amp::Engine> CustomAmpProcessor::buildEngine (const BuildRequest
         options.fixedLevel = r.fixedLevel;
         auto built = std::make_unique<amp::Engine> (options);
         bool guessed = false;
-        panel::read (preset, help, guessed);  // a mistake in the panel stops the preset like any other (same as Python)
+        panel::read (preset, help, guessed);  // a mistake in the panel stops the preset like any other
 
         if (r.warmUp)
         {

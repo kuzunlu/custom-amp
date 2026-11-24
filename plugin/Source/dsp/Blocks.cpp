@@ -71,7 +71,6 @@ Tonestack::Tonestack (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "style", "parts", "treble", "mid", "bass", "treble_taper", "mid_taper", "bass_taper",
                         "source_ohms", "load_ohms", "level_db" })
 {
-    // Circuits, styles and their values: see Tonestack.CIRCUITS and STYLES in blocks.py.
     struct Style
     {
         juce::String circuit;
@@ -594,7 +593,7 @@ void Gate::process (double* x, int n) noexcept
 }
 
 //==============================================================================
-// Find y where f(y) = 0, for an f that always goes down as y goes up (solve_falling in blocks.py).
+// Find y where f(y) = 0, for an f that always goes down as y goes up.
 // First walk away from y0 in bigger and bigger steps until f changes sign,
 // then close in with the "Illinois" method (a safer form of the secant method).
 template <typename Function>
@@ -648,8 +647,7 @@ static double solveFalling (Function f, double y0, double tol = 1e-10, int maxSt
 // The same answer as solveFalling (within tol), usually with far fewer tries of f: from one sample to the next
 // (at the oversampled rate) the loop hardly changes, so jump straight to the answer with the slope the last
 // sample ended with (Newton's method with an old slope). If two jumps do not land within tol, or the slope
-// looks wrong (g must fall), the safe search takes over. C++ only: Python keeps the plain search, and the two
-// still agree within tol (checked by tools/cpp_check.py).
+// looks wrong (g must fall), the safe search takes over. Same answer as the plain search within tol.
 template <typename Function>
 static double solveFallingFast (Function f, double y0, double& slope, double tol = 1e-10) noexcept
 {
@@ -679,11 +677,11 @@ static double solveFallingFast (Function f, double y0, double& slope, double tol
 }
 
 //==============================================================================
-// The positive feedback check (steepest, first_gain and max_slope in blocks.py).
+// The positive feedback check.
 static constexpr int slopePoints = 200000;        // how finely steepest() samples a curve
 static constexpr double gainSlopeRange = 100.0;   // gain curves are sampled on -100..100
 
-// The steepest slope of fn on -halfRange..halfRange, on the same points as NumPy's version.
+// The steepest slope of fn on -halfRange..halfRange (200001 points).
 template <typename Fn>
 static double steepest (Fn fn, double halfRange)
 {

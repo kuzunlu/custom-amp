@@ -9,7 +9,7 @@ namespace amp
 {
 
 // One part of a small resistor/capacitor circuit, between two named points ("nodes").
-// "gnd" is ground; the circuit is driven at "in" and read at "out" (see ampsim/circuit.py).
+// "gnd" is ground; the circuit is driven at "in" and read at "out".
 struct Part
 {
     char kind;  // 'R' (ohms) or 'C' (farads)

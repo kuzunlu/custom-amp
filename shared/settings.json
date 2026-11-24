@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "about": "Help text for every setting. The Python prototype and the C++ plugin both use this file, so the text is written only once. 'short' is one line (for a status bar). 'tooltip' is the detailed text shown when the mouse is over a control. 'default' must match the code. 'min'/'max' are the knob range in the plugin.",
+  "about": "Help text for every setting. The plugin shows it as tooltips and checks presets against it (EngineTest check compares it with the blocks). 'short' is one line (for a status bar). 'tooltip' is the detailed text shown when the mouse is over a control. 'default' must match the code. 'min'/'max' are the knob range in the plugin.",
 
   "preset": {
     "label": "Preset",
@@ -128,7 +128,7 @@
       "chain": {
         "label": "Chain", "type": "block-list", "default": [],
         "short": "The blocks in this path. Empty = the untouched input.",
-        "tooltip": "Any blocks can go here, even another split or a feedback loop. A cab IR can only go here in the Python version: the plugin runs the cab after the amp, at the normal sample rate, so it must be at the end of the main chain. Leave it empty to pass the input through untouched: useful for a clean blend under a distorted path."
+        "tooltip": "Any blocks can go here, even another split or a feedback loop. A cab IR can not go here: the plugin runs the cab after the amp, at the normal sample rate, so it must be at the end of the main chain. Leave it empty to pass the input through untouched: useful for a clean blend under a distorted path."
       },
       "level_db": {
         "label": "Level", "type": "number", "unit": "dB", "min": -60, "max": 20, "default": 0,
@@ -211,7 +211,7 @@
           "label": "Oversampling", "type": "choice", "default": 8,
           "choices": { "1": "Off.", "2": "2x.", "4": "4x.", "8": "8x (default).", "16": "16x." },
           "short": "How many times faster the tubes run, to avoid harsh noise.",
-          "tooltip": "See the gain stage. Python prototype only: in the plugin the whole amp is oversampled once."
+          "tooltip": "Does nothing: the whole amp is oversampled once (the Quality menu). Kept so older presets still load."
         },
         "bias_shift": {
           "label": "Bias shift", "type": "number", "unit": "", "min": 0, "max": 1, "default": 0,
@@ -229,12 +229,12 @@
           "tooltip": "In a real amp: the coupling capacitor times the bias resistor (for example 22 nF x 220k = 5 ms, 100 nF x 220k = 22 ms). Bigger coupling capacitors = longer recovery and more 'farting' when driven hard; that is why some amps use small ones. Only matters when Bias shift is above 0."
         },
         "supply_ohms": {
-          "label": "Supply resistance", "type": "number", "unit": "ohm", "min": 0, "max": 1000, "default": 0, "cpp_only": true,
+          "label": "Supply resistance", "type": "number", "unit": "ohm", "min": 0, "max": 1000, "default": 0,
           "short": "Rectifier sag: the resistance between the power transformer and the filter capacitor. 0 = a perfectly stiff supply.",
-          "tooltip": "The power tubes draw more current when you play hard (most of all in class AB), and that current drops the supply voltage across this resistance: the amp 'sags' and compresses, then recovers when you play softly. This is the real cause of tube-rectifier feel. It is the rectifier's own drop plus the transformer winding. Rough guesses (from typical datasheet voltage drops as remembered, not checked against real amps): silicon diodes (the drop is only the winding) about 50-100 ohm; GZ34/5AR4 about 120-170; 5U4GB about 250-300; 5Y3 (small amps) about 400-500. A tube rectifier's drop is not exactly proportional to the current (it grows a bit slower), so this is an approximation. Plate V stays the voltage at idle. Plugin only (not in the Python version). The signal view shows the supply as its own strip under the power block."
+          "tooltip": "The power tubes draw more current when you play hard (most of all in class AB), and that current drops the supply voltage across this resistance: the amp 'sags' and compresses, then recovers when you play softly. This is the real cause of tube-rectifier feel. It is the rectifier's own drop plus the transformer winding. Rough guesses (from typical datasheet voltage drops as remembered, not checked against real amps): silicon diodes (the drop is only the winding) about 50-100 ohm; GZ34/5AR4 about 120-170; 5U4GB about 250-300; 5Y3 (small amps) about 400-500. A tube rectifier's drop is not exactly proportional to the current (it grows a bit slower), so this is an approximation. Plate V stays the voltage at idle. The signal view shows the supply as its own strip under the power block."
         },
         "supply_uf": {
-          "label": "Filter capacitor", "type": "number", "unit": "uF", "min": 5, "max": 500, "default": 47, "scale": "log", "cpp_only": true,
+          "label": "Filter capacitor", "type": "number", "unit": "uF", "min": 5, "max": 500, "default": 47, "scale": "log",
           "short": "The first filter capacitor of the power supply: how fast the sag comes and goes.",
           "tooltip": "The supply voltage falls and recovers with the time constant Supply resistance x Filter capacitor (for example 250 ohm x 47 uF = 12 ms). A small capacitor makes the sag fast and 'spongy'; a big one makes the supply steadier. Typical first capacitors: 32-100 uF. Only matters when Supply resistance is above 0. (A real supply is also recharged only at the peaks of the mains, 100 or 120 times a second; that ripple is left out.)"
         }
@@ -527,7 +527,7 @@
           "label": "Oversampling", "type": "choice", "default": 8,
           "choices": { "1": "Off. Fastest. Harsh fold-back noise with heavy clipping.", "2": "2x.", "4": "4x. Good for light clipping.", "8": "8x. Good for any clipping (default).", "16": "16x. Only for extreme high gain with the 'hard' curve." },
           "short": "How many times faster the clipping runs, to avoid harsh noise.",
-          "tooltip": "Clipping creates very high tones. Without oversampling, the ones above the top of the sample rate fold back down as harsh, out-of-tune noise (aliasing). Measured with hard clipping at 4.5 kHz: off = noise only 21 dB below the sound, 8x = 62 dB below (not audible). Python prototype only: in the plugin the whole amp is oversampled once, so this setting will not be there."
+          "tooltip": "Clipping creates very high tones. Without oversampling, the ones above the top of the sample rate fold back down as harsh, out-of-tune noise (aliasing). Measured with hard clipping at 4.5 kHz: off = noise only 21 dB below the sound, 8x = 62 dB below (not audible). It does nothing now: the whole amp is oversampled once (the Quality menu), so this setting is only kept so older presets still load."
         }
       }
     },
@@ -589,7 +589,7 @@
           "label": "Oversampling", "type": "choice", "default": 4,
           "choices": { "1": "Off. Fastest, harsh with heavy clipping.", "2": "2x.", "4": "4x (default).", "8": "8x. Cleanest, slowest." },
           "short": "How many times faster the whole loop runs.",
-          "tooltip": "Same idea as in the gain stage: it keeps clipping inside the loop from making harsh noise. In the Python prototype the loop is computed one sample at a time, so 8x is twice as slow as 4x. Python prototype only: in the plugin the whole amp is oversampled once."
+          "tooltip": "Same idea as in the gain stage: it keeps clipping inside the loop from making harsh noise. It does nothing now: the whole amp is oversampled once (the Quality menu); kept so older presets still load."
         },
         "level_db": {
           "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 40, "default": 0,

@@ -7,7 +7,7 @@
 namespace amp
 {
 
-// One 2nd-order filter. Formulas from the RBJ "Audio EQ Cookbook" (same as ampsim/filters.py).
+// One 2nd-order filter. Formulas from the RBJ "Audio EQ Cookbook".
 struct Biquad
 {
     static Biquad make (const juce::String& kind, double freq, double rate, double q, double gainDb, double checkRate);

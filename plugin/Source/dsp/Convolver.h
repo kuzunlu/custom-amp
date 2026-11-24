@@ -56,7 +56,7 @@ private:
 };
 
 // Change the sample rate of a short signal (an IR) by cutting or padding its spectrum
-// (resample_fft in ampsim/filters.py).
+// (an FFT resampler that works for any length).
 std::vector<double> resampleFft (const std::vector<double>& x, double rateFrom, double rateTo);
 
 } // namespace amp

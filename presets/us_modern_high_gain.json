@@ -1,6 +1,6 @@
 {
   "name": "American modern high gain (rectifier-style)",
-  "notes": "Modern American high-gain style: huge, saturated, scooped, with a spongy tube-rectifier feel. Path: gate -> V1a -> gain pot with bright cap -> V1b -> cold clipper stage -> V2b -> cathode follower -> tone stack -> master -> phase inverter -> 2x 6L6GC with light feedback and strong presence. FROM SCHEMATICS (fairly sure): cascaded 12AX7 stages with 100k plate resistors, one cold-biased 'clipper' stage, cathode follower into a passive tone stack, 6L6-family power tubes, tube rectifier option. UNSURE / APPROXIMATED: all cathode and bias values (cold clipper set to -3 V), the small coupling caps that tighten the bass (as high-passes at 150 and 200 Hz), the bright cap (+6 dB shelf at 1 kHz), tone stack slope resistor (47k) and treble cap (500 pF), the real amp has four power tubes (modelled as a pair), feedback amount (set for about 5 dB), tube-rectifier sag (0.35 with a slow 250 ms recovery). Phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage).",
+  "notes": "Modern American high-gain style: huge, saturated, scooped, with a spongy tube-rectifier feel. Path: gate -> V1a -> gain pot with bright cap -> V1b -> cold clipper stage -> V2b -> cathode follower -> tone stack -> master -> phase inverter -> 2x 6L6GC with light feedback and strong presence. FROM SCHEMATICS (fairly sure): cascaded 12AX7 stages with 100k plate resistors, one cold-biased 'clipper' stage, cathode follower into a passive tone stack, 6L6-family power tubes, tube rectifier option. UNSURE / APPROXIMATED: all cathode and bias values (cold clipper set to -3 V), the small coupling caps that tighten the bass (as high-passes at 150 and 200 Hz), the bright cap (+6 dB shelf at 1 kHz), tone stack slope resistor (47k) and treble cap (500 pF), the real amp has four power tubes (modelled as a pair), feedback amount (set for about 5 dB), the power supply values (see below). Phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage). POWER SUPPLY: two 5U4G tube rectifiers in parallel plus the winding, as 200 ohm into 47 uF (supply_ohms, supply_uf on the power block), so the sag comes from the current the power tubes really draw. These two values are GUESSES from typical parts, not from this amp's schematic. (It replaced a sag block.)",
   "panel": [
     { "label": "Gain", "block": "gain_pot", "setting": "level_db", "range": [-40, 0] },
     { "label": "Bass", "block": "tone", "setting": "bass" },
@@ -25,13 +25,12 @@
     { "type": "gain", "id": "cathode_follower", "curve": "custom", "top": 40, "top_softness": 0.3, "bottom": 200, "bottom_softness": 0.5 },
     { "type": "tonestack", "id": "tone", "style": "american", "parts": { "C1": 500e-12, "R4": 47e3 }, "treble": 6, "mid": 3, "bass": 6 },
     { "type": "eq", "id": "master", "level_db": -20 },
-    { "type": "sag", "amount": 0.35, "attack_ms": 10, "release_ms": 250, "targets": ["pa"] },
     {
       "type": "feedback", "id": "nfb", "amount": 0.025,
       "path": [ { "kind": "highshelf", "freq": 2500, "gain_db": -9 } ],
       "chain": [
         { "type": "gain", "id": "pi", "curve": "triode", "tube": "12AX7", "plate_v": 330, "plate_ohms": 82e3, "bias_v": -1.5, "plate_volts": true, "drive_db": -6 },
-        { "type": "power", "id": "pa", "tube": "6L6GC", "plate_v": 460, "bias_v": -47, "raa_ohms": 4200, "mismatch": 0.05,
+        { "type": "power", "id": "pa", "tube": "6L6GC", "plate_v": 460, "bias_v": -47, "raa_ohms": 4200, "supply_ohms": 200, "supply_uf": 47, "mismatch": 0.05,
           "pre": [ { "kind": "highpass", "freq": 20 } ],
           "post": [ { "kind": "highpass", "freq": 60 }, { "kind": "lowpass", "freq": 7000 } ],
           "bias_shift": 0.4, "shift_release_ms": 20 }

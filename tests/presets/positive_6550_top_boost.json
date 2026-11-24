@@ -1,6 +1,6 @@
 {
   "name": "Test: top boost circuit, positive feedback and a 6550 pair",
-  "notes": "Not an amp: only for tools/cpp_check.py (C++ against Python), to cover top_boost, positive feedback and the 6550.",
+  "notes": "Not an amp: only for the reference check (EngineTest check), to cover top_boost, positive feedback and the 6550.",
   "chain": [
     { "type": "gain", "id": "v1", "drive_db": 20, "curve": "tube" },
     { "type": "tonestack", "id": "tone", "style": "top_boost", "treble": 6, "bass": 4 },

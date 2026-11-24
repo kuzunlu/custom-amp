@@ -170,7 +170,7 @@ static std::vector<Complex> dft (const std::vector<Complex>& x)
 
 std::vector<double> resampleFft (const std::vector<double>& x, double rateFrom, double rateTo)
 {
-    // Python's round() rounds halves to even, like nearbyint.
+    // Halves round to even (nearbyint), as the first version of this code did.
     const auto nNew = (size_t) std::nearbyint ((double) x.size() * rateTo / rateFrom);
     const auto spectrum = dft (std::vector<Complex> (x.begin(), x.end()));
     const size_t keep = std::min (x.size() / 2 + 1, nNew / 2 + 1);

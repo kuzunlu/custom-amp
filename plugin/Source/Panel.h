@@ -22,8 +22,8 @@ namespace panel
 {
 constexpr int maxKnobs = 8;
 
-// The preset's front panel. A wrong "panel" list throws amp::PresetError, with the same messages as Python's
-// check_panel (ampsim/panel.py). Without a "panel" list it guesses knobs (a tone stack's three, the last eq's
+// The preset's front panel. A wrong "panel" list throws amp::PresetError (the messages are fixed by
+// plugin/tests/panel_cases.json). Without a "panel" list it guesses knobs (a tone stack's three, the last eq's
 // level) and sets `guessed`.
 std::vector<PanelKnob> read (const juce::var& preset, const SettingsHelp& help, bool& guessed);
 

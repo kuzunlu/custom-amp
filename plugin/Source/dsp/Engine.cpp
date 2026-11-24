@@ -86,7 +86,7 @@ Amp::Amp (const juce::var& preset, double baseRate, double coreRate, const juce:
 
 void Amp::link()
 {
-    // Connect sag blocks to their targets and gate blocks to their apply_after block (link_blocks in chain.py).
+    // Connect sag blocks to their targets and gate blocks to their apply_after block .
     auto blocks = flatten (core);
     const auto numCore = blocks.size();
 
@@ -166,7 +166,7 @@ void Amp::prepare (int maxBaseSamples, int maxCoreSamples)
     for (auto* b : flatten (tail))
         b->prepare (maxBaseSamples);
 
-    // The buffers exist now, so the links can point at them. A later sag on the same target wins, like in Python.
+    // The buffers exist now, so the links can point at them. A later sag on the same target wins.
     for (auto& [sag, target] : sagLinks)
         target->headroom = sag->headroom.data();
 

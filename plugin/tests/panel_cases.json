@@ -1,5 +1,5 @@
 {
-  "about": "Front panel checks. Python (tools/check_panel.py) and the plugin (PluginTest) must give exactly these errors for these panels on this chain (null = no error).",
+  "about": "Front panel checks. The plugin (PluginTest) must give exactly these errors for these panels on this chain (null = no error).",
   "chain": [
     { "type": "eq", "id": "pot", "level_db": -12, "bands": [ { "kind": "highshelf", "freq": 800, "gain_db": 8 } ] },
     { "type": "gain", "id": "v1", "drive_db": 12 },

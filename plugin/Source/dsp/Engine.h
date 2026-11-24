@@ -7,7 +7,7 @@
 namespace amp
 {
 
-// The blocks of one preset, linked like chain.py does it.
+// The blocks of one preset, linked (sag targets, gate apply_after).
 // The chain is cut in two: the "core" (everything up to the cab IR) runs at the oversampled rate,
 // the "tail" (the cab IR and any eq blocks after it) runs at the normal rate.
 class Amp

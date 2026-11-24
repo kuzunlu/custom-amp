@@ -5,12 +5,12 @@
 #include <set>
 #include <stdexcept>
 
-// The C++ copy of the Python prototype (ampsim/). Every block must give the same numbers as the
-// Python version for the same preset and sample rate (checked by plugin/tests/EngineTest.cpp).
+// The amp engine. It was first written in Python and matched that version to -131 dB or better before Python was
+// removed (2026-11-24); EngineTest check keeps it equal to theory, datasheets and its own reference recordings.
 namespace amp
 {
 
-// A mistake in a preset. The message says what is wrong, like the Python version's ValueError.
+// A mistake in a preset. The message says what is wrong.
 struct PresetError : std::runtime_error
 {
     explicit PresetError (const juce::String& message) : std::runtime_error (message.toStdString()) {}
@@ -18,7 +18,7 @@ struct PresetError : std::runtime_error
 
 inline double dbToGain (double db) { return std::pow (10.0, db / 20.0); }
 
-// One object from a preset (a block, a filter band, a split path), with the Python cfg.get() helpers.
+// One object from a preset (a block, a filter band, a split path), with helpers to read its settings.
 class Cfg
 {
 public:

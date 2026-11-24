@@ -574,18 +574,18 @@ int main (int argc, char* argv[])
         const auto selectAt = [ed, chain] (int index) { ed->select ({ chain(), index, false }); pump (50); };
         const auto firstLine = [&q] { return q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false); };
 
-        // The feedback loop (nfb: pi, pa). The copy's ids get a number; the sag before it still drives the first pa.
-        selectAt (9);
+        // The feedback loop (nfb: pi, pa). The copy's ids get a number; the first loop keeps its names.
+        selectAt (8);
         check (key ('d'), "Ctrl+D duplicates");
         waitForBuild (*q);
-        const auto copy = chain()[10];
-        check (chain().size() == 12 && copy["id"].toString() == "nfb_2" && copy["chain"][0]["id"].toString() == "pi_2"
+        const auto copy = chain()[9];
+        check (chain().size() == 11 && copy["id"].toString() == "nfb_2" && copy["chain"][0]["id"].toString() == "pi_2"
                    && copy["chain"][1]["id"].toString() == "pa_2",
                "the copy's ids get a number: " + copy["id"].toString() + ", " + copy["chain"][0]["id"].toString() + ", "
                    + copy["chain"][1]["id"].toString());
-        check (chain()[8]["targets"][0].toString() == "pa", "the sag still targets the first power block");
+        check (chain()[8]["chain"][1]["id"].toString() == "pa", "the first loop's power block is still pa");
         check (! q->getStatus().isError, "the preset still builds: " + firstLine());
-        check (ed->getSelection().index == 10, "the copy is selected");
+        check (ed->getSelection().index == 9, "the copy is selected");
 
         // Copy the tone stack, paste it after the first block.
         selectAt (6);
@@ -609,15 +609,15 @@ int main (int argc, char* argv[])
             copy.getDynamicObject()->removeProperty ("id");
             return juce::JSON::toString (copy);
         };
-        check (chain().size() == 13 && withoutId (chain()[1]) == withoutId (chain()[7]) && chain()[1]["id"].toString() == "tone_2",
+        check (chain().size() == 12 && withoutId (chain()[1]) == withoutId (chain()[7]) && chain()[1]["id"].toString() == "tone_2",
                "the pasted block is the same as the copied one, with its own id: " + chain()[1]["id"].toString());
         check (ed->getSelection().index == 1, "the pasted block is selected");
 
-        check (key ('x') && chain().size() == 12, "Ctrl+X takes it out");
+        check (key ('x') && chain().size() == 11, "Ctrl+X takes it out");
         waitForBuild (*q);
         q->undo();
         waitForBuild (*q);
-        check (chain().size() == 13 && chain()[1]["type"].toString() == "tonestack", "undo puts it back");
+        check (chain().size() == 12 && chain()[1]["type"].toString() == "tonestack", "undo puts it back");
 
         // Nothing selected: paste at the end (an eq can go after the cab).
         int potIndex = -1;
@@ -653,20 +653,18 @@ int main (int argc, char* argv[])
                    && endInsertIndex (list (R"([ { "type": "gain" }, { "type": "eq" } ])"), gain) == 2,
                "end place: before the ir (eq right before it stays in front), at the very end with no ir");
 
-        // Inside the feedback loop only loop blocks can go.
-        int sagIndex = -1, loopIndex = -1;
+        // Inside the feedback loop only loop blocks can go. (brit_800 has no sag block: one is put in front for a
+        // moment, only to copy it.)
+        chain().getArray()->insert (0, list (R"({ "type": "sag", "targets": [] })"));
+        selectAt (0);
+        key ('c');
+        chain().getArray()->remove (0);
+        int loopIndex = -1;
 
         for (int i = 0; i < chain().size(); ++i)
-        {
-            if (chain()[i]["type"].toString() == "sag")
-                sagIndex = i;
-
             if (chain()[i]["id"].toString() == "nfb")
                 loopIndex = i;
-        }
 
-        selectAt (sagIndex);
-        key ('c');
         const auto loop = chain()[loopIndex]["chain"];
         const int loopSize = loop.size();
         ed->select ({ loop, 0, false });
@@ -701,7 +699,7 @@ int main (int argc, char* argv[])
     {
         SettingsHelp help;
 
-        // The same cases as tools/check_panel.py: the same errors as Python.
+        // The shared cases: exactly these errors.
         juce::var cases;
         const auto casesFile = juce::File::getCurrentWorkingDirectory().getChildFile ("plugin/tests/panel_cases.json");
         check (juce::JSON::parse (casesFile.loadFileAsString(), cases).wasOk(), "read " + casesFile.getFullPathName());
@@ -732,7 +730,7 @@ int main (int argc, char* argv[])
                 std::cout << "        case " << i + 1 << ": got '" << error << "', expected '" << expected.toString() << "'\n";
         }
 
-        check (total > 10 && same == total, "the shared panel cases give the same errors as Python: " + juce::String (same) + " of " + juce::String (total));
+        check (total > 10 && same == total, "the shared panel cases give exactly their errors: " + juce::String (same) + " of " + juce::String (total));
 
         const std::map<juce::String, int> knobCounts { { "brit_800.json", 6 }, { "brit_plexi.json", 6 }, { "brit_top_boost.json", 3 },
                                                        { "clean.json", 5 }, { "crunch.json", 5 }, { "german_high_gain.json", 6 },
@@ -766,9 +764,9 @@ int main (int argc, char* argv[])
         knob (6)->setValueNotifyingHost (1.0f);  // Master to 10
         knob (5)->setValueNotifyingHost (1.0f);  // Presence to 10 (its range runs backwards: 0 dB at 0, -12 dB at 10)
         waitForBuild (*q);
-        check ((double) chain()[7]["level_db"] == 0.0 && (double) chain()[9]["path"][0]["gain_db"] == -12.0 && q->isEdited(),
+        check ((double) chain()[7]["level_db"] == 0.0 && (double) chain()[8]["path"][0]["gain_db"] == -12.0 && q->isEdited(),
                "moving knobs from the DAW changes the preset: master " + chain()[7]["level_db"].toString() + " dB, presence band "
-                   + chain()[9]["path"][0]["gain_db"].toString() + " dB");
+                   + chain()[8]["path"][0]["gain_db"].toString() + " dB");
         check (q->getStatus().text.contains ("level kept"), "and keeps the level");
 
         // A knob moved in small steps (like a drag or automation) is one undo step.
@@ -828,7 +826,7 @@ int main (int argc, char* argv[])
             check (! q->getStatus().isError, "the preset with 8 knobs builds: " + q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false));
         }
 
-        // A mistake in the panel stops the preset with Python's message; the last amp keeps playing.
+        // A mistake in the panel stops the preset with its message; the last amp keeps playing.
         noPanel.replaceWithText (R"({ "name": "Bad panel", "chain": [ { "type": "gain", "id": "v1" } ],
                                     "panel": [ { "block": "v2", "setting": "drive_db" } ] })");
         q->loadPresetFile (noPanel);
@@ -872,9 +870,9 @@ int main (int argc, char* argv[])
         view.setSignal (SignalView::Signal::sine, 220.0, 0.5);
         waitForSignals();
         const auto& traces = view.getTraces();
-        check (view.getProblem().isEmpty() && traces.size() == 14 && traces[11].name == "1. gain  pi" && traces[11].indent == 1
-                   && traces[12].name == "2. power  pa",
-               "brit_800: the input and 13 blocks, the loop's two inside it: " + juce::String ((int) traces.size()) + " strips"
+        check (view.getProblem().isEmpty() && traces.size() == 14 && traces[10].name == "1. gain  pi" && traces[10].indent == 1
+                   && traces[11].name == "2. power  pa" && traces[12].name.contains ("supply of pa"),
+               "brit_800: the input, 12 blocks (the loop's two inside it) and pa's supply: " + juce::String ((int) traces.size()) + " strips"
                    + (view.getProblem().isNotEmpty() ? ", " + view.getProblem() : juce::String()));
 
         if (traces.size() == 14)
@@ -884,18 +882,19 @@ int main (int argc, char* argv[])
                        + juce::String (100.0 * harmonic (traces[0], 220.0, 2), 4) + "%");
             float lowest = 1.0f, highest = 0.0f;
 
-            for (auto v : traces[9].samples)
+            for (auto v : traces[12].samples)
             {
                 lowest = juce::jmin (lowest, v);
                 highest = juce::jmax (highest, v);
             }
 
-            check (traces[9].isUnit && lowest > 0.85f && lowest < 0.995f && highest <= 1.0f,
-                   "the sag strip is its headroom (amount 0.15): " + juce::String (lowest, 3) + " to " + juce::String (highest, 3));
-            const double inner = (double) traces[12].samples.size() / traces[12].rate;
-            check (traces[12].rate > 300000.0 && inner > 0.17 && traces[12].peak > 1.0f,
+            check (traces[12].isUnit && lowest > 0.6f && lowest < 0.995f && highest <= 1.0f,
+                   "the supply strip is B+ / plate_v (80 ohm, 50 uF): " + juce::String (lowest, 3) + " to " + juce::String (highest, 3)
+                       + ", " + traces[12].summary);
+            const double inner = (double) traces[11].samples.size() / traces[11].rate;
+            check (traces[11].rate > 300000.0 && inner > 0.17 && traces[11].peak > 1.0f,
                    "the power block inside the loop is recorded at the core rate: " + juce::String (inner, 3) + " s, peak "
-                       + juce::String (traces[12].peak, 1) + " V");
+                       + juce::String (traces[11].peak, 1) + " V");
 
             view.onSelect (traces[3].target);
             pump (50);
@@ -916,7 +915,7 @@ int main (int argc, char* argv[])
             const double h2 = 100.0 * harmonic (t, 220.0, 2), h3 = 100.0 * harmonic (t, 220.0, 3);
             check (std::abs (h2 - 2.64) < 0.05 && std::abs (h3 - 0.126) < 0.02,
                    "one 12AX7 stage at 0.5 V: 2nd harmonic " + juce::String (h2, 2) + "%, 3rd " + juce::String (h3, 3)
-                       + "% (Python: 2.64% / 0.126%)");
+                       + "% (the same as EngineTest's triode check)");
             check (t.summary.contains ("THD") && t.summary.contains ("H2"), "its summary lists the harmonics: " + t.summary.replace ("\n", " | "));
         }
         else
@@ -966,7 +965,7 @@ int main (int argc, char* argv[])
                                                         + juce::String (stiff[1].peak, 1) + " V without");
 
             // After the loud part the supply recovers with R C / (1 + g R): the tubes take g = 1.14 mA more per volt of
-            // supply (worked out with Python's tube model at 10 V drive, 446 V), like a resistor across the capacitor.
+            // supply (worked out from the tube model at 10 V drive, 446 V), like a resistor across the capacitor.
             const double coreRate = sagging[2].rate, tau = 250 * 47e-6 / (1 + 1.14e-3 * 250);
             const size_t from = (size_t) (0.2 * coreRate);
             const float end = at (0.49), gap = end - supply[from];

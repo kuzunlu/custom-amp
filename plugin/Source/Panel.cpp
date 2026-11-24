@@ -18,7 +18,7 @@ juce::var follow (juce::var node, const juce::StringArray& path)
     return node;
 }
 
-// The block with this id: in the chain, inside feedback loops and inside split paths (like Python's find_block).
+// The block with this id: in the chain, inside feedback loops and inside split paths.
 juce::var findBlock (const juce::var& chain, const juce::String& id, juce::StringArray& path)
 {
     for (int i = 0; chain.isArray() && i < chain.size(); ++i)
@@ -54,7 +54,7 @@ juce::var findBlock (const juce::var& chain, const juce::String& id, juce::Strin
     return {};
 }
 
-// The settings.json entry of the number setting that `setting` names (like Python's find_setting).
+// The settings.json entry of the number setting that `setting` names.
 juce::var findSetting (const juce::var& block, const juce::String& setting, const SettingsHelp& help, const juce::String& where)
 {
     const auto parts = juce::StringArray::fromTokens (setting, ".", "");

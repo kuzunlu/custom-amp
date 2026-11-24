@@ -146,7 +146,7 @@ Curve makeTriodeCurve (const juce::String& tube, double plateV, double plateOhms
 
 //==============================================================================
 // Power pentodes: Koren's pentode model, kg1 and kp fitted to each datasheet's class A point
-// (see PENTODES in curves.py). rsat: a fully-on tube acts like this resistance.
+// rsat: a fully-on tube acts like this resistance.
 struct PentodeModel { double mu, kg1, kp, rsat; };
 
 static const std::map<juce::String, PentodeModel>& pentodes()
@@ -170,6 +170,16 @@ static double pentodeCurrent (double vg, double screenV, double plateV, const Pe
 {
     const double e1 = screenV / p.kp * softplus (p.kp * (1 / p.mu + vg / screenV));
     return 2 * std::pow (std::max (e1, 0.0), pentodeEx) / p.kg1 * std::atan (plateV / pentodeKvb);
+}
+
+double pentodeCurrent (const juce::String& tube, double vg, double screenV, double plateV)
+{
+    auto found = pentodes().find (tube);
+
+    if (found == pentodes().end())
+        throw PresetError ("unknown power tube '" + tube + "'");
+
+    return pentodeCurrent (vg, screenV, plateV, found->second);
 }
 
 PushPull PushPull::make (const juce::String& tube, double plateV, double screenV, double biasV,

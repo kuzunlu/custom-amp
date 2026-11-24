@@ -16,9 +16,9 @@ A guitar amp built from a few simple blocks that you can put in any order:
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
-There are two versions:
-- **The plugin** (`plugin/`, C++ with JUCE): a VST3 and a standalone app for live playing.
-- **The Python prototype** (`ampsim/`): works on `.wav` files. It is the reference the plugin is checked against.
+It is a plugin (`plugin/`, C++ with JUCE): a VST3 and a standalone app for live playing. (A Python prototype was
+used to work out the sound design; it was removed on 2026-11-24, after the plugin matched it to -131 dB or better.
+Its checks against theory now run on the plugin's engine.)
 
 ## Plugin
 
@@ -55,30 +55,22 @@ The plugin is `build\CustomAmp_artefacts\Release\VST3\Custom Amp.vst3` (copy it 
 - **Load IR...** loads a cab `.wav`. Without one, the built-in presets use a simple built-in test cab.
 - **Input**: hard strums should peak around -6 dBFS. **Output**: your own level on top of the automatic one
   (every preset is set to about the same loudness when it loads). **Quality**: oversampling, 8x is best.
+- **Signals** (in the chain editor): see what every block does. Its own copy of the amp plays a test signal (a sine,
+  a plucked note, a chord, loud-then-soft, or your last 0.6 s of playing) and shows each block's waveform or spectrum,
+  with its peak in volts and, for a sine, the harmonics it adds. Change a setting and watch every stage change.
 - Hover over anything for help. The amp adds 6 samples of delay at 8x (0.13 ms at 48 kHz).
 
-In the plugin, a cab IR must be at the end of the chain (only eq and ir blocks after it).
+A cab IR must be at the end of the chain (only eq and ir blocks after it).
 
-## Python setup
-
-Needs Python 3.14 and NumPy (see `requirements.txt`).
-
-## Use
-
-Make test audio (a fake guitar riff and a fake cab IR) into `audio/`:
+## Test audio and rendering files
 
 ```
-python tools/make_test_audio.py
+build\EngineTest_artefacts\Release\EngineTest.exe make-audio      # audio/test_di.wav (fake riff) and audio/fake_4x12.wav (fake cab)
+build\EngineTest_artefacts\Release\EngineTest.exe render presets\crunch.json audio\test_di.wav out\crunch.wav
 ```
 
-Run a recording through a preset:
-
-```
-python run.py presets/crunch.json audio/test_di.wav out/crunch.wav
-```
-
-The output is set to peak at -1 dBFS. Add `--no-normalize` to keep the raw level.
-File paths inside presets (like the IR file) are relative to the folder you run from.
+`render` runs the whole plugin engine on a file and prints the CPU time it took. File paths inside presets (like the
+IR file) are found next to the preset, one folder up, or in the folder you run from.
 
 ## Presets
 
@@ -98,7 +90,9 @@ schematics where known. Each preset's `notes` says which values are from schemat
 guesses. They are starting points: they have not been compared with recordings of real amps yet.
 The signal is in volts all the way (the test guitar peaks at 0.5 V).
 
-Harmonics' share of the sound for a 220 Hz note at 0.05 / 0.2 / 0.5 V (soft / medium / hard playing), no cab:
+Harmonics' share of the sound for a 220 Hz note at 0.05 / 0.2 / 0.5 V (soft / medium / hard playing), no cab
+(measured before their sag block was replaced by a rectifier supply on the power block, 2026-11-24; the signal view
+shows today's numbers):
 
 | Preset | Style | Power | Feedback | Soft / medium / hard |
 |---|---|---|---|---|
@@ -141,11 +135,14 @@ When the signal gets loud, the gain blocks in `targets` get a lower clipping cei
 - `attack_ms` / `release_ms`: how fast the ceiling drops, and how fast it comes back.
 - `targets`: ids of gain blocks. They must come after the sag block (a gain block inside a later feedback block is fine).
 
+For a power block, its own rectifier supply (`supply_ohms`, `supply_uf`, see Power amp) is closer to a real amp:
+it sags with the current the tubes really draw.
+
 ### Feedback
 
 ```json
 {
-  "type": "feedback", "amount": 0.3, "oversample": 4,
+  "type": "feedback", "amount": 0.3,
   "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
   "chain": [{ "type": "gain", "id": "v2", "drive_db": 16, "curve": "soft" }]
 }
@@ -157,9 +154,9 @@ harder feel. It is only allowed while the loop can never gain 1 or more (the err
 The `path` filters choose which tones get less feedback, so those come out louder:
 a high shelf cut works like a **presence** knob, a low shelf cut works like a **resonance** knob.
 
-- Only `eq`, `tonestack`, `gain` and `power` blocks can go inside. Inner blocks can not set `oversample`: the whole loop runs at the feedback block's `oversample` rate.
+- Only `eq`, `tonestack`, `gain` and `power` blocks can go inside.
 - The loop has no delay. Each sample is found by solving the loop equation, so strong feedback is stable.
-- It runs one sample at a time, so it is slow in Python (about 1 s of work per 1 s of audio).
+- Too much feedback can make the loop ring by itself at a low note (about 10 Hz), like a real amp "motorboating".
 
 ### Split
 
@@ -174,8 +171,8 @@ a high shelf cut works like a **presence** knob, a low shelf cut works like a **
 }
 ```
 
-Every path gets the same input; the outputs are added. Each path has its own `chain` (any blocks, even another
-split or a cab IR), `level_db` and `invert` (flips the path upside down before mixing).
+Every path gets the same input; the outputs are added. Each path has its own `chain` (any blocks except a cab IR,
+even another split), `level_db` and `invert` (flips the path upside down before mixing).
 An empty chain passes the input through untouched (a clean blend).
 
 ### Triode curve
@@ -200,7 +197,11 @@ currents, so even harmonics cancel (unless `mismatch` is set) and a cold bias gi
 The input is in volts at the grids: full power needs about as many volts as the bias. Full output is
 scaled to `|bias_v|`. Safe bias values (about 70% of the tube's maximum heat): EL34 at 450 V: -46 V,
 6L6GC at 460 V: -47 V, EL84 at 320 V: -13 V, 6V6GT at 420 V: -40 V, KT88 at 560 V: -66 V, 6550 at 600 V: -76 V.
-Sag can target it.
+
+Rectifier sag: `"supply_ohms": 170, "supply_uf": 47` gives it a real power supply. The tubes' current drains a filter
+capacitor charged through that resistance (the rectifier plus the transformer winding), so the supply drops when you
+play hard and recovers when you play softly. Rough values: silicon rectifier 50-100 ohm, GZ34 120-170, 5U4GB 250-300.
+`plate_v` stays the voltage at idle. 0 ohm (the default) = a perfectly stiff supply. A sag block can target it too.
 
 ### Tone stack
 
@@ -208,7 +209,7 @@ Sag can target it.
 { "type": "tonestack", "style": "british", "treble": 6, "mid": 4, "bass": 7, "parts": { "R4": 47e3 } }
 ```
 
-The classic passive tone circuit used by most tube amps, solved from its part values (`ampsim/circuit.py`).
+The classic passive tone circuit used by most tube amps, solved from its part values (`plugin/Source/dsp/Circuit.cpp`).
 `style` picks the circuit and its starting values; `parts` changes single parts (farads and ohms:
 470 pF = `470e-12`, 22 nF = `22e-9`, 33k = `33e3`). The knobs go from 0 to 10. Like the real circuit,
 it loses volume (about 5-20 dB), so raise `level_db` or the next stage's drive.
@@ -235,14 +236,18 @@ peaks (about 10 dB above the average hiss level).
 ## Tests
 
 ```
-python -m unittest discover -s tests -t .    # the Python tests (about 40 s)
-check.bat                                    # everything (about 11 minutes): Python tests, plugin build, plugin test, C++ vs Python
+check.bat                                                     # everything (about 5 minutes): build, engine checks, plugin test
+build\EngineTest_artefacts\Release\EngineTest.exe check .     # only the engine checks
+build\EngineTest_artefacts\Release\EngineTest.exe record .    # record the presets again (after a change MEANT to change the sound)
 ```
 
-The tests compare the blocks with theory (feedback loop gain, the tone stack's published formula, tube datasheet
-points, ...) and check that every preset still sounds the same as its `out/*.wav` file.
+The engine checks compare the blocks with theory and published data (the tone stack's published formula, a 12AX7's
+operating point and harmonics, the feedback loop's equation, power tube datasheet points and output power), check that
+`shared/settings.json` describes the blocks as they are (names, defaults, choices), and play every preset against its
+recording in `tests/reference/` (a change that is not meant to change the sound fails it). The plugin test drives the
+plugin like a DAW: presets, file watching, saved state, the editor, undo, copy/paste, the front panel, the signal view.
 
 ## Setting help
 
 Every setting is explained in `shared/settings.json` (range, default, a one-line help and a detailed tooltip).
-The plugin version will show these as tooltips.
+The plugin shows these as tooltips.

@@ -30,7 +30,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(libs/JUCE)
 
-# The amp engine: the C++ copy of the Python prototype in ampsim/.
+# The amp engine.
 set(ENGINE_SOURCES
     plugin/Source/dsp/Blocks.cpp
     plugin/Source/dsp/Circuit.cpp
@@ -123,7 +123,7 @@ target_link_libraries(PluginTest
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
-# Test program: runs the engine on files, to compare it with the Python prototype (tools/cpp_check.py).
+# Test program: theory checks, settings.json, every preset against its reference recording, CPU time, test audio.
 juce_add_console_app(EngineTest
     VERSION ${CUSTOM_AMP_VERSION_NUMBER}
     PRODUCT_NAME "Engine Test")

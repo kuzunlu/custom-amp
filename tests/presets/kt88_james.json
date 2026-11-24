@@ -1,6 +1,6 @@
 {
   "name": "Test: James tone circuit and a KT88 pair",
-  "notes": "Not an amp: only for tools/cpp_check.py (C++ against Python), to cover the james style and the KT88. Feedback amount 0.04 or more makes this loop ring at 10 Hz on its own (the two 10 Hz high-passes in the loop turn the phase by 180 degrees there), in Python too; then tiny differences grow with the ringing and the check fails. 0.02 = half of that.",
+  "notes": "Not an amp: only for the reference check (EngineTest check), to cover the james style and the KT88. Feedback amount 0.04 or more makes this loop ring at 10 Hz on its own (the two 10 Hz high-passes in the loop turn the phase by 180 degrees there); then tiny differences grow with the ringing and a comparison fails. 0.02 = half of that.",
   "chain": [
     { "type": "gain", "id": "v1", "curve": "triode", "plate_volts": true },
     { "type": "tonestack", "id": "tone", "style": "james", "treble": 7, "bass": 3 },

@@ -10,7 +10,7 @@
 namespace amp
 {
 
-// A block takes a mono signal and changes it in place (blocks.py).
+// A block takes a mono signal and changes it in place.
 class Block
 {
 public:
@@ -269,7 +269,7 @@ private:
     juce::String note;
 };
 
-// The fake 4x12 cab of tools/make_test_audio.py (48 kHz), used when an IR file is missing.
+// A fake 4x12 cab (48 kHz), used when an IR file is missing (EngineTest make-audio also writes it to audio/).
 std::vector<double> makeFakeCabIr();
 
 // Find a block's IR file: absolute, next to the preset, one folder up from it, or in the current folder.
