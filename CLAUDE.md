@@ -194,9 +194,14 @@ C++ checks:
 - `tools/cpp_check.py` (leaves the `panel` out of the core/tail parts; fails above -120 dB), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
   -159 to -210 dB below the output peak (-159 = the feedback solver's 1e-10 tolerance); tail (cab IR) -137 dB
   (the `float` FFT in the convolver).
-  It also runs `tests/cpp_presets/` (test-only presets for parts no built-in preset uses): KT88 + james -125 dB,
-  6550 + top_boost + positive feedback -182 dB. The james circuit alone is -132 dB: a 4th-order filter at 384 kHz
-  is very sensitive to the last digits of its coefficients (not a wiring difference: that would be near 0 dB).
+  It also runs `tests/cpp_presets/` (test-only presets for parts no built-in preset uses): KT88 + james -131 dB,
+  6550 + top_boost + positive feedback -180 dB. The james circuit alone is -132 dB: a 4th-order filter at 384 kHz
+  is very sensitive to the last digits of its coefficients (not a wiring difference: that would be near 0 dB), and it
+  makes last-digit differences in its input about 67 dB bigger.
+  A preset whose loop RINGS can not be compared: tiny differences grow with the ringing (about 3 dB per 100 ms).
+  kt88_james had feedback 0.05 and rang at 10 Hz on its own after 1 s (35 V rms in silence, Python the same): the two
+  10 Hz high-passes in its loop (each a 2nd-order filter) turn the phase by 180 degrees at 10 Hz. It rings from 0.04
+  up, so it now uses 0.02. Every built-in preset goes quiet (about 3e-11) after the input stops.
 - Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
   share within 0.2 points on every preset at 8x and 4x; low/mid/high balance of the riff within 1%.
 - CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 2.6-8.7% of one core (feedback presets 5.7-8.7%; they were
