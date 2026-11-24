@@ -54,7 +54,18 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
 ## How the blocks work (keep these rules)
 
 - **Gain**: pre filters -> drive -> `curve(x + bias) - curve(bias)` at 8x -> post filters -> level.
-  A 10 Hz high-pass is always added at the end, because uneven clipping leaves a DC offset.
+  The stage ends with its COUPLING CAPACITOR into the next grid resistor (`coupling_nf`, `grid_ohms`; default 22 nF
+  into 1 Mohm = 7.2 Hz): a 1st-order high-pass at 1/(2 pi R C), which also removes the DC offset of uneven clipping.
+  `coupling_nf: 0` = DC-coupled (the offset goes on). Until 2026-11-24 this was a made-up 2nd-order 10 Hz high-pass;
+  two of those in a feedback loop turn the phase 180 degrees at 10 Hz (that made kt88_james ring). Real amps: every
+  coupling capacitor and a transformer's low end are 1st order, so filters have `highpass1`/`lowpass1` (bilinear,
+  corner exact; no q or gain_db: an error) and the amp-style presets use them; the plain `highpass`/`lowpass` (2nd
+  order, RBJ) stay for the simple presets and tone shaping. Amp-style presets: the stage before the cathode follower
+  and the cathode follower are DC-coupled (as in the real circuits), so clipping's DC shift moves the cathode
+  follower's working point; the tone stack's capacitors block it. Checked (EngineTest): 1 nF into 994718 ohm =
+  -3.010 dB at 160 Hz and -20.043 dB at 16 Hz, exactly the theory. Every preset dies away in silence (-218 dB or
+  less) with no DC while playing (-198 dB or less). Note: this capacitor causes the NEXT stage's bias shift (its
+  shift_release_ms is about C x R); the two settings are not linked yet.
 - **Curves**: `soft`, `tube`, `diode`, `hard` (fixed shapes in `Curve`), plus
   `custom` and `triode` built in `Curves.cpp` from their settings (a setting
   for one curve used with another curve is an error). `triode`: Koren 1996 model + plate resistor load
@@ -76,7 +87,8 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   gets ~17 V). Needs a real amp recording to decide if that is right.
 - **Power** (push-pull): grid A = `bias + sa + x`, grid B = `bias + sb - x`; each current from Koren's
   pentode model (`PENTODES`: kg1/kp FITTED to each datasheet's class A point, which they match exactly;
-  my remembered Koren numbers for EL34/6L6 were 3-12% off). Output = (Raa/4)(IA - IB), soft-limited at
+  my remembered Koren numbers for EL34/6L6 were 3-12% off). The output transformer passes no DC: a 1st-order 10 Hz
+  high-pass always ends the block (presets add their own transformer low end with post `highpass1`). Output = (Raa/4)(IA - IB), soft-limited at
   `plate_v * (Raa/4) / (Raa/4 + rsat)`. `rsat` was worked back from known amp outputs (EL34 pair 50 W
   etc.), so the output-power check is a consistency check, not independent proof. Sag scales the supply:
   `I(vg, h*Vs) = h**1.35 * I(vg/h, Vs)` (Koren's model allows this exactly). Each grid has its own bias

@@ -97,7 +97,9 @@
           "lowpass": "Removes everything ABOVE the frequency. Use it to remove fizz and harshness. 'freq' is where the cut starts; 'q' sets how sharp the corner is.",
           "lowshelf": "Raises or lowers everything below the frequency by the same amount, like a bass knob. 'gain_db' sets how much.",
           "highshelf": "Raises or lowers everything above the frequency by the same amount, like a treble knob. 'gain_db' sets how much.",
-          "peak": "Raises or lowers a range of tones around the frequency, like one band of a parametric EQ. 'q' sets how wide the range is."
+          "peak": "Raises or lowers a range of tones around the frequency, like one band of a parametric EQ. 'q' sets how wide the range is.",
+          "highpass1": "A gentle 1st-order high-pass (6 dB per octave), like one coupling capacitor into a resistor, or a transformer's low end: 1 / (2 pi R C) gives the freq (22 nF into 1 Mohm = 7.2 Hz). No q or gain_db. Real amps are full of these.",
+          "lowpass1": "A gentle 1st-order low-pass (6 dB per octave), like one resistor into a capacitor (a treble bleed, a Miller capacitance). No q or gain_db."
         },
         "short": "The shape of the filter.",
         "tooltip": "High-pass and low-pass remove tones. Shelves work like the bass and treble knobs on a hi-fi. Peak changes one area in the middle, like a parametric EQ."
@@ -507,6 +509,16 @@
           "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 50, "scale": "log",
           "short": "How fast the working point comes back after a loud part.",
           "tooltip": "In a real stage this is the coupling capacitor draining through the grid resistor (for example 22 nF x 1 Mohm = 22 ms). Short (10-30 ms): the stage recovers between notes; tight and fast. Long (100-500 ms): the stage stays choked after a hard hit; you hear a 'swell' as it recovers, and with fast palm mutes it sounds gated. Bigger coupling capacitors in a real amp = longer release. Only matters when Bias shift is above 0."
+        },
+        "coupling_nf": {
+          "label": "Coupling capacitor", "type": "number", "unit": "nF", "min": 0, "max": 1000, "default": 22, "scale": "log",
+          "short": "The capacitor from this stage to the next one. 0 = DC-coupled (no capacitor).",
+          "tooltip": "Every tube stage passes its signal on through a capacitor into the next tube's grid resistor. Together they are a gentle (1st-order) high-pass at 1 / (2 pi R C): 22 nF into 1 Mohm = 7.2 Hz (passes all the bass), 1 nF into 1 Mohm = 160 Hz (a tight, thin stage, as in many high-gain amps), 0.5 nF = 320 Hz. It also removes the DC offset that uneven clipping leaves. 0 = no capacitor (DC-coupled, as into a cathode follower): then that offset goes on to the next block. The same capacitor charges up when the NEXT stage draws grid current: that is the next stage's bias shift, and its shift_release_ms is about this C x R (22 nF x 1 Mohm = 22 ms)."
+        },
+        "grid_ohms": {
+          "label": "Next grid resistor", "type": "number", "unit": "ohm", "min": 10000, "max": 10000000, "default": 1000000, "scale": "log",
+          "short": "The resistor the coupling capacitor feeds (the next tube's grid resistor, or a volume pot).",
+          "tooltip": "Usually 1 Mohm, 470k or 220k, or a 1 Mohm volume pot. With the coupling capacitor it sets the bass cut: 1 / (2 pi R C)."
         },
         "level_db": {
           "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 20, "default": 0,

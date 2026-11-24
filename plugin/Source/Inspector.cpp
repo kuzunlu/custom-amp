@@ -554,11 +554,23 @@ private:
                 }
 
             kind.setTooltip (SettingsHelp::tip (settings["kind"]));
-            kind.onChange = [this] { setValue ("kind", kind.getText(), true); };
+            kind.onChange = [this]
+            {
+                // A 1st-order filter (one capacitor, one resistor) has no q or gain: they would be an error.
+                if (isFirstOrder (kind.getText()))
+                    if (auto* obj = band.getDynamicObject())
+                    {
+                        obj->removeProperty ("q");
+                        obj->removeProperty ("gain_db");
+                    }
+
+                setValue ("kind", kind.getText(), true);
+            };
             row.addAndMakeVisible (kind);
 
             const auto kindText = band["kind"].toString();
             hasGain = kindText == "peak" || kindText.endsWith ("shelf");
+            hasQ = ! isFirstOrder (kindText);
 
             for (auto [slider, setting, fallback] : { std::tuple { &freq, "freq", 1000.0 }, std::tuple { &gain, "gain_db", 0.0 },
                                                       std::tuple { &q, "q", 0.707 } })
@@ -576,7 +588,7 @@ private:
                     offerPanelMenu (slider, row.putOnPanel == nullptr ? std::function<void()>() : [this, path] { row.putOnPanel (path); });
                 };
 
-                if (slider != &gain || hasGain)
+                if ((slider != &gain || hasGain) && (slider != &q || hasQ))
                     row.addAndMakeVisible (*slider);
             }
 
@@ -611,10 +623,12 @@ private:
             row.changed (rebuild);
         }
 
+        static bool isFirstOrder (const juce::String& kind) { return kind == "highpass1" || kind == "lowpass1"; }
+
         BandsRow& row;
         juce::var band;
         int index;
-        bool hasGain = false;
+        bool hasGain = false, hasQ = true;
         juce::ComboBox kind;
         MenuSlider freq, gain, q;
         juce::TextButton remove;

@@ -1,6 +1,6 @@
 {
   "name": "German high gain (EL34, tight)",
-  "notes": "90s German high-gain style: very tight and precise low end, aggressive upper mids, EL34 power amp. Built from the general layout of such amps, NOT from one schematic: treat every value as approximate. Key ideas: a strong bass cut before the first clipping stage and smaller coupling caps between stages (very tight palm mutes), four cascaded 12AX7 stages, a mid-focused tone stack setting, EL34 pair with fairly strong feedback (tight) and presence. UNSURE / APPROXIMATED: everything, by design; feedback amount set for about 8 dB. Phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage). POWER SUPPLY: silicon rectifier and a big filter capacitor: a stiff, tight supply, as 60 ohm into 100 uF (supply_ohms, supply_uf on the power block), so the sag comes from the current the power tubes really draw. These two values are GUESSES from typical parts, not from this amp's schematic. (It replaced a sag block.)",
+  "notes": "90s German high-gain style: very tight and precise low end, aggressive upper mids, EL34 power amp. Built from the general layout of such amps, NOT from one schematic: treat every value as approximate. Key ideas: a strong bass cut before the first clipping stage and smaller coupling caps between stages (very tight palm mutes), four cascaded 12AX7 stages, a mid-focused tone stack setting, EL34 pair with fairly strong feedback (tight) and presence. UNSURE / APPROXIMATED: everything, by design; feedback amount set for about 8 dB. Phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage). POWER SUPPLY: silicon rectifier and a big filter capacitor: a stiff, tight supply, as 60 ohm into 100 uF (supply_ohms, supply_uf on the power block), so the sag comes from the current the power tubes really draw. These two values are GUESSES from typical parts, not from this amp's schematic. (It replaced a sag block.) COUPLING: every coupling capacitor and the output transformer's low end are 1st-order high-passes (highpass1), as in the real circuit; each gain stage ends with its coupling capacitor into the next grid resistor (coupling_nf, grid_ohms; default 22 nF into 1 Mohm = 7.2 Hz). The cathode follower is DC-coupled to v4's plate and drives the tone stack directly (coupling_nf 0 on both): the DC shift of hard clipping moves the cathode follower's working point, and the tone stack's capacitors block it.",
   "panel": [
     { "label": "Gain", "block": "gain_pot", "setting": "level_db", "range": [-40, 0] },
     { "label": "Bass", "block": "tone", "setting": "bass" },
@@ -11,18 +11,18 @@
   ],
   "chain": [
     { "type": "gate", "threshold_db": -55, "hysteresis_db": 3, "hold_ms": 20, "release_ms": 40, "apply_after": "v4" },
-    { "type": "eq", "id": "tight", "bands": [ { "kind": "highpass", "freq": 120 }, { "kind": "peak", "freq": 900, "gain_db": 3, "q": 0.8 } ] },
+    { "type": "eq", "id": "tight", "bands": [ { "kind": "highpass1", "freq": 120 }, { "kind": "peak", "freq": 900, "gain_db": 3, "q": 0.8 } ] },
     { "type": "gain", "id": "v1", "curve": "triode", "tube": "12AX7", "plate_v": 280, "plate_ohms": 100e3, "bias_v": -1.5, "plate_volts": true },
     { "type": "eq", "id": "gain_pot", "level_db": -12, "bands": [ { "kind": "highshelf", "freq": 1500, "gain_db": 4 } ] },
     { "type": "gain", "id": "v2", "curve": "triode", "tube": "12AX7", "plate_v": 280, "plate_ohms": 100e3, "bias_v": -2.0, "plate_volts": true,
-      "pre": [ { "kind": "highpass", "freq": 250 } ], "bias_shift": 0.4, "shift_release_ms": 15 },
+      "pre": [ { "kind": "highpass1", "freq": 250 } ], "bias_shift": 0.4, "shift_release_ms": 15 },
     { "type": "eq", "id": "divider1", "level_db": -14 },
     { "type": "gain", "id": "v3", "curve": "triode", "tube": "12AX7", "plate_v": 280, "plate_ohms": 100e3, "bias_v": -2.5, "plate_volts": true,
-      "pre": [ { "kind": "highpass", "freq": 200 } ], "bias_shift": 0.4, "shift_release_ms": 15 },
+      "pre": [ { "kind": "highpass1", "freq": 200 } ], "bias_shift": 0.4, "shift_release_ms": 15 },
     { "type": "eq", "id": "divider2", "level_db": -14 },
-    { "type": "gain", "id": "v4", "curve": "triode", "tube": "12AX7", "plate_v": 280, "plate_ohms": 100e3, "bias_v": -1.5, "plate_volts": true,
+    { "type": "gain", "id": "v4", "coupling_nf": 0, "curve": "triode", "tube": "12AX7", "plate_v": 280, "plate_ohms": 100e3, "bias_v": -1.5, "plate_volts": true,
       "post": [ { "kind": "lowpass", "freq": 6500 } ] },
-    { "type": "gain", "id": "cathode_follower", "curve": "custom", "top": 40, "top_softness": 0.3, "bottom": 200, "bottom_softness": 0.5 },
+    { "type": "gain", "id": "cathode_follower", "coupling_nf": 0, "curve": "custom", "top": 40, "top_softness": 0.3, "bottom": 200, "bottom_softness": 0.5 },
     { "type": "tonestack", "id": "tone", "style": "british", "treble": 6, "mid": 6, "bass": 5 },
     { "type": "eq", "id": "master", "level_db": -20 },
     {
@@ -31,8 +31,8 @@
       "chain": [
         { "type": "gain", "id": "pi", "curve": "triode", "tube": "12AX7", "plate_v": 330, "plate_ohms": 82e3, "bias_v": -1.5, "plate_volts": true, "drive_db": -6 },
         { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450, "bias_v": -46, "raa_ohms": 3400, "supply_ohms": 60, "supply_uf": 100,
-          "pre": [ { "kind": "highpass", "freq": 30 } ],
-          "post": [ { "kind": "highpass", "freq": 70 }, { "kind": "lowpass", "freq": 8000 } ],
+          "pre": [ { "kind": "highpass1", "freq": 30 } ],
+          "post": [ { "kind": "highpass1", "freq": 70 }, { "kind": "lowpass", "freq": 8000 } ],
           "bias_shift": 0.3, "shift_release_ms": 5 }
       ]
     },

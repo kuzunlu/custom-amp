@@ -240,6 +240,21 @@ void feedbackChecks()
     }
 }
 
+void couplingChecks()
+{
+    std::cout << "Coupling capacitor: a 1st-order high-pass at 1 / (2 pi R C)\n";
+    // 1 nF into 994718 ohm = a 160.00 Hz corner. A tiny signal keeps the hard curve straight (only the filter acts).
+    const double rate = 96000.0, level = 0.001;
+    const juce::String stage = R"([ { "type": "gain", "curve": "hard", "coupling_nf": 1, "grid_ohms": 994718.394 } ])";
+
+    for (auto [f, theory] : { std::pair { 160.0, -3.0103 }, std::pair { 16.0, 20 * std::log10 (16 / std::sqrt (16.0 * 16 + 160.0 * 160)) } })
+    {
+        const double db = 20 * std::log10 (tone (runJson (stage, sine (f, level, 1.0, rate), rate), f, rate) / level);
+        check (std::abs (db - theory) < 0.02, "at " + juce::String (f, 0) + " Hz: " + juce::String (db, 3) + " dB (theory "
+                                                  + juce::String (theory, 3) + " dB; a 2nd-order filter would be -40 dB at 16 Hz)");
+    }
+}
+
 void powerChecks()
 {
     std::cout << "Power tubes against their datasheets\n";
@@ -737,6 +752,7 @@ int main (int argc, char* argv[])
             toneStackChecks();
             triodeChecks();
             feedbackChecks();
+            couplingChecks();
             powerChecks();
             settingsChecks (root);
             referenceChecks (root);

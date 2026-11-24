@@ -3,7 +3,9 @@
 namespace amp
 {
 
-static const juce::StringArray kinds { "highpass", "lowpass", "lowshelf", "highshelf", "peak" };
+static const juce::StringArray kinds { "highpass", "lowpass", "lowshelf", "highshelf", "peak", "highpass1", "lowpass1" };
+
+static bool isFirstOrder (const juce::String& kind) { return kind == "highpass1" || kind == "lowpass1"; }
 
 Biquad Biquad::make (const juce::String& kind, double freq, double rate, double q, double gainDb, double checkRate)
 {
@@ -13,6 +15,18 @@ Biquad Biquad::make (const juce::String& kind, double freq, double rate, double 
     if (! (freq > 0 && freq < checkRate / 2))
         throw PresetError ("filter freq " + juce::String (freq) + " Hz must be between 0 and "
                            + juce::String (checkRate / 2) + " Hz");
+
+    if (isFirstOrder (kind))
+    {
+        // 1st order: one capacitor and one resistor (a coupling capacitor into a grid resistor, a transformer's
+        // low end). The bilinear transform with its -3 dB corner exactly at freq.
+        const double k = std::tan (juce::MathConstants<double>::pi * freq / rate);
+        Biquad f;
+        f.b0 = kind == "highpass1" ? 1 / (1 + k) : k / (1 + k);
+        f.b1 = kind == "highpass1" ? -1 / (1 + k) : k / (1 + k);
+        f.a1 = (k - 1) / (k + 1);
+        return f;
+    }
 
     const double w0 = 2 * juce::MathConstants<double>::pi * freq / rate;
     const double cosW = std::cos (w0), sinW = std::sin (w0);
@@ -74,6 +88,9 @@ FilterList makeFilters (const juce::Array<juce::var>& bands, const BuildContext&
 
         if (! cfg.has ("kind") || ! cfg.has ("freq"))
             throw PresetError (where + ": needs a 'kind' and a 'freq'");
+
+        if (isFirstOrder (cfg.text ("kind", {})) && (cfg.has ("q") || cfg.has ("gain_db")))
+            throw PresetError (where + ": a 1st-order " + cfg.text ("kind", {}) + " has no q or gain_db");
 
         list.filters.push_back (Biquad::make (cfg.text ("kind", {}), cfg.number ("freq", 0), ctx.rate,
                                               cfg.number ("q", 0.707), cfg.number ("gain_db", 0.0), ctx.checkRate));

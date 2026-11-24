@@ -193,7 +193,7 @@ static const std::map<juce::String, std::set<juce::String>> curveSettings {
 static std::set<juce::String> gainSettings()
 {
     std::set<juce::String> s { "drive_db", "curve", "bias", "level_db", "pre", "post", "oversample",
-                               "bias_shift", "shift_attack_ms", "shift_release_ms" };
+                               "bias_shift", "shift_attack_ms", "shift_release_ms", "coupling_nf", "grid_ohms" };
 
     for (auto& [curve, names] : curveSettings)
         s.insert (names.begin(), names.end());
@@ -259,9 +259,18 @@ Gain::Gain (const Cfg& cfg, const BuildContext& ctx) : LoopBlock (cfg, gainSetti
     bias = cfg.number ("bias", 0.0);
     offset = curve (bias);  // keeps silence at zero when bias is set
     pre = makeFilters (cfg.list ("pre"), ctx);
-    // Uneven clipping leaves a DC offset, so a 10 Hz high-pass always ends the stage.
     post = makeFilters (cfg.list ("post"), ctx);
-    post.filters.push_back (Biquad::make ("highpass", 10, ctx.rate, 0.707, 0.0, ctx.checkRate));
+
+    // The coupling capacitor into the next stage's grid resistor ends the stage: a 1st-order high-pass at
+    // 1 / (2 pi R C), which also removes the DC offset uneven clipping leaves. 0 nF = DC-coupled (no capacitor).
+    const double couplingNf = cfg.number ("coupling_nf", 22.0), gridOhms = cfg.number ("grid_ohms", 1e6);
+
+    if (couplingNf < 0 || gridOhms <= 0)
+        throw PresetError ("gain: coupling_nf must be 0 or more and grid_ohms above 0");
+
+    if (couplingNf > 0)
+        post.filters.push_back (Biquad::make ("highpass1", 1 / (2 * juce::MathConstants<double>::pi * gridOhms * couplingNf * 1e-9),
+                                              ctx.rate, 0.707, 0.0, ctx.checkRate));
 
     shiftAmount = cfg.number ("bias_shift", 0.0);
 
@@ -364,7 +373,8 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     level = dbToGain (cfg.number ("level_db", 0.0));
     pre = makeFilters (cfg.list ("pre"), ctx);
     post = makeFilters (cfg.list ("post"), ctx);
-    post.filters.push_back (Biquad::make ("highpass", 10, ctx.rate, 0.707, 0.0, ctx.checkRate));
+    // The output transformer passes no DC: its lowest end as a 1st-order roll-off at 10 Hz (more with post filters).
+    post.filters.push_back (Biquad::make ("highpass1", 10, ctx.rate, 0.707, 0.0, ctx.checkRate));
 
     shiftAmount = cfg.number ("bias_shift", 0.0);
 
