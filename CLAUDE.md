@@ -98,6 +98,18 @@ Clone with `git submodule update --init` to get JUCE.
   with 8 this model can not reach 11 mA/V at 140 mA) were fitted the same way; their `rsat` comes from the
   Svetlana sheets' fixed-bias rows: 100 W at 560 V into 4.5k (KT88), 100 W at 600 V into 5k (6550C).
   Safe bias (70% of max plate heat, screen = plate): KT88 at 560 V -66 V, 6550 at 600 V -76 V.
+  **Rectifier supply (C++ only, `supply_ohms` > 0, `supply_uf`):** the real cause of sag. A filter capacitor C
+  charged through R (rectifier + transformer winding), drained by the pair's current `draw = h^1.35 (IA + IB)` (from
+  `PushPull::shape`). Each sample, exactly: V moves towards `V0 - I R` with time constant R C (`stepSupply`);
+  `plate_v` is the voltage at idle (V0 = plate_v + idle current x R). Its headroom `V / plate_v` multiplies the sag
+  block's (`setHeadroom`), one sample late (the supply is an RC of milliseconds, so that does not matter); inside a
+  loop the committed try's current is used. 0 ohm (default) = bit-identical to before. settings.json marks the two
+  settings `cpp_only` (check_settings.py skips them). Not modelled: screen current, the mains ripple, a tube
+  rectifier's drop growing slower than the current, the preamp's supply. Checked (PluginTest): EL34 pair, 450 V,
+  250 ohm, 47 uF, 40 V then 10 V at 110 Hz: B+ 450 -> 401 V loud, 446 V soft; peak 47.1 V vs 49.5 V without; it
+  recovers in 9.2 ms = R C / (1 + g R) = 9.14 ms, g = 1.14 mA/V (the tubes take more current as the voltage comes
+  back, like a resistor across C: worked out with Python's tube model). In brit_800 (sag block replaced by 250 ohm):
+  450 -> about 375 V when played hard, and it jumps back up while v2a blocks after the loud part.
 - **Bias shift** (in gain): `g = drive*x/h + bias`; the curve gets `g + s`. When `g + s > 1` (past the top of
   the curve; really `g + s > top`), `s` drops by `bias_shift * attack * (g + s - 1)`; every sample it also drifts back to 0 with the
   release time. `s` is worked out at the normal rate in `process` (Python loop) and per sample in `tick`.

@@ -106,19 +106,22 @@ struct PushPull
     // What shape() needs for one headroom h from sag, worked out only when h changes (not on every try).
     struct Supply
     {
-        double perH = 1, in = 1, out = 1;
+        double perH = 1, in = 1, out = 1, hPow = 1;
     };
 
     Supply supply (double h) const noexcept
     {
-        return { 1 / h, quarter * std::pow (h, pentodeEx) / (h * vmax), h * vmax * scale };
+        const double hPow = std::pow (h, pentodeEx);
+        return { 1 / h, quarter * hPow / (h * vmax), h * vmax * scale, hPow };
     }
 
     // x = drive in volts at the grids, s = supply (h), sa / sb = bias shift of each grid. Full output equals |bias_v|.
-    double shape (double x, const Supply& s, double sa, double sb) const noexcept
+    // draw = the current both tubes take from the supply, in amps (the scaling rule above: h^1.35 * I(vg / h)).
+    double shape (double x, const Supply& s, double sa, double sb, double& draw) const noexcept
     {
         const double ia = lookup (gridClamp (bias + sa + x) * s.perH);
         const double ib = lookup (gridClamp (bias + sb - x) * s.perH) * weaker;
+        draw = (ia + ib) * s.hPow;
         const double v = (ia - ib) * s.in;
         return s.out * v / std::sqrt (std::sqrt (1 + v * v * v * v));
     }

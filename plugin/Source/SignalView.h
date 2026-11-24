@@ -34,6 +34,7 @@ public:
         Selection target;  // nothing for the input
         int indent = 0;
         bool isUnit = false;  // headroom or gain (0 to 1), not volts
+        double unitVolts = 0.0;  // a power supply strip: the volts that 1 stands for (plate_v)
         double rate = 48000.0;
         std::vector<float> samples;
         float peak = 0.0f;

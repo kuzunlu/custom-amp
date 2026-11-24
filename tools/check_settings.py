@@ -32,7 +32,8 @@ def main():
     for kind, cls in BLOCK_TYPES.items():
         if kind not in doc["blocks"]:
             continue
-        settings = doc["blocks"][kind]["settings"]
+        # Settings only the C++ plugin has (Python is frozen) are not in the Python code.
+        settings = {k: v for k, v in doc["blocks"][kind]["settings"].items() if not v.get("cpp_only")}
         if set(settings) != cls.SETTINGS:
             problems.append(f"{kind}: only in code {sorted(cls.SETTINGS - set(settings))}, "
                             f"only in doc {sorted(set(settings) - cls.SETTINGS)}")

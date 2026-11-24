@@ -335,7 +335,8 @@ juce::String Gain::describe() const
 //==============================================================================
 Power::Power (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
-                        "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms" })
+                        "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
+                        "supply_ohms", "supply_uf" })
 {
     const double plateV = cfg.number ("plate_v", 450.0);
     const double screenV = cfg.number ("screen_v", 0.0);
@@ -343,7 +344,23 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     tubes = PushPull::make (tubeName, plateV, screenV != 0 ? screenV : plateV, cfg.number ("bias_v", -45.0),
                             cfg.number ("raa_ohms", 3400.0), cfg.number ("mismatch", 0.0));
     supply = tubes.supply (1.0);
-    offset = tubes.shape (0.0, supply, 0.0, 0.0);  // mismatched tubes leave a step at rest
+    double idleDraw = 0.0;
+    offset = tubes.shape (0.0, supply, 0.0, 0.0, idleDraw);  // mismatched tubes leave a step at rest
+
+    // C++ only: the power supply as a filter capacitor charged through the rectifier and transformer resistance.
+    // plate_v stays the voltage at idle, so the supply with no load at all is a little higher.
+    supplyOhms = cfg.number ("supply_ohms", 0.0);
+    supplyUf = cfg.number ("supply_uf", 47.0);
+
+    if (supplyOhms < 0)
+        throw PresetError ("power: supply_ohms must be 0 or more, got " + juce::String (supplyOhms));
+
+    if (supplyUf <= 0)
+        throw PresetError ("power: supply_uf must be above 0, got " + juce::String (supplyUf));
+
+    supplyIdle = supplyV = plateV;
+    supplyNoLoad = plateV + idleDraw * supplyOhms;
+    supplyDecay = std::exp (-1.0 / (supplyOhms * supplyUf * 1e-6 * ctx.rate));
     drive = dbToGain (cfg.number ("drive_db", 0.0));
     level = dbToGain (cfg.number ("level_db", 0.0));
     pre = makeFilters (cfg.list ("pre"), ctx);
@@ -366,6 +383,30 @@ void Power::reset() noexcept
     sa = sb = 0.0;
     h = 1.0;
     supply = tubes.supply (1.0);
+    supplyV = supplyIdle;
+}
+
+void Power::setHeadroom (double fromSag) noexcept
+{
+    // The sag block's headroom times what the supply has left (always 1 without supply_ohms).
+    const double hh = supplyOhms > 0 ? fromSag * (supplyV / supplyIdle) : fromSag;
+
+    if (hh != h)
+    {
+        h = hh;
+        supply = tubes.supply (h);
+    }
+}
+
+void Power::stepSupply (double draw) noexcept
+{
+    // C dV/dt = (V0 - V) / R - I, solved exactly over one sample with the tubes' current I held for it:
+    // V moves towards V0 - I R with the time constant R C.
+    const double target = supplyNoLoad - draw * supplyOhms;
+    supplyV = target + (supplyV - target) * supplyDecay;
+
+    if (supplyProbe != nullptr)
+        supplyProbe->push_back ((float) (supplyV / supplyIdle));
 }
 
 void Power::nextShifts (double v) noexcept
@@ -388,17 +429,15 @@ void Power::process (double* x, int n) noexcept
     for (int i = 0; i < n; ++i)
     {
         const double v = pre.tick (x[i]) * drive;
-
-        if (headroom != nullptr && headroom[i] != h)
-        {
-            h = headroom[i];
-            supply = tubes.supply (h);
-        }
-
-        const double y = tubes.shape (v, supply, sa, sb) - offset;
+        setHeadroom (headroom != nullptr ? headroom[i] : 1.0);
+        double draw = 0.0;
+        const double y = tubes.shape (v, supply, sa, sb, draw) - offset;
 
         if (shiftAmount != 0)
             nextShifts (v);
+
+        if (supplyOhms > 0)
+            stepSupply (draw);
 
         x[i] = post.tick (y) * level;
     }
@@ -406,18 +445,14 @@ void Power::process (double* x, int n) noexcept
 
 void Power::beginSample (int n) noexcept
 {
-    if (headroom != nullptr && headroom[n] != h)
-    {
-        h = headroom[n];
-        supply = tubes.supply (h);
-    }
+    setHeadroom (headroom != nullptr ? headroom[n] : 1.0);
 }
 
 double Power::peek (double v) const noexcept
 {
     const double u = pre.peek (v) * drive;
     triedU = u;
-    return post.peek (tubes.shape (u, supply, sa, sb) - offset) * level;
+    return post.peek (tubes.shape (u, supply, sa, sb, triedDraw) - offset) * level;
 }
 
 void Power::commitTried() noexcept
@@ -427,13 +462,19 @@ void Power::commitTried() noexcept
     if (shiftAmount != 0)
         nextShifts (triedU);
 
+    if (supplyOhms > 0)
+        stepSupply (triedDraw);
+
     post.commitTried();
 }
 
 juce::String Power::describe() const
 {
     return "2x " + tubeName + ", idle " + juce::String (juce::roundToInt (tubes.idleMa)) + " mA ("
-           + juce::String (tubes.idleWatts, 1) + " W each), max about " + juce::String (juce::roundToInt (tubes.maxWatts)) + " W";
+           + juce::String (tubes.idleWatts, 1) + " W each), max about " + juce::String (juce::roundToInt (tubes.maxWatts)) + " W"
+           + (supplyOhms > 0 ? ", supply " + juce::String (juce::roundToInt (supplyOhms)) + " ohm and " + juce::String (supplyUf, 0)
+                                   + " uF (recovers in about " + juce::String (supplyOhms * supplyUf * 1e-3, 1) + " ms)"
+                             : juce::String());
 }
 
 //==============================================================================

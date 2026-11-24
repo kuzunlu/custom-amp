@@ -227,6 +227,16 @@
           "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 50, "scale": "log",
           "short": "How fast the grids recover.",
           "tooltip": "In a real amp: the coupling capacitor times the bias resistor (for example 22 nF x 220k = 5 ms, 100 nF x 220k = 22 ms). Bigger coupling capacitors = longer recovery and more 'farting' when driven hard; that is why some amps use small ones. Only matters when Bias shift is above 0."
+        },
+        "supply_ohms": {
+          "label": "Supply resistance", "type": "number", "unit": "ohm", "min": 0, "max": 1000, "default": 0, "cpp_only": true,
+          "short": "Rectifier sag: the resistance between the power transformer and the filter capacitor. 0 = a perfectly stiff supply.",
+          "tooltip": "The power tubes draw more current when you play hard (most of all in class AB), and that current drops the supply voltage across this resistance: the amp 'sags' and compresses, then recovers when you play softly. This is the real cause of tube-rectifier feel. It is the rectifier's own drop plus the transformer winding. Rough guesses (from typical datasheet voltage drops as remembered, not checked against real amps): silicon diodes (the drop is only the winding) about 50-100 ohm; GZ34/5AR4 about 120-170; 5U4GB about 250-300; 5Y3 (small amps) about 400-500. A tube rectifier's drop is not exactly proportional to the current (it grows a bit slower), so this is an approximation. Plate V stays the voltage at idle. Plugin only (not in the Python version). The signal view shows the supply as its own strip under the power block."
+        },
+        "supply_uf": {
+          "label": "Filter capacitor", "type": "number", "unit": "uF", "min": 5, "max": 500, "default": 47, "scale": "log", "cpp_only": true,
+          "short": "The first filter capacitor of the power supply: how fast the sag comes and goes.",
+          "tooltip": "The supply voltage falls and recovers with the time constant Supply resistance x Filter capacitor (for example 250 ohm x 47 uF = 12 ms). A small capacitor makes the sag fast and 'spongy'; a big one makes the supply steadier. Typical first capacitors: 32-100 uF. Only matters when Supply resistance is above 0. (A real supply is also recharged only at the peaks of the mains, 100 or 120 times a second; that ripple is left out.)"
         }
       }
     },

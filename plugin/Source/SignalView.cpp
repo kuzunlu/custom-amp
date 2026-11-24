@@ -37,6 +37,15 @@ void listBlocks (const juce::var& list, int indent, std::vector<SignalView::Trac
         t.isUnit = type == "sag" || (type == "gate" && block["apply_after"].toString().isNotEmpty());
         out.push_back (t);
 
+        if (type == "power" && (double) block.getProperty ("supply_ohms", 0.0) > 0)
+        {
+            // Its supply voltage (supply_ohms), as a share of plate_v: a strip of its own under it.
+            t.name = "   supply of " + (id.isNotEmpty() ? id : type);
+            t.isUnit = true;
+            t.unitVolts = (double) block.getProperty ("plate_v", 450.0);
+            out.push_back (t);
+        }
+
         if (type == "feedback")
             listBlocks (block["chain"], indent + 1, out);
 
@@ -108,9 +117,18 @@ private:
     {
         const int count = juce::jmin ((int) trace.samples.size(), juce::roundToInt (view.spanBox.getSelectedId() * 0.001 * trace.rate));
         const float top = trace.isUnit ? 1.0f : juce::jmax (1e-9f, trace.peak) * 1.1f;
+        // A headroom, gain or supply strip shows from a round number under its lowest value up to 1, so a small sag shows.
+        float bottom = 0.0f;
+
+        if (trace.isUnit && count > 0)
+        {
+            const float lowest = *std::min_element (trace.samples.begin(), trace.samples.begin() + count);
+            bottom = juce::jlimit (0.0f, 0.9f, std::floor ((lowest - 0.02f) * 10.0f) / 10.0f);
+        }
+
         const auto yOf = [&] (float v)
         {
-            return trace.isUnit ? plot.getBottom() - v / top * plot.getHeight()
+            return trace.isUnit ? plot.getBottom() - (v - bottom) / (top - bottom) * plot.getHeight()
                                 : plot.getCentreY() - v / top * plot.getHeight() * 0.5f;
         };
 
@@ -159,7 +177,10 @@ private:
             g.strokePath (path, juce::PathStrokeType (1.0f));
         }
 
-        drawScale (g, plot, trace.isUnit ? juce::String ("0 to 1") : "+/- " + formatVolts (top));
+        drawScale (g, plot, ! trace.isUnit ? "+/- " + formatVolts (top)
+                            : trace.unitVolts > 0 ? juce::String (juce::roundToInt (bottom * trace.unitVolts)) + " to "
+                                                        + juce::String (juce::roundToInt (trace.unitVolts)) + " V"
+                                                  : juce::String (bottom, 1) + " to 1");
     }
 
     // The scale in the top right corner, on its own background so the trace does not cover it.
@@ -288,12 +309,13 @@ SignalView::SignalView (CustomAmpProcessor& p) : processor (p)
     freqSlider.setValue (220.0, juce::dontSendNotification);
     freqSlider.setTextValueSuffix (" Hz");
     freqSlider.setTooltip ("The note's frequency (for a chord: its lowest note). Low E on a guitar is 82 Hz, the A string 110 Hz.");
-    levelSlider.setRange (0.005, 10.0, 0.001);
+    levelSlider.setRange (0.005, 100.0, 0.001);  // up to 100 V: a power block alone needs tens of volts at its grids
     levelSlider.setSkewFactorFromMidPoint (0.5);
     levelSlider.setValue (0.5, juce::dontSendNotification);
     levelSlider.setTextValueSuffix (" V");
     levelSlider.setTooltip ("The peak of the test signal in volts, at the amp's input. A guitar pickup gives about 0.1 V "
-                            "played softly and 0.5 V or more played hard.");
+                            "played softly and 0.5 V or more played hard. A power block on its own needs tens of volts "
+                            "(its grids swing about as far as its bias voltage).");
 
     for (auto* s : { &freqSlider, &levelSlider })
     {
@@ -512,8 +534,12 @@ SignalView::Result SignalView::compute (const Request& r)
         traces[0].name = "Input";
         listBlocks (parsed["chain"], 0, traces);
         const auto core = amp::flatten (engine.amp.core), tail = amp::flatten (engine.amp.tail);
+        size_t supplies = 0;
 
-        if (traces.size() != 1 + core.size() + tail.size())
+        for (auto& t : traces)
+            supplies += t.unitVolts > 0 ? 1 : 0;
+
+        if (traces.size() != 1 + core.size() + tail.size() + supplies)
             throw amp::PresetError ("the signal view could not match the blocks of this preset");
 
         const auto play = [&engine, &x] (int from, int to)
@@ -532,12 +558,22 @@ SignalView::Result SignalView::compute (const Request& r)
         std::vector<amp::Block*> blocks (core.begin(), core.end());
         blocks.insert (blocks.end(), tail.begin(), tail.end());
 
-        for (size_t k = 0; k < blocks.size(); ++k)
+        for (size_t k = 0, ti = 1; k < blocks.size(); ++k, ++ti)
         {
-            auto& t = traces[k + 1];
+            const auto reserve = (size_t) ((double) (x.size() - (size_t) start) * engine.coreRate() / rate) + 4096;
+            auto& t = traces[ti];
             t.rate = k < core.size() ? engine.coreRate() : rate;
-            t.samples.reserve ((size_t) ((double) (x.size() - (size_t) start) * t.rate / rate) + 4096);
+            t.samples.reserve (reserve);
             blocks[k]->probe = &t.samples;
+
+            if (ti + 1 < traces.size() && traces[ti + 1].unitVolts > 0)
+                if (auto* power = dynamic_cast<amp::Power*> (blocks[k]))
+                {
+                    auto& s = traces[++ti];
+                    s.rate = t.rate;
+                    s.samples.reserve (reserve);
+                    power->supplyProbe = &s.samples;
+                }
         }
 
         traces[0].rate = rate;
@@ -546,7 +582,12 @@ SignalView::Result SignalView::compute (const Request& r)
         play (start, (int) x.size());
 
         for (auto* b : blocks)
+        {
             b->probe = nullptr;
+
+            if (auto* power = dynamic_cast<amp::Power*> (b))
+                power->supplyProbe = nullptr;
+        }
 
         // What each strip says about itself: the peak, and for a sine the harmonics (from the spectrum).
         for (auto& t : traces)
@@ -571,7 +612,12 @@ SignalView::Result SignalView::compute (const Request& r)
                     mx = juce::jmax (mx, t.samples[(size_t) i]);
                 }
 
-                t.summary = (t.name.contains ("sag") ? "headroom " : "gain ") + juce::String (mn, 2) + " to " + juce::String (mx, 2);
+                if (t.unitVolts > 0)
+                    t.summary = "B+ " + juce::String (juce::roundToInt (mn * t.unitVolts)) + " to " + juce::String (juce::roundToInt (mx * t.unitVolts))
+                                + " V (plate_v at idle: " + juce::String (juce::roundToInt (t.unitVolts)) + " V)";
+                else
+                    t.summary = (t.name.contains ("sag") ? "headroom " : "gain ") + juce::String (mn, 2) + " to " + juce::String (mx, 2);
+
                 continue;
             }
 

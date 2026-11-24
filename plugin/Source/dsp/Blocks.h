@@ -148,13 +148,18 @@ public:
     double maxSlope() const override;
     juce::String describe() const override;
 
+    std::vector<float>* supplyProbe = nullptr;  // for the signal view: the supply voltage / plate_v, per sample
+
 private:
     void nextShifts (double v) noexcept;
+    void setHeadroom (double fromSag) noexcept;
+    void stepSupply (double draw) noexcept;
 
     PushPull tubes;
     FilterList pre, post;
     double drive = 1, level = 1, offset = 0;
-    mutable double triedU = 0;  // the drive of the last peek(), for commitTried()
+    mutable double triedU = 0, triedDraw = 0;  // the drive and current of the last peek(), for commitTried()
+    double supplyOhms = 0, supplyUf = 47, supplyIdle = 450, supplyNoLoad = 450, supplyV = 450, supplyDecay = 0;
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, sa = 0, sb = 0;
     double h = 1.0;
     PushPull::Supply supply;  // tubes.supply (h)

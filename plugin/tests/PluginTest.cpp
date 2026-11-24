@@ -250,6 +250,46 @@ int snapshots (const juce::File& folder)
         std::cout << "wrote " << out.getFullPathName() << "\n";
     }
 
+    // brit_800 with its sag block replaced by a rectifier supply on the power block (250 ohm, 47 uF).
+    {
+        auto preset = juce::JSON::parse (juce::JSON::toString (p->getPresetData()));
+        auto* chain = preset["chain"].getArray();
+
+        for (int i = chain->size(); --i >= 0;)
+        {
+            if ((*chain)[i]["type"] == "sag")
+                chain->remove (i);
+            else if ((*chain)[i]["type"] == "feedback")
+                for (auto& inner : *(*chain)[i]["chain"].getArray())
+                    if (inner["type"] == "power")
+                        inner.getDynamicObject()->setProperty ("supply_ohms", 250);
+        }
+
+        auto supplyFile = folder.getChildFile ("brit_800_supply.json");
+        supplyFile.replaceWithText (juce::JSON::toString (preset));
+        p->loadPresetFile (supplyFile);
+        waitForBuild (*p);
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
+        auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
+        editor->setSize (1120, 720);
+        ed->showSignals (true);
+        auto& view = ed->getSignalView();
+        view.setFrequencyView (false);
+        view.setSignal (SignalView::Signal::loudSoft, 110.0, 0.5);
+
+        for (int i = 0; i < 300 && view.isWaiting(); ++i)
+            pump (50);
+
+        view.setBounds (0, 0, 1000, 80 + 66 * (int) view.getTraces().size());
+        pump (100);
+        auto image = view.createComponentSnapshot (view.getLocalBounds(), true, 1.5f);
+        auto out = folder.getChildFile ("signals_supply_loud_soft.png");
+        out.deleteFile();
+        juce::FileOutputStream stream (out);
+        juce::PNGImageFormat().writeImageToStream (image, stream);
+        std::cout << "wrote " << out.getFullPathName() << "\n";
+    }
+
     auto file = folder.getChildFile ("my_amp.json");
     file.replaceWithText (R"({ "name": "My amp", "chain": [ { "type": "gain", "drive_db": 12, "curv": "tube" } ] })");
     p->loadPresetFile (file);
@@ -889,6 +929,61 @@ int main (int argc, char* argv[])
         waitForSignals();
         check (view.getTraces().size() == 2 && view.getTraces()[0].peak > 0.45f && ! view.getTraces()[1].spectrumDb.empty(),
                "a plucked note, spectrum view: peak " + juce::String (view.getTraces().empty() ? 0.0f : view.getTraces()[0].peak, 3) + " V");
+
+        // Rectifier sag (supply_ohms): a 40 V loud part, then 10 V, through one EL34 pair.
+        view.setFrequencyView (false);
+        std::vector<SignalView::Trace> stiff, sagging;
+
+        for (auto [ohms, into] : { std::pair { 0, &stiff }, std::pair { 250, &sagging } })
+        {
+            triode.replaceWithText (R"({ "name": "Supply", "chain": [ { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450,
+                                        "bias_v": -45, "supply_uf": 47, "supply_ohms": )" + juce::String (ohms) + " } ] }");
+            s->loadPresetFile (triode);
+            waitForBuild (*s);
+            view.setSignal (SignalView::Signal::loudSoft, 110.0, 40.0);
+            waitForSignals();
+            *into = view.getTraces();
+        }
+
+        view.setTimeSpanMs (500);
+        triode.replaceWithText (R"({ "name": "No supply setting", "chain": [ { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450,
+                                    "bias_v": -45 } ] })");
+        s->loadPresetFile (triode);
+        waitForBuild (*s);
+        waitForSignals();
+        check (stiff.size() == 2 && view.getTraces().size() == 2 && stiff[1].samples == view.getTraces()[1].samples,
+               "supply_ohms 0 = the power block as before, sample for sample");
+
+        if (sagging.size() == 3 && stiff.size() == 2)
+        {
+            const auto& supply = sagging[2].samples;
+            const auto at = [&supply, &sagging] (double seconds) { return supply[(size_t) (seconds * sagging[2].rate)]; };
+            const float lowest = *std::min_element (supply.begin(), supply.begin() + (int) (0.2 * sagging[2].rate));
+            check (sagging[2].name.contains ("supply of pa") && std::abs (supply[0] - 1.0f) < 1e-6f && lowest < 0.97f && at (0.49) > lowest,
+                   "the supply starts at plate_v, drops while playing hard (B+ down to " + juce::String (juce::roundToInt (450.0f * lowest))
+                       + " V) and comes back up when soft (" + juce::String (juce::roundToInt (450.0f * at (0.49))) + " V)");
+            check (sagging[1].peak < stiff[1].peak, "the pair compresses: peak " + juce::String (sagging[1].peak, 1) + " V with sag, "
+                                                        + juce::String (stiff[1].peak, 1) + " V without");
+
+            // After the loud part the supply recovers with R C / (1 + g R): the tubes take g = 1.14 mA more per volt of
+            // supply (worked out with Python's tube model at 10 V drive, 446 V), like a resistor across the capacitor.
+            const double coreRate = sagging[2].rate, tau = 250 * 47e-6 / (1 + 1.14e-3 * 250);
+            const size_t from = (size_t) (0.2 * coreRate);
+            const float end = at (0.49), gap = end - supply[from];
+            size_t i = from;
+
+            while (i < supply.size() && end - supply[i] > gap * std::exp (-1.0))
+                ++i;
+
+            const double t63 = (double) (i - from) / coreRate;
+            check (std::abs (t63 - tau) < 0.05 * tau, "it recovers: 63% back after " + juce::String (t63 * 1000, 2)
+                                                          + " ms (theory: 11.75 ms / (1 + g R) = " + juce::String (tau * 1000, 2) + " ms)");
+        }
+        else
+        {
+            check (false, "supply: 3 strips with it, 2 without; got " + juce::String ((int) sagging.size()) + " and "
+                              + juce::String ((int) stiff.size()) + " " + view.getProblem());
+        }
 
         triode.replaceWithText (R"({ "name": "Broken", "chain": [ { "type": "gain", "curv": "tube" } ] })");
         s->loadPresetFile (triode);
