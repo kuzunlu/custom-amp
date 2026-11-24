@@ -67,6 +67,12 @@ public:
     const std::vector<PanelKnob>& getPanel() const { return panelKnobs; }
     bool isPanelGuessed() const            { return panelGuessed; }
     bool showPanelView = true;             // what the window shows (kept while the window is closed)
+    bool showSignals = false;              // the chain editor shows the signal view instead of the block list
+
+    // For the signal view: how a preset is built here (folder, IR, rates), with the output level fixed at 1.
+    amp::Engine::Options getSignalOptions() const;
+    // The last `seconds` of input (after the Input knob), for the signal view.
+    std::vector<double> getRecentInput (double seconds) const;
 
     juce::String getPresetSource() const   { return presetSource; }
     juce::String getPresetText() const     { return presetText; }

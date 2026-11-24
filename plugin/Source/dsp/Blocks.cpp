@@ -37,6 +37,14 @@ void runBlocks (const Chain& blocks, double* x, int n) noexcept
         if (block->afterGain != nullptr)
             for (int i = 0; i < n; ++i)
                 x[i] *= block->afterGain[i];
+
+        if (block->probe != nullptr)
+        {
+            const double* v = block->probeValues (x);
+
+            for (int i = 0; i < n; ++i)
+                block->probe->push_back ((float) v[i]);
+        }
     }
 }
 
@@ -705,6 +713,8 @@ Feedback::Feedback (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "am
             blocks.push_back (std::make_unique<Power> (innerCfg, ctx));
     }
 
+    tried.assign (blocks.size(), 0.0);
+
     if (amount < 0)
     {
         // Positive feedback: the loop equation has exactly one answer only while the loop can never gain 1 or
@@ -745,8 +755,8 @@ double Feedback::loopPeek (double xv, double y) const noexcept
     // What the chain puts out if the loop output is y.
     double v = xv - amount * path.peek (y);
 
-    for (auto& b : blocks)
-        v = b->peek (v);
+    for (size_t k = 0; k < blocks.size(); ++k)
+        tried[k] = v = blocks[k]->peek (v);
 
     return v;
 }
@@ -773,6 +783,11 @@ void Feedback::process (double* x, int n) noexcept
         // First guess: the last three answers continued as a smooth curve (the loop runs oversampled).
         const double y = solveFallingFast ([this, xv] (double yy) { return loopPeek (xv, yy) - yy; }, 3 * y1 - 3 * y2 + y3, slope);
         loopCommitTried();
+
+        for (size_t k = 0; k < blocks.size(); ++k)
+            if (auto* p = blocks[k]->probe)
+                p->push_back ((float) tried[k]);
+
         y3 = y2;
         y2 = y1;
         y1 = y;

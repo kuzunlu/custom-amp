@@ -31,6 +31,12 @@ public:
 
     // Set by a gate block with apply_after: one gain value per sample, applied to this block's output.
     const double* afterGain = nullptr;
+
+    // Set by the plugin's signal view (never on the audio thread): every output sample is added to it.
+    std::vector<float>* probe = nullptr;
+
+    // What the signal view records: the output, or for sag and gate their headroom or gain.
+    virtual const double* probeValues (const double* x) const noexcept { return x; }
 };
 
 using Chain = std::vector<std::unique_ptr<Block>>;
@@ -163,6 +169,7 @@ public:
     void prepare (int maxSamples) override { headroom.assign ((size_t) maxSamples, 1.0); }
     void process (double* x, int n) noexcept override;
     void reset() noexcept override { env = 0.0; }
+    const double* probeValues (const double*) const noexcept override { return headroom.data(); }
 
     juce::StringArray targetIds;
     std::vector<double> headroom;
@@ -179,6 +186,7 @@ public:
     void prepare (int maxSamples) override;
     void process (double* x, int n) noexcept override;
     void reset() noexcept override;
+    const double* probeValues (const double* x) const noexcept override { return hasTarget ? gains.data() : x; }
 
     juce::String applyAfter;
     bool hasTarget = false;
@@ -213,6 +221,7 @@ private:
     void loopCommitTried() noexcept;
 
     std::vector<std::unique_ptr<LoopBlock>> blocks;
+    mutable std::vector<double> tried;  // each inner block's output in the last loopPeek() (= the answer), for probes
     FilterList path;
     double amount = 0.3, level = 1, y1 = 0, y2 = 0, y3 = 0;
     double slope = -1.0;  // the loop equation's slope at the last answer (-1 = no feedback): the next first guess

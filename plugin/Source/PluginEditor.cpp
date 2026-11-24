@@ -228,6 +228,11 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     inspectorViewport.setScrollBarsShown (true, false);
     addAndMakeVisible (inspectorViewport);
 
+    signalView.onSelect = [this] (const Selection& s) { select (s); };
+    addChildComponent (signalView);
+    addAndMakeVisible (signalsButton);
+    signalsButton.onClick = [this] { showSignals (! processor.showSignals); };
+
     addChildComponent (panelView);
     panelView.onRemove = [this] (int index)
     {
@@ -269,14 +274,26 @@ void CustomAmpEditor::showView (bool showPanel)
     processor.showPanelView = showPanel;
     panelView.setVisible (showPanel);
 
-    for (auto* c : { (juce::Component*) &chainViewport, (juce::Component*) &inspectorViewport, (juce::Component*) &addBlockButton })
+    for (auto* c : { (juce::Component*) &inspectorViewport, (juce::Component*) &addBlockButton, (juce::Component*) &signalsButton })
         c->setVisible (! showPanel);
+
+    chainViewport.setVisible (! showPanel && ! processor.showSignals);
+    signalView.setVisible (! showPanel && processor.showSignals);
+    signalsButton.setButtonText (processor.showSignals ? "Blocks" : "Signals");
+    signalsButton.setTooltip (processor.showSignals ? "Back to the list of blocks and their settings."
+                                                    : "See what every block does to a test signal: its waveform or its spectrum.");
 
     viewButton.setButtonText (showPanel ? juce::String::fromUTF8 ("Edit chain \xe2\x96\xb8") : juce::String::fromUTF8 ("\xe2\x97\x82 Panel"));
     viewButton.setTooltip (showPanel ? "Show the blocks of the amp, to change any setting, add blocks or put more knobs on the panel."
                                      : "Back to the front panel.");
     showMessage ({}, false);
     resized();
+}
+
+void CustomAmpEditor::showSignals (bool signals)
+{
+    processor.showSignals = signals;
+    showView (false);
 }
 
 void CustomAmpEditor::showMessage (const juce::String& text, bool isProblem)
@@ -345,6 +362,7 @@ void CustomAmpEditor::presetEdited (bool rebuildInspector)
 
     sentText = juce::JSON::toString (preset, true);
     processor.setEditedPreset (sentText, merge);
+    signalView.setPreset (preset, sentText);
     refreshPanel();
     needChainView = true;
     needInspector = needInspector || rebuildInspector;
@@ -360,6 +378,7 @@ void CustomAmpEditor::handleAsyncUpdate()
     if (needInspector)
         inspector.show (selection, preset);
 
+    signalView.setSelection (selection);
     needChainView = needInspector = false;
     layoutViews();
 }
@@ -426,6 +445,8 @@ void CustomAmpEditor::refresh()
     refreshStatus();
     chainView.setPreset (preset, selection);
     inspector.show (selection, preset);
+    signalView.setPreset (preset, sentText);
+    signalView.setSelection (selection);
     refreshPanel();
     layoutViews();
 }
@@ -510,6 +531,8 @@ void CustomAmpEditor::resized()
     {
         addBlockButton.setBounds (header.removeFromRight (110));
         header.removeFromRight (5);
+        signalsButton.setBounds (header.removeFromRight (80));
+        header.removeFromRight (5);
     }
 
     redoButton.setBounds (header.removeFromRight (60));
@@ -521,6 +544,7 @@ void CustomAmpEditor::resized()
     panelView.setBounds (area);
     auto left = area.removeFromLeft (area.getWidth() * 55 / 100);
     chainViewport.setBounds (left);
+    signalView.setBounds (left);
     area.removeFromLeft (12);
     inspectorViewport.setBounds (area);
     layoutViews();

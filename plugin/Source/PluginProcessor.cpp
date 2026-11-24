@@ -342,6 +342,30 @@ CustomAmpProcessor::BuildRequest CustomAmpProcessor::makeRequest (bool measure)
     return r;
 }
 
+amp::Engine::Options CustomAmpProcessor::getSignalOptions() const
+{
+    amp::Engine::Options options;
+    options.presetFolder = getPresetFile().getParentDirectory();
+    options.irOverride = irFile;
+    options.sampleRate = currentRate > 0.0 ? currentRate : 48000.0;
+    options.factorLog2 = factorLog2ForRate (options.sampleRate);
+    options.fixedLevel = 1.0;
+    return options;
+}
+
+std::vector<double> CustomAmpProcessor::getRecentInput (double seconds) const
+{
+    const int size = (int) history.size();
+    const int count = juce::jlimit (1, size - 1, (int) (seconds * (currentRate > 0.0 ? currentRate : 48000.0)));
+    const int end = historyWrite.load();
+    std::vector<double> x ((size_t) count);
+
+    for (int i = 0; i < count; ++i)
+        x[(size_t) i] = history[(size_t) ((end - count + i + size) % size)].load (std::memory_order_relaxed);
+
+    return x;
+}
+
 void CustomAmpProcessor::requestBuild (bool measure)
 {
     if (currentRate <= 0.0)

@@ -68,6 +68,7 @@ target_sources(CustomAmp
         plugin/Source/Inspector.cpp
         plugin/Source/Panel.cpp
         plugin/Source/PanelView.cpp
+        plugin/Source/SignalView.cpp
         plugin/Source/PluginEditor.cpp
         plugin/Source/PluginProcessor.cpp)
 
@@ -101,6 +102,7 @@ target_sources(PluginTest
         plugin/Source/Inspector.cpp
         plugin/Source/Panel.cpp
         plugin/Source/PanelView.cpp
+        plugin/Source/SignalView.cpp
         plugin/Source/PluginEditor.cpp
         plugin/Source/PluginProcessor.cpp
         plugin/tests/PluginTest.cpp)

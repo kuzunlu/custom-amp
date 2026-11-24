@@ -7,6 +7,7 @@
 #include "Inspector.h"
 #include "PanelView.h"
 #include "PluginProcessor.h"
+#include "SignalView.h"
 
 class CustomAmpEditor final : public juce::AudioProcessorEditor,
                               private juce::ChangeListener,
@@ -29,6 +30,10 @@ public:
     void showView (bool panel);
     bool isShowingPanel() const { return processor.showPanelView; }
     const PanelView& getPanelView() const { return panelView; }
+
+    // In the chain editor: the signal view (each block's waveform or spectrum) instead of the block list.
+    void showSignals (bool signals);
+    SignalView& getSignalView() { return signalView; }
 
     // What "Put on the front panel" does (right-click a slider in the chain editor).
     void putOnPanel (const juce::var& block, const juce::String& setting);
@@ -71,6 +76,8 @@ private:
     juce::Viewport chainViewport, inspectorViewport;
     ChainView chainView { help };
     Inspector inspector { help };
+    SignalView signalView { processor };
+    juce::TextButton signalsButton;
 
     juce::AudioProcessorValueTreeState::SliderAttachment inputAttachment, outputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> qualityAttachment;  // made after the items exist

@@ -59,7 +59,8 @@ Clone with `git submodule update --init` to get JUCE.
 - `plugin/Source/dsp/`: the C++ engine, one file per Python module (`Blocks`, `Curves`, `Filters`, `Circuit`),
   plus `Convolver` (cab IR) and `Engine` (`Amp` = linked blocks, `Engine` = oversampling + auto level)
 - `plugin/Source/PluginProcessor.*`, `PluginEditor.*`: the plugin; `PanelView` (front panel), `Panel` (reads/edits the
-  panel list), `ChainView` + `Inspector` (chain editor); `plugin/tests/`: the two test programs and `panel_cases.json`
+  panel list), `ChainView` + `Inspector` (chain editor), `SignalView` (each block's waveform or spectrum);
+  `plugin/tests/`: the two test programs and `panel_cases.json`
 - `CMakeLists.txt`, `build.bat`: like stream-bridge's
 
 ## How the blocks work (keep these rules in the C++ version too)
@@ -229,7 +230,13 @@ C++ checks:
   difference -57 dB below the peak. Without warm-up and fade: -0.8 dB (a full click); warm-up alone: -27 dB.
   (A first version of this test, "biggest step between samples" under a steady note, passed even without
   warm-up: always check that a test fails when the thing it tests is switched off.)
-- `PluginTest --snapshot <folder>` saves pictures of the window (used for the walkthrough page).
+- `PluginTest --snapshot <folder>` saves pictures of the window (used for the walkthrough page), and of the signal
+  view of brit_800 (220 Hz sine at 0.1 and 0.5 V, time and spectrum; 110 Hz loud-then-soft).
+- Signal view (PluginTest): brit_800 gives 14 strips (input + 13 blocks, the loop's two indented); the input sine is
+  0.500 V with H2 at 1e-6; the sag strip is its headroom; the loop's power block is recorded at the core rate; a click
+  selects the block; one 12AX7 stage (300 V, 100k, -1.5 V) at 0.5 V shows H2 2.64% and H3 0.126% = Python's numbers;
+  a broken preset shows its error. What it showed about brit_800: even a 0.1 V sine comes out of v2a as a square wave,
+  and its sag sits at 0.85 (fully down) for any playing level, so it never "breathes" (worth a look).
 
 
 ## The C++ plugin (keep these rules)
@@ -318,6 +325,19 @@ C++ checks:
   "Put on the front panel" (`MenuSlider`); a guessed panel is first written into the preset (blocks get ids like
   `tonestack`). Right-click a knob: rename (or double-click its name), remove, show in the chain editor.
   The block keys (Ctrl+C/X/V/D, Delete) only work in the chain editor.
+- **Signal view** (`SignalView`, "Signals" in the chain editor; the processor remembers it): for LEARNING what each
+  block does. It never touches the sound: on its own thread it builds its own `Engine` (output level fixed at 1, same
+  rate and oversampling as the plugin) from the editor's preset TEXT (a `juce::var` is not safe to share across
+  threads), plays a test signal (sine, plucked note, power chord, loud-then-soft, or the last 0.6 s of real input),
+  and records every block's output through `Block::probe` (`runBlocks` adds each buffer; inside a feedback loop the
+  answer of each sample, from `Feedback::tried`). Sag records its headroom, a gate with apply_after its gain
+  (`probeValues`). Strips follow `flatten()` order (block, then the blocks inside it) = the preset walked the same way.
+  Sine: 0.5 s run-up so it has settled; notes start from silence. Time view: min/max per pixel column. Frequency
+  view: 0.171 s (2^16 samples at 384 kHz), Blackman-Harris window, dB of a sine's peak volts; for a sine the summary
+  gives THD and H2-H4. Harmonic levels ADD the power of the bins around k x the note: the highest bin alone was up to
+  0.8 dB off (220 Hz falls between bins, 440 Hz on one), which showed 2.84% instead of Python's 2.64%.
+  Running it costs nothing while it is hidden (it runs when shown); the probes cost the audio path one pointer check
+  per block and one store per loop try.
 
 ## Releases (option B chosen: the JUCE plugin)
 
@@ -349,7 +369,8 @@ feedback (also positive), split, gate, ir; `tools/check_settings.py`;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
 C++ plugin: the engine (all blocks), VST3 + standalone, preset menu (built-in presets) + open/watch a preset
 file, Load IR, Input/Output/Quality, status box, chain view + inspector to edit every setting and add/move/remove
-blocks, Save as, Level, undo/redo, copy/paste/duplicate, front panel (8 automatable knobs), click-free engine swaps. Checked (see above). Not yet tried in a real DAW by the user.
+blocks, Save as, Level, undo/redo, copy/paste/duplicate, front panel (8 automatable knobs), click-free engine swaps,
+signal view (every block's waveform or spectrum for a test signal). Checked (see above). Not yet tried in a real DAW by the user.
 Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); sag targets before the sag block (real amps: the power stage's current
 sags the preamp supply too). NOT done because Python runs each block over the whole file before the next one, and

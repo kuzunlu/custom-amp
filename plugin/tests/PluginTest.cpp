@@ -218,6 +218,38 @@ int snapshots (const juce::File& folder)
         std::cout << "wrote " << out.getFullPathName() << "\n";
     }
 
+    // The signal view: what every block of brit_800 does to a test signal, tall enough for every strip.
+    p->loadBuiltInPreset ("brit_800.json");
+    waitForBuild (*p);
+
+    for (auto [signal, freq, peak, frequencyView, name] :
+         { std::tuple { SignalView::Signal::sine, 220.0, 0.1, false, "signals_sine_soft_time.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.5, false, "signals_sine_hard_time.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.1, true, "signals_sine_soft_spectrum.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.5, true, "signals_sine_hard_spectrum.png" },
+           std::tuple { SignalView::Signal::loudSoft, 110.0, 0.5, false, "signals_loud_soft_time.png" } })
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
+        auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
+        editor->setSize (1120, 720);
+        ed->showSignals (true);
+        auto& view = ed->getSignalView();
+        view.setFrequencyView (frequencyView);
+        view.setSignal (signal, freq, peak);
+
+        for (int i = 0; i < 300 && view.isWaiting(); ++i)
+            pump (50);
+
+        view.setBounds (0, 0, 1000, 80 + 66 * (int) view.getTraces().size());
+        pump (100);
+        auto image = view.createComponentSnapshot (view.getLocalBounds(), true, 1.5f);
+        auto out = folder.getChildFile (name);
+        out.deleteFile();
+        juce::FileOutputStream stream (out);
+        juce::PNGImageFormat().writeImageToStream (image, stream);
+        std::cout << "wrote " << out.getFullPathName() << "\n";
+    }
+
     auto file = folder.getChildFile ("my_amp.json");
     file.replaceWithText (R"({ "name": "My amp", "chain": [ { "type": "gain", "drive_db": 12, "curv": "tube" } ] })");
     p->loadPresetFile (file);
@@ -764,6 +796,106 @@ int main (int argc, char* argv[])
         check (q->getStatus().isError && q->getStatus().text.startsWith ("panel knob 1: no block has the id 'v2'"),
                "a wrong panel shows the error: " + q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false));
         noPanel.deleteFile();
+    }
+
+    std::cout << "Signal view\n";
+    {
+        auto s = makePlugin();
+        s->loadBuiltInPreset ("brit_800.json");
+        waitForBuild (*s);
+        std::unique_ptr<juce::AudioProcessorEditor> editor (s->createEditor());
+        auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
+        auto& view = ed->getSignalView();
+        const auto waitForSignals = [&view]
+        {
+            for (int i = 0; i < 300 && view.isWaiting(); ++i)
+                pump (50);
+        };
+        // The level of harmonic k of the note in a strip, as a share of the first (from the strip's spectrum).
+        const auto harmonic = [] (const SignalView::Trace& t, double freq, int k)
+        {
+            const auto level = [&t, freq] (int h)
+            {
+                const int centre = juce::roundToInt (h * freq / t.binHz);
+                double power = 0.0;
+
+                for (int b = centre - 5; b <= centre + 5; ++b)
+                    power += std::pow (10.0, t.spectrumDb[(size_t) b] / 10.0);
+
+                return std::sqrt (power);
+            };
+
+            return level (k) / level (1);
+        };
+
+        ed->showSignals (true);
+        view.setSignal (SignalView::Signal::sine, 220.0, 0.5);
+        waitForSignals();
+        const auto& traces = view.getTraces();
+        check (view.getProblem().isEmpty() && traces.size() == 14 && traces[11].name == "1. gain  pi" && traces[11].indent == 1
+                   && traces[12].name == "2. power  pa",
+               "brit_800: the input and 13 blocks, the loop's two inside it: " + juce::String ((int) traces.size()) + " strips"
+                   + (view.getProblem().isNotEmpty() ? ", " + view.getProblem() : juce::String()));
+
+        if (traces.size() == 14)
+        {
+            check (std::abs (traces[0].peak - 0.5f) < 0.005f && harmonic (traces[0], 220.0, 2) < 1e-4,
+                   "the input is the sine: peak " + juce::String (traces[0].peak, 3) + " V, 2nd harmonic "
+                       + juce::String (100.0 * harmonic (traces[0], 220.0, 2), 4) + "%");
+            float lowest = 1.0f, highest = 0.0f;
+
+            for (auto v : traces[9].samples)
+            {
+                lowest = juce::jmin (lowest, v);
+                highest = juce::jmax (highest, v);
+            }
+
+            check (traces[9].isUnit && lowest > 0.85f && lowest < 0.995f && highest <= 1.0f,
+                   "the sag strip is its headroom (amount 0.15): " + juce::String (lowest, 3) + " to " + juce::String (highest, 3));
+            const double inner = (double) traces[12].samples.size() / traces[12].rate;
+            check (traces[12].rate > 300000.0 && inner > 0.17 && traces[12].peak > 1.0f,
+                   "the power block inside the loop is recorded at the core rate: " + juce::String (inner, 3) + " s, peak "
+                       + juce::String (traces[12].peak, 1) + " V");
+
+            view.onSelect (traces[3].target);
+            pump (50);
+            check (ed->getSelection().index == 2 && ed->getSelection().item()["id"].toString() == "v1b", "clicking strip 3 selects v1b");
+        }
+
+        // One triode stage at 0.5 V: the numbers checked against tube data (Checks done so far: 2.6% 2nd, 0.1% 3rd).
+        auto triode = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("custom_amp_triode.json");
+        triode.replaceWithText (R"({ "name": "One triode", "chain": [ { "type": "gain", "curve": "triode", "tube": "12AX7",
+                                    "plate_v": 300, "plate_ohms": 100000, "bias_v": -1.5 } ] })");
+        s->loadPresetFile (triode);
+        waitForBuild (*s);
+        waitForSignals();
+
+        if (view.getTraces().size() == 2)
+        {
+            const auto& t = view.getTraces()[1];
+            const double h2 = 100.0 * harmonic (t, 220.0, 2), h3 = 100.0 * harmonic (t, 220.0, 3);
+            check (std::abs (h2 - 2.64) < 0.05 && std::abs (h3 - 0.126) < 0.02,
+                   "one 12AX7 stage at 0.5 V: 2nd harmonic " + juce::String (h2, 2) + "%, 3rd " + juce::String (h3, 3)
+                       + "% (Python: 2.64% / 0.126%)");
+            check (t.summary.contains ("THD") && t.summary.contains ("H2"), "its summary lists the harmonics: " + t.summary.replace ("\n", " | "));
+        }
+        else
+        {
+            check (false, "one triode: 2 strips, got " + juce::String ((int) view.getTraces().size()) + " " + view.getProblem());
+        }
+
+        view.setFrequencyView (true);
+        view.setSignal (SignalView::Signal::pluck, 110.0, 0.5);
+        waitForSignals();
+        check (view.getTraces().size() == 2 && view.getTraces()[0].peak > 0.45f && ! view.getTraces()[1].spectrumDb.empty(),
+               "a plucked note, spectrum view: peak " + juce::String (view.getTraces().empty() ? 0.0f : view.getTraces()[0].peak, 3) + " V");
+
+        triode.replaceWithText (R"({ "name": "Broken", "chain": [ { "type": "gain", "curv": "tube" } ] })");
+        s->loadPresetFile (triode);
+        waitForBuild (*s);
+        waitForSignals();
+        check (view.getProblem().contains ("curv") && view.getTraces().empty(), "a broken preset shows the problem: " + view.getProblem());
+        triode.deleteFile();
     }
 
     file.deleteFile();
