@@ -109,6 +109,15 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   recovers in 9.2 ms = R C / (1 + g R) = 9.14 ms, g = 1.14 mA/V (the tubes take more current as the voltage comes
   back, like a resistor across C: worked out with the (then still present) Python tube model). In brit_800 (sag block replaced by 250 ohm):
   450 -> about 375 V when played hard, and it jumps back up while v2a blocks after the loud part.
+  **Preamp on the same supply** (`preamp_targets`, `preamp_filter_ms`, default 100 ms): the gain stages listed there
+  get `supplyHeadroom` = a 1-pole low-pass of `supplyV / plate_v` (the decoupling filters; the preamp's own current is
+  left out) and clip at `h x curve(x / h)` like sag targets. They can be ANYWHERE (usually before the power block):
+  they read the value as it was (a block earlier; with a 100 ms filter that does not matter). This is the "sag before
+  the sag block" that Python's whole-file design blocked. Checked (EngineTest): after 0.5 s loud the preamp share is
+  0.8766 vs the supply's average 0.8762; a hard-clip target's peak = 40 V x 0.8774; after the supply is back, 0.368 of
+  the preamp's drop is left after 100 ms (theory e^-1). The 7 amp-style presets list ALL their gain stages (preamp,
+  cathode follower, phase inverter) with 100 ms (a guess). CPU: about the same (A/B run, alternating: brit_800 -1%,
+  brit_plexi +1%, us_modern_high_gain +13%).
   The 7 amp-style presets use it INSTEAD of their old sag block (which only targeted `pa`), with GUESSED values (each
   preset's notes say so): silicon 80 ohm / 50 uF (brit_800, brit_plexi), silicon stiff 60 / 100 (german_high_gain,
   us_hotrod_lead), GZ34 170 / 70 (us_blackface_clean), GZ34 170 / 32 (brit_top_boost), two 5U4G 200 / 47

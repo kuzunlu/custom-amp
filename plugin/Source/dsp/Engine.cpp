@@ -155,6 +155,22 @@ void Amp::link()
             gate->hasTarget = true;
             gateLinks.emplace_back (gate, blocks[j]);
         }
+        else if (auto* power = dynamic_cast<Power*> (blocks[i]))
+        {
+            // Its preamp stages can be anywhere (usually before it): they use the supply as it was a moment before.
+            for (auto& targetId : power->preampTargetIds)
+            {
+                if (position.count (targetId) == 0)
+                    throw PresetError ("power preamp_targets: no block has the id '" + targetId + "'");
+
+                auto* gain = dynamic_cast<Gain*> (blocks[position[targetId]]);
+
+                if (gain == nullptr)
+                    throw PresetError ("power preamp_targets: '" + targetId + "' is not a gain block");
+
+                gain->supplyHeadroom = &power->preampHeadroom;
+            }
+        }
     }
 }
 

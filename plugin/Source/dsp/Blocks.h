@@ -106,9 +106,12 @@ public:
     void reset() noexcept override;
     void beginSample (int n) noexcept override
     {
-        h = headroom != nullptr ? headroom[n] : 1.0;
+        h = (headroom != nullptr ? headroom[n] : 1.0) * (supplyHeadroom != nullptr ? *supplyHeadroom : 1.0);
         driveOverH = drive / h;  // once per sample, so the tries only multiply
     }
+
+    // Set by a power block that lists this stage in preamp_targets: its supply's share of the voltage (1 = full).
+    const double* supplyHeadroom = nullptr;
     double peek (double v) const noexcept override;
     void commitTried() noexcept override;
     double maxSlope() const override;
@@ -149,6 +152,11 @@ public:
     juce::String describe() const override;
 
     std::vector<float>* supplyProbe = nullptr;  // for the signal view: the supply voltage / plate_v, per sample
+    double supplyRatio() const noexcept { return supplyV / supplyIdle; }
+
+    // The gain stages fed from this supply through the decoupling filters, and their share of the voltage (1 = full).
+    juce::StringArray preampTargetIds;
+    double preampHeadroom = 1.0;
 
 private:
     void nextShifts (double v) noexcept;
@@ -160,6 +168,7 @@ private:
     double drive = 1, level = 1, offset = 0;
     mutable double triedU = 0, triedDraw = 0;  // the drive and current of the last peek(), for commitTried()
     double supplyOhms = 0, supplyUf = 47, supplyIdle = 450, supplyNoLoad = 450, supplyV = 450, supplyDecay = 0;
+    double preampCoeff = 0;
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, sa = 0, sb = 0;
     double h = 1.0;
     PushPull::Supply supply;  // tubes.supply (h)

@@ -255,6 +255,66 @@ void couplingChecks()
     }
 }
 
+void preampSupplyChecks()
+{
+    std::cout << "Preamp on the power supply: follows it through a 100 ms filter, and clips lower by that share\n";
+    const double rate = 96000.0;
+    const int block = 96;  // 1 ms
+    auto* preset = new juce::DynamicObject();
+    // v1 DC-coupled: a coupling capacitor would tilt the clipped wave, and its peak would no longer be the clip level.
+    preset->setProperty ("chain", juce::JSON::parse (R"([ { "type": "gain", "id": "v1", "curve": "hard", "level_db": 32.0412, "coupling_nf": 0 },
+        { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450, "bias_v": -45, "raa_ohms": 3400, "supply_ohms": 250,
+          "supply_uf": 47, "preamp_targets": [ "v1" ], "preamp_filter_ms": 100 } ])"));
+    amp::Amp a (juce::var (preset), rate, rate, juce::File(), juce::File ("C:/no/such/folder/ir.wav"));
+    a.prepare (block, block);
+    amp::Gain* v1 = nullptr;
+    amp::Power* pa = nullptr;
+
+    for (auto* b : amp::flatten (a.core))
+    {
+        v1 = v1 != nullptr ? v1 : dynamic_cast<amp::Gain*> (b);
+        pa = pa != nullptr ? pa : dynamic_cast<amp::Power*> (b);
+    }
+
+    // 0.5 s of a loud 110 Hz note (v1 clips at +-1 x 40 = 40 V into the pair), then 0.6 s of silence.
+    auto x = sine (110, 2.0, 1.1, rate);
+    std::fill (x.begin() + (int) (0.5 * rate), x.end(), 0.0);
+    std::vector<float> v1Out;
+    v1->probe = &v1Out;
+    std::vector<double> supply, preamp;  // at the end of every 1 ms
+
+    for (size_t i = 0; i < x.size(); i += block)
+    {
+        a.processCore (x.data() + i, block);
+        supply.push_back (pa->supplyRatio());
+        preamp.push_back (pa->preampHeadroom);
+    }
+
+    // At the end of the loud part (5 time constants in) it equals the supply's average over the last 100 ms.
+    double average = 0.0;
+
+    for (int ms = 400; ms < 500; ++ms)
+        average += supply[(size_t) ms] / 100;
+
+    check (std::abs (preamp[499] - average) < 0.003 && preamp[499] < 0.97,
+           "after 0.5 s loud: preamp supply " + juce::String (preamp[499], 4) + ", the main supply's average " + juce::String (average, 4));
+
+    // v1 clips at +-h: its peak over the last 100 ms of the loud part is 40 V x its supply share.
+    float peak = 0.0f;
+
+    for (size_t i = (size_t) (0.4 * rate); i < (size_t) (0.5 * rate); ++i)
+        peak = std::max (peak, std::abs (v1Out[i]));
+
+    check (std::abs (peak / 40.0 - preamp[449]) < 0.01, "v1 clips lower by that share: peak " + juce::String (peak, 2) + " V = 40 V x "
+                                                            + juce::String (peak / 40.0, 4));
+
+    // After the supply is back (50 ms after the note: its own recovery is about 9 ms), the preamp's drop shrinks to
+    // e^-1 in 100 ms.
+    const double before = 1 - preamp[549], after = 1 - preamp[649], ratio = after / before;
+    check (supply[549] > 0.999 && std::abs (ratio - std::exp (-1.0)) < 0.05 * std::exp (-1.0),
+           "it recovers through the 100 ms filter: " + juce::String (ratio, 3) + " of its drop is left after 100 ms (theory e^-1 = 0.368)");
+}
+
 void powerChecks()
 {
     std::cout << "Power tubes against their datasheets\n";
@@ -754,6 +814,7 @@ int main (int argc, char* argv[])
             feedbackChecks();
             couplingChecks();
             powerChecks();
+            preampSupplyChecks();
             settingsChecks (root);
             referenceChecks (root);
             std::cout << (failures == 0 ? "All passed\n" : juce::String (failures) + " failed\n");

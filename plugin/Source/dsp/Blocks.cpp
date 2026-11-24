@@ -291,7 +291,7 @@ void Gain::reset() noexcept
 
 void Gain::process (double* x, int n) noexcept
 {
-    if (headroom == nullptr && shiftAmount == 0)
+    if (headroom == nullptr && supplyHeadroom == nullptr && shiftAmount == 0)
     {
         for (int i = 0; i < n; ++i)
             x[i] = post.tick (curve (pre.tick (x[i]) * drive + bias) - offset) * level;
@@ -303,7 +303,7 @@ void Gain::process (double* x, int n) noexcept
     // and the bias shift moves the working point.
     for (int i = 0; i < n; ++i)
     {
-        const double hh = headroom != nullptr ? headroom[i] : 1.0;
+        const double hh = (headroom != nullptr ? headroom[i] : 1.0) * (supplyHeadroom != nullptr ? *supplyHeadroom : 1.0);
         const double g = pre.tick (x[i]) * drive / hh + bias;
         const double y = hh * (curve (g + shift) - offset);
 
@@ -344,7 +344,7 @@ juce::String Gain::describe() const
 Power::Power (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
                         "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
-                        "supply_ohms", "supply_uf" })
+                        "supply_ohms", "supply_uf", "preamp_targets", "preamp_filter_ms" })
 {
     const double plateV = cfg.number ("plate_v", 450.0);
     const double screenV = cfg.number ("screen_v", 0.0);
@@ -369,6 +369,23 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     supplyIdle = supplyV = plateV;
     supplyNoLoad = plateV + idleDraw * supplyOhms;
     supplyDecay = std::exp (-1.0 / (supplyOhms * supplyUf * 1e-6 * ctx.rate));
+
+    // The preamp is fed from the same supply through decoupling filters (a resistor and a capacitor per node), so
+    // its voltage follows the supply slowly. The gain stages in preamp_targets clip lower by that share.
+    const auto targets = cfg.get ("preamp_targets");
+
+    if (! targets.isVoid() && ! targets.isArray())
+        throw PresetError ("power: preamp_targets must be a list, like [\"v1a\", \"v2a\"]");
+
+    for (auto& t : cfg.list ("preamp_targets"))
+        preampTargetIds.add (t.toString());
+
+    const double filterMs = cfg.number ("preamp_filter_ms", 100.0);
+
+    if (filterMs <= 0)
+        throw PresetError ("power: preamp_filter_ms must be above 0, got " + juce::String (filterMs));
+
+    preampCoeff = 1 - std::exp (-1.0 / (filterMs * 0.001 * ctx.rate));
     drive = dbToGain (cfg.number ("drive_db", 0.0));
     level = dbToGain (cfg.number ("level_db", 0.0));
     pre = makeFilters (cfg.list ("pre"), ctx);
@@ -393,6 +410,7 @@ void Power::reset() noexcept
     h = 1.0;
     supply = tubes.supply (1.0);
     supplyV = supplyIdle;
+    preampHeadroom = 1.0;
 }
 
 void Power::setHeadroom (double fromSag) noexcept
@@ -413,6 +431,7 @@ void Power::stepSupply (double draw) noexcept
     // V moves towards V0 - I R with the time constant R C.
     const double target = supplyNoLoad - draw * supplyOhms;
     supplyV = target + (supplyV - target) * supplyDecay;
+    preampHeadroom += preampCoeff * (supplyV / supplyIdle - preampHeadroom);
 
     if (supplyProbe != nullptr)
         supplyProbe->push_back ((float) (supplyV / supplyIdle));

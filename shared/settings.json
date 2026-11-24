@@ -239,6 +239,16 @@
           "label": "Filter capacitor", "type": "number", "unit": "uF", "min": 5, "max": 500, "default": 47, "scale": "log",
           "short": "The first filter capacitor of the power supply: how fast the sag comes and goes.",
           "tooltip": "The supply voltage falls and recovers with the time constant Supply resistance x Filter capacitor (for example 250 ohm x 47 uF = 12 ms). A small capacitor makes the sag fast and 'spongy'; a big one makes the supply steadier. Typical first capacitors: 32-100 uF. Only matters when Supply resistance is above 0. (A real supply is also recharged only at the peaks of the mains, 100 or 120 times a second; that ripple is left out.)"
+        },
+        "preamp_targets": {
+          "label": "Preamp on this supply", "type": "id-list", "default": [],
+          "short": "The ids of the gain stages fed from this power supply: they sag with it, a little later.",
+          "tooltip": "In a real amp one rectifier and filter capacitor feed everything: the power tubes, then (through more resistors and capacitors, the 'decoupling' filters) the phase inverter and every preamp stage. So when the power tubes pull the supply down, the preamp's voltage follows slowly, and the preamp stages clip a little lower too: more compression and 'bloom' when you dig in. The stages can be anywhere in the chain, also before this power block. Needs Supply resistance above 0 (a stiff supply never sags). The signal view's supply strip shows the voltage they follow."
+        },
+        "preamp_filter_ms": {
+          "label": "Preamp supply filter", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 100, "scale": "log",
+          "short": "How slowly the preamp's voltage follows the supply (the decoupling filters).",
+          "tooltip": "The time constant of the decoupling filters between the main supply and the preamp: resistor x capacitor, for example 10k x 10 uF = 100 ms. Real amps have several in a row (one per stage or pair of stages), so the preamp follows the supply smoothly over 50-500 ms: it does not ripple with each note, it swells and recovers with your playing."
         }
       }
     },
