@@ -15,6 +15,7 @@ Use `C:\Python314\python.exe`. Only NumPy is used (no SciPy; filters and resampl
 python tools/make_test_audio.py                                       # fake DI riff + fake cab IR into audio/
 python run.py presets/crunch.json audio/test_di.wav out/crunch.wav    # run a preset
 python tools/check_settings.py                                        # settings.json matches the code?
+python tools/check_panel.py                                           # front panel rules (shared cases) + every preset's panel
 ```
 
 `.wav` files are not in git (`.gitignore`). `audio/` test files can always be made again.
@@ -40,11 +41,13 @@ Clone with `git submodule update --init` to get JUCE.
 - `ampsim/curves.py`: the `custom` and `triode` clipping curves, and the push-pull power tube pair
 - `ampsim/oversample.py`: oversampling for clipping (chunked) and up/down for the feedback loop
 - `ampsim/wavio.py`: wav read/write
+- `ampsim/panel.py`: checks a preset's front panel (`panel` list) against `settings.json`
 - `presets/*.json`: one file = one amp
 - `shared/settings.json`: help text for every setting (see below)
 - `plugin/Source/dsp/`: the C++ engine, one file per Python module (`Blocks`, `Curves`, `Filters`, `Circuit`),
   plus `Convolver` (cab IR) and `Engine` (`Amp` = linked blocks, `Engine` = oversampling + auto level)
-- `plugin/Source/PluginProcessor.*`, `PluginEditor.*`: the plugin; `plugin/tests/`: the two test programs
+- `plugin/Source/PluginProcessor.*`, `PluginEditor.*`: the plugin; `PanelView` (front panel), `Panel` (reads/edits the
+  panel list), `ChainView` + `Inspector` (chain editor); `plugin/tests/`: the two test programs and `panel_cases.json`
 - `CMakeLists.txt`, `build.bat`: like stream-bridge's
 
 ## How the blocks work (keep these rules in the C++ version too)
@@ -105,6 +108,14 @@ Clone with `git submodule update --init` to get JUCE.
   With `apply_after`, the gain goes to that block's `after_gain` (applied in `run_blocks`); the gate's
   own position passes the sound unchanged. Not allowed on a block inside a feedback loop.
 - **Presets**: every unknown setting name is an error (`check_keys`), so typos never pass silently.
+- **Front panel** (`panel`, top-level preset key, at most 8 knobs): `{label, block, setting, range}`. `block` = an id
+  (found anywhere: main chain, feedback chains, split paths); `setting` = a NUMBER setting from `settings.json`, or a
+  dot path into a band list or split paths (`path.0.gain_db`, `bands.1.gain_db`, `paths.0.level_db`); `range` = the
+  values at knob 0 and 10 (may run backwards: Presence `[0, -12]`), default = the setting's min/max in settings.json.
+  It does not change the sound. Python only checks it (`ampsim/panel.py`, after the chain is built); the plugin uses
+  it, with the same checks and messages (`Panel.cpp`); `plugin/tests/panel_cases.json` holds the shared cases.
+  Built-in presets: signal-flow order (Gain, Bass, Middle, Treble, Presence, Master); gain `drive_db` knobs use
+  `[0, 40]`, level knobs `[-40, 0]`, eq-band tone knobs `[-12, 12]`.
 - `SCALAR_CURVES` (used in the loop) must stay the same as `CURVES` (used with NumPy).
 
 ## shared/settings.json: the one place for help text
@@ -151,7 +162,7 @@ Tests are small scripts run from the scratchpad, comparing results with theory:
   affect them (difference ~1.6e-7 = 24-bit rounding).
 
 C++ checks:
-- `tools/cpp_check.py`, 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
+- `tools/cpp_check.py` (leaves the `panel` out of the core/tail parts), 1 s of the test DI, all 10 presets: core at 384 kHz (no oversampling on either side)
   -159 to -210 dB below the output peak (-159 = the feedback solver's 1e-10 tolerance); tail (cab IR) -137 dB
   (the `float` FFT in the convolver).
 - Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
@@ -169,7 +180,12 @@ C++ checks:
   nfb_2/pi_2/pa_2 and still builds, paste = same block, cut + undo, paste with nothing selected goes at the end,
   id rules (inner sag targets follow, outside targets stay, nfb_2 -> nfb_3, block/path mix-ups refused). The test
   saves and restores the clipboard text. A gain stage pasted at the end lands before the cab IR and builds; a sag
-  can not be pasted into the feedback loop; duplicating `pi` inside it gives `pi_3`.
+  can not be pasted into the feedback loop; duplicating `pi` inside it gives `pi_3`. Front panel: the 19 shared
+  cases give Python's exact errors; every built-in preset has its own panel and builds; brit_800's knobs show
+  the preset (Gain 7.00 = -12 dB of -40..0, Master 5.75); moving knob parameters from the DAW writes master 0 dB and
+  presence -12 dB (backwards range) with the level kept; 5 knob moves 150 ms apart are one undo step; a preset without
+  a panel gets 4 guessed knobs that work; Put on the front panel adds ids, stops at 8; a wrong panel shows
+  "panel knob 1: no block has the id 'v2'". (PluginTest prints every line at once, so a crash shows where it was.)
 - Click test (two plugins, the same plucked note in real time, one gets an edit you can not hear): biggest
   difference -57 dB below the peak. Without warm-up and fade: -0.8 dB (a full click); warm-up alone: -27 dB.
   (A first version of this test, "biggest step between samples" under a steady note, passed even without
@@ -241,13 +257,25 @@ Idea for later: turn the Python checks into a real `tests/` folder.
   ring the audio thread writes), keeps catching up on the builder thread until less than one block is missing,
   the audio thread plays it the last few samples just before the swap, then old and new cross-fade over 30 ms.
   Triode tables are cached (they took most of the build time).
-- Not done yet: a real amp-style UI (knobs on a faceplate).
+- **Front panel** (`PanelView`, shown first; "Edit chain" switches, the processor remembers the view): the preset's
+  `panel` knobs, or guessed ones without it (the first main-chain tone stack's bass/mid/treble, the last main-chain
+  eq's level as Master; guessed knobs point at blocks by place, so they need no ids). The knobs are 8 plugin
+  parameters `knob_1..knob_8` (0-10, the DAW only sees "Knob N"). The processor polls them in its 100 ms timer
+  (`applyKnobChanges`): a knob more than 0.01 from where the preset puts it is written into the preset as an edit
+  (level kept, undo, click-free swap); moves of the same knob within 0.8 s are one undo step. Every preset change
+  (`updatePanel`) moves the parameters to the preset's values. A wrong panel is a preset error (checked in
+  `buildEngine` after the engine, like Python). Right-click a number slider or band slider in the inspector:
+  "Put on the front panel" (`MenuSlider`); a guessed panel is first written into the preset (blocks get ids like
+  `tonestack`). Right-click a knob: rename (or double-click its name), remove, show in the chain editor.
+  The block keys (Ctrl+C/X/V/D, Delete) only work in the chain editor.
 
 ## Releases (option B chosen: the JUCE plugin)
 
 Like the user's `github.com/kuzunlu/stream-bridge`:
-- `.github/workflows/build.yml` on `windows-latest`: every push builds (`build.bat`) and runs `PluginTest`;
-  pushing a tag like `v0.1.0` also runs `gh release create` with the installer and two zips (VST3, app).
+- `.github/workflows/build.yml` on `windows-latest`: only a pushed `v*` tag (or "Run workflow" on the Actions page)
+  builds (`build.bat`), runs `PluginTest` and, for a tag, runs `gh release create` with the installer and two zips
+  (VST3, app). Normal pushes do not build: the user ran low on Actions minutes (2026-11-24), so run the tests
+  locally before pushing.
   Actions are pinned by commit SHA (the same ones as stream-bridge). The repo is private: a release is only
   visible to people with access, and Actions minutes come from the user's allowance (Windows counts double).
 - `installer/CustomAmp.iss` (Inno Setup 6, installed in CI with `choco install innosetup`; not installed on
@@ -263,15 +291,15 @@ Like the user's `github.com/kuzunlu/stream-bridge`:
 
 ## Status
 
-Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). First release: tag `v0.1.0` pushed on 2026-11-23
+Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). Releases: tags `v0.1.0` and `v0.1.1` pushed on 2026-11-23
 (the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
 Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values), power (push-pull EL34/6L6GC/EL84/6V6GT), sag, feedback, split, gate, ir; `tools/check_settings.py`;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
 C++ plugin: the engine (all blocks), VST3 + standalone, preset menu (built-in presets) + open/watch a preset
 file, Load IR, Input/Output/Quality, status box, chain view + inspector to edit every setting and add/move/remove
-blocks, Save as, Level, undo/redo, copy/paste/duplicate, click-free engine swaps. Checked (see above). Not yet tried in a real DAW by the user.
-Next ideas: an amp-style UI; compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
+blocks, Save as, Level, undo/redo, copy/paste/duplicate, front panel (8 automatable knobs), click-free engine swaps. Checked (see above). Not yet tried in a real DAW by the user.
+Next ideas: compare the amp-style presets with recordings of real amps (the Plexi-style one does not clean up
 when played softly, see its notes); a top-boost tone circuit and Baxandall/James netlists; KT88/6550 (fit to
 their datasheets like the others); a real `tests/` folder; positive feedback; sag targets before the sag
 block.

@@ -1,6 +1,13 @@
 {
   "name": "Crunch",
   "notes": "Mid-forward classic rock crunch. One hot preamp stage, a tone stack that pushes the mids, then a power amp that does part of the clipping: lots of sag and light feedback, so it is loose and touch-sensitive.",
+  "panel": [
+    { "label": "Gain", "block": "v1", "setting": "drive_db", "range": [0, 40] },
+    { "label": "Bass", "block": "tonestack", "setting": "bands.0.gain_db", "range": [-12, 12] },
+    { "label": "Middle", "block": "tonestack", "setting": "bands.1.gain_db", "range": [-12, 12] },
+    { "label": "Treble", "block": "tonestack", "setting": "bands.2.gain_db", "range": [-12, 12] },
+    { "label": "Presence", "block": "nfb", "setting": "path.0.gain_db", "range": [0, -12] }
+  ],
   "chain": [
     { "type": "eq", "bands": [{ "kind": "highpass", "freq": 90 }] },
     {
@@ -17,7 +24,7 @@
     },
     { "type": "sag", "amount": 0.4, "attack_ms": 5, "release_ms": 200, "targets": ["v2"] },
     {
-      "type": "feedback", "amount": 0.1,
+      "type": "feedback", "id": "nfb", "amount": 0.1,
       "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
       "chain": [
         {

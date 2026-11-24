@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .blocks import Feedback, Gain, Gate, Power, Sag, build_chain, run_blocks
 from .filters import check_keys
+from .panel import check_panel
 
 
 def flatten(blocks):
@@ -51,10 +52,12 @@ def link_blocks(blocks):
 
 class Amp:
     def __init__(self, preset, sr):
-        check_keys(preset, {"name", "notes", "chain"}, "preset")
+        check_keys(preset, {"name", "notes", "chain", "panel"}, "preset")
         self.name = preset.get("name", "")
         self.blocks = build_chain(preset["chain"], sr)
         link_blocks(self.blocks)
+        if "panel" in preset:
+            check_panel(preset["panel"], preset["chain"])
 
     def process(self, x):
         return run_blocks(self.blocks, x)

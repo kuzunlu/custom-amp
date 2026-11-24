@@ -26,6 +26,8 @@ public:
     // Called after every change. rebuild = the rows must be made again (curve changed, band added, ...).
     std::function<void (bool rebuild)> onChanged;
     std::function<void (const Selection&)> onSelect;  // after adding or moving a block
+    // "Put on the front panel" (right-click a number slider): the block and the setting ("level_db", "bands.0.gain_db").
+    std::function<void (const juce::var& block, const juce::String& setting)> onPutOnPanel;
 
     class Row;  // one setting (defined in Inspector.cpp)
 
@@ -53,6 +55,9 @@ juce::var makeBlock (const juce::String& type);
 // Where a block added "at the end" of the main chain goes: before the cab IR, because in the plugin only eq and
 // ir blocks can come after it (an eq or ir block itself goes at the very end).
 int endInsertIndex (const juce::var& chain, const juce::var& block);
+
+// Every "id" in a preset, or in a part of one.
+void collectIds (const juce::var& node, juce::StringArray& ids);
 
 // Turns copied text (JSON) into a block, or a split path when asPath, ready to go into `preset`: a new copy whose
 // ids are made unique (v2 -> v2_2), with its own sag targets and apply_after following the new names.

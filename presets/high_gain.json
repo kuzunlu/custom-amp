@@ -1,6 +1,14 @@
 {
   "name": "High gain",
   "notes": "Tight modern high gain. A mid boost and bass cut before the gain, three preamp stages with more bass cut before each one (so the low end stays tight), scooped tone stack, little sag, and a power amp loop with presence and resonance.",
+  "panel": [
+    { "label": "Gain", "block": "v1", "setting": "drive_db", "range": [0, 40] },
+    { "label": "Bass", "block": "tonestack", "setting": "bands.0.gain_db", "range": [-12, 12] },
+    { "label": "Middle", "block": "tonestack", "setting": "bands.1.gain_db", "range": [-12, 12] },
+    { "label": "Treble", "block": "tonestack", "setting": "bands.2.gain_db", "range": [-12, 12] },
+    { "label": "Presence", "block": "nfb", "setting": "path.0.gain_db", "range": [0, -12] },
+    { "label": "Resonance", "block": "nfb", "setting": "path.1.gain_db", "range": [0, -12] }
+  ],
   "chain": [
     {
       "type": "eq", "id": "tight",
@@ -30,7 +38,7 @@
     },
     { "type": "sag", "amount": 0.15, "attack_ms": 3, "release_ms": 80, "targets": ["power"] },
     {
-      "type": "feedback", "amount": 0.2,
+      "type": "feedback", "id": "nfb", "amount": 0.2,
       "path": [
         { "kind": "highshelf", "freq": 3000, "gain_db": -8 },
         { "kind": "lowshelf", "freq": 100, "gain_db": -6 }

@@ -1,6 +1,11 @@
 {
   "name": "British top-boost style (EL84 pair, no feedback)",
   "notes": "60s British 'chime' style: bright, jangly, breaks up early and sweetly, very touch-sensitive. Its key features: EL84 power tubes, a tube rectifier (lots of sag), and NO global feedback loop (so there is no feedback block). Path: V1 -> volume -> top boost stage -> treble/bass circuit -> phase inverter with a 'cut' control -> 2x EL84. FROM SCHEMATICS (fairly sure): EL84 pair, no global negative feedback, tube rectifier, a cut control after the phase inverter, 12AX7 preamp stages. UNSURE / APPROXIMATED: the top boost treble/bass circuit is a different circuit from the tone stack block and is approximated here with EQ bands (a real block for it is still to be added); all bias values; the cut control as a 6 kHz low-pass; phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage); EL84 pair at 320 V into 8k with -13 V bias (a real one is cathode biased).",
+  "panel": [
+    { "label": "Volume", "block": "volume", "setting": "level_db", "range": [-40, 0] },
+    { "label": "Treble", "block": "treble_bass", "setting": "bands.2.gain_db", "range": [-12, 12] },
+    { "label": "Bass", "block": "treble_bass", "setting": "bands.0.gain_db", "range": [-12, 12] }
+  ],
   "chain": [
     { "type": "gain", "id": "v1", "curve": "triode", "tube": "12AX7", "plate_v": 250, "plate_ohms": 220e3, "bias_v": -1.5, "plate_volts": true },
     { "type": "eq", "id": "volume", "level_db": -14 },

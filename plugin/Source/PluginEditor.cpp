@@ -174,7 +174,6 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     statusBox.setColour (juce::TextEditor::backgroundColourId, theme::panel);
     addAndMakeVisible (statusBox);
 
-    chainLabel.setText ("Chain: click a block to edit it, hover for help", juce::dontSendNotification);
     addAndMakeVisible (chainLabel);
 
     addAndMakeVisible (addBlockButton);
@@ -224,9 +223,37 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
 
     inspector.onChanged = [this] (bool rebuild) { presetEdited (rebuild); };
     inspector.onSelect = [this] (const Selection& s) { select (s); };
+    inspector.onPutOnPanel = [this] (const juce::var& block, const juce::String& setting) { putOnPanel (block, setting); };
     inspectorViewport.setViewedComponent (&inspector, false);
     inspectorViewport.setScrollBarsShown (true, false);
     addAndMakeVisible (inspectorViewport);
+
+    addChildComponent (panelView);
+    panelView.onRemove = [this] (int index)
+    {
+        panel::removeKnob (preset, index, help);
+        presetEdited (true);
+    };
+    panelView.onRename = [this] (int index, const juce::String& label)
+    {
+        panel::renameKnob (preset, index, label, help);
+        presetEdited (true);
+    };
+    panelView.onShowInChain = [this] (int index)
+    {
+        // The knob's block: the last step of its path is its place in a list, the steps before lead to the list.
+        const auto& path = processor.getPanel()[(size_t) index].blockPath;
+        auto list = preset;
+
+        for (int i = 0; i + 1 < path.size(); ++i)
+            list = list.isArray() ? list[path[i].getIntValue()] : list.getProperty (juce::Identifier (path[i]), {});
+
+        showView (false);
+        select ({ list, path[path.size() - 1].getIntValue(), false });
+    };
+
+    addAndMakeVisible (viewButton);
+    viewButton.onClick = [this] { showView (! processor.showPanelView); };
 
     processor.addChangeListener (this);
     setWantsKeyboardFocus (true);  // for Ctrl+Z (keys a text field does not use come here too)
@@ -234,6 +261,52 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     setResizeLimits (760, 480, 2400, 1600);
     setSize (1120, 720);
     refresh();
+    showView (processor.showPanelView);
+}
+
+void CustomAmpEditor::showView (bool showPanel)
+{
+    processor.showPanelView = showPanel;
+    panelView.setVisible (showPanel);
+
+    for (auto* c : { (juce::Component*) &chainViewport, (juce::Component*) &inspectorViewport, (juce::Component*) &addBlockButton })
+        c->setVisible (! showPanel);
+
+    viewButton.setButtonText (showPanel ? juce::String::fromUTF8 ("Edit chain \xe2\x96\xb8") : juce::String::fromUTF8 ("\xe2\x97\x82 Panel"));
+    viewButton.setTooltip (showPanel ? "Show the blocks of the amp, to change any setting, add blocks or put more knobs on the panel."
+                                     : "Back to the front panel.");
+    showMessage ({}, false);
+    resized();
+}
+
+void CustomAmpEditor::showMessage (const juce::String& text, bool isProblem)
+{
+    // Empty text: the normal hint for the view.
+    const auto hint = processor.showPanelView ? "Front panel: turn the knobs. Your DAW can automate them as Knob 1 to Knob 8."
+                                              : "Chain: click a block to edit it, hover for help. Right-click a slider to put it on the front panel.";
+    chainLabel.setText (text.isNotEmpty() ? text : juce::String (hint), juce::dontSendNotification);
+    chainLabel.setColour (juce::Label::textColourId,
+                          text.isEmpty() ? juce::Colours::white : isProblem ? theme::error : theme::accent);
+}
+
+void CustomAmpEditor::putOnPanel (const juce::var& block, const juce::String& setting)
+{
+    const auto problem = panel::addKnob (preset, block, setting, help);
+
+    if (problem.isNotEmpty())
+    {
+        showMessage (problem, true);
+        return;
+    }
+
+    presetEdited (true);
+    showMessage ("On the front panel now, as knob " + juce::String ((int) processor.getPanel().size())
+                     + ". Rename it there: double-click its name.", false);
+}
+
+void CustomAmpEditor::refreshPanel()
+{
+    panelView.setPanel (processor.getPanel(), processor.isPanelGuessed(), preset.getProperty ("name", "").toString());
 }
 
 CustomAmpEditor::~CustomAmpEditor()
@@ -272,6 +345,7 @@ void CustomAmpEditor::presetEdited (bool rebuildInspector)
 
     sentText = juce::JSON::toString (preset, true);
     processor.setEditedPreset (sentText, merge);
+    refreshPanel();
     needChainView = true;
     needInspector = needInspector || rebuildInspector;
     triggerAsyncUpdate();
@@ -352,6 +426,7 @@ void CustomAmpEditor::refresh()
     refreshStatus();
     chainView.setPreset (preset, selection);
     inspector.show (selection, preset);
+    refreshPanel();
     layoutViews();
 }
 
@@ -369,6 +444,8 @@ bool CustomAmpEditor::keyPressed (const juce::KeyPress& key)
         undoButton.triggerClick();
     else if (key == juce::KeyPress ('y', command, 0) || key == juce::KeyPress ('z', command | shift, 0))
         redoButton.triggerClick();
+    else if (processor.showPanelView)
+        return false;  // the block keys only work where the blocks are shown
     else if (key == juce::KeyPress ('c', command, 0))
         return inspector.copySelected();
     else if (key == juce::KeyPress ('x', command, 0))
@@ -426,14 +503,22 @@ void CustomAmpEditor::resized()
 
     area.removeFromTop (8);
     auto header = area.removeFromTop (26);
-    addBlockButton.setBounds (header.removeFromRight (110));
+    viewButton.setBounds (header.removeFromRight (110));
     header.removeFromRight (5);
+
+    if (! processor.showPanelView)
+    {
+        addBlockButton.setBounds (header.removeFromRight (110));
+        header.removeFromRight (5);
+    }
+
     redoButton.setBounds (header.removeFromRight (60));
     header.removeFromRight (5);
     undoButton.setBounds (header.removeFromRight (60));
     chainLabel.setBounds (header);
     area.removeFromTop (4);
 
+    panelView.setBounds (area);
     auto left = area.removeFromLeft (area.getWidth() * 55 / 100);
     chainViewport.setBounds (left);
     area.removeFromLeft (12);

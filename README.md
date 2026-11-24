@@ -36,6 +36,10 @@ build.bat
 The plugin is `build\CustomAmp_artefacts\Release\VST3\Custom Amp.vst3` (copy it to
 `C:\Program Files\Common Files\VST3\`); the standalone app is next to it in `Standalone\`.
 
+- **Front panel:** the window opens on the amp's knobs (Gain, Bass, Middle, Treble, Presence, Master...). They read 0
+  to 10 like a real amp, with the real value under each one. Your DAW can automate and MIDI-map them as Knob 1 to Knob 8.
+  Right-click a knob to rename or remove it. **Edit chain** opens the block editor; there, right-click any slider and
+  pick **Put on the front panel** to make your own knob.
 - Pick a built-in preset, or **Open...** to load your own `.json` preset. The plugin watches that file:
   edit it in any text editor, save, and the amp reloads by itself. A mistake in the file is shown in the
   status box, and the last working amp keeps playing.
@@ -107,6 +111,21 @@ Harmonics' share of the sound for a 220 Hz note at 0.05 / 0.2 / 0.5 V (soft / me
 | `us_modern_high_gain.json` | American modern high gain (rectifier-style) | 2x 6L6GC | 5.2 dB | 52% / 75% / 86% |
 
 Known limit: the Plexi-style preset barely cleans up when played softly (see its notes).
+
+### Front panel
+
+```json
+"panel": [
+  { "label": "Gain",     "block": "gain_pot", "setting": "level_db",       "range": [-40, 0] },
+  { "label": "Bass",     "block": "tone",     "setting": "bass" },
+  { "label": "Presence", "block": "nfb",      "setting": "path.0.gain_db", "range": [0, -12] }
+]
+```
+
+The knobs the plugin shows (at most 8). Each one turns one number setting of the block with that `id`. A dot path
+reaches into a list: `path.0.gain_db` is the gain of the first filter band in the feedback loop's path. `range` is the
+value at 0 and at 10 on the knob (without it, the setting's own range); it can run backwards. The panel does not
+change the sound. Without a panel, the plugin guesses a few knobs.
 
 ### Sag
 

@@ -64,6 +64,7 @@ def run_part(part, preset_path, preset, x, rate, work):
     chain = preset["chain"]
     start = tail_start(chain)
     sub = copy.deepcopy(preset)
+    sub.pop("panel", None)  # its knobs may point at blocks in the other part; it does not change the sound
     sub["chain"] = chain[:start] if part == "core" else chain[start:]
     if not sub["chain"]:
         return None

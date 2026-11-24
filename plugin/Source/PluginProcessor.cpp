@@ -7,6 +7,8 @@ static const juce::String defaultPreset = "brit_800.json";
 static constexpr double fadeSeconds = 0.03;    // old and new engine cross-fade this long
 static constexpr double warmUpSeconds = 0.25;  // a new engine hears this much of the recent input first
 static constexpr size_t maxUndoSteps = 200;
+static constexpr double knobTolerance = 0.01;  // a knob (0-10) this close to its preset value has not moved
+static constexpr juce::uint32 mergeKnobMs = 800;  // moves of the same knob closer than this are one undo step
 
 CustomAmpProcessor::CustomAmpProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
@@ -16,6 +18,9 @@ CustomAmpProcessor::CustomAmpProcessor()
     inputParam = parameters.getRawParameterValue ("input_db");
     outputParam = parameters.getRawParameterValue ("output_db");
     qualityParam = parameters.getRawParameterValue ("quality");
+
+    for (int i = 0; i < panel::maxKnobs; ++i)
+        knobParams[(size_t) i] = parameters.getRawParameterValue ("knob_" + juce::String (i + 1));
 
     for (auto& p : getBuiltInPresets())
         if (p.fileName == defaultPreset)
@@ -47,6 +52,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout CustomAmpProcessor::createPa
                                                              juce::AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "quality", 1 }, "Quality",
                                                               juce::StringArray { "2x", "4x", "8x" }, 2));
+
+    // The front panel's knobs. Their meaning changes with the preset, so the DAW only knows them by number.
+    for (int i = 1; i <= panel::maxKnobs; ++i)
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "knob_" + juce::String (i), 1 },
+                                                                 "Knob " + juce::String (i),
+                                                                 juce::NormalisableRange<float> (0.0f, 10.0f), 5.0f));
     return layout;
 }
 
@@ -110,7 +121,77 @@ void CustomAmpProcessor::setPresetText (const juce::String& source, const juce::
     redoSteps.clear();
     presetSource = source;
     presetText = text;
+
+    if (! applyingKnob)
+        lastKnobEdited = -1;
+
+    updatePanel();
     requestBuild (measure);
+}
+
+void CustomAmpProcessor::updatePanel()
+{
+    const auto preset = getPresetData();
+    panelKnobs.clear();
+    knobPositions.clear();
+
+    try
+    {
+        panelKnobs = panel::read (preset, help, panelGuessed);
+    }
+    catch (const std::exception&)
+    {
+        // a mistake in the panel: the build shows it, and there are no knobs meanwhile
+    }
+
+    // The knobs show the preset's values (the DAW sees the knob parameters move).
+    for (size_t i = 0; i < panelKnobs.size(); ++i)
+    {
+        const double position = panelKnobs[i].toPosition (panel::getValue (preset, panelKnobs[i]));
+        knobPositions.push_back (position);
+
+        if (std::abs (knobParams[i]->load() - position) > knobTolerance)
+            if (auto* param = parameters.getParameter ("knob_" + juce::String ((int) i + 1)))
+                param->setValueNotifyingHost (param->convertTo0to1 ((float) position));
+    }
+}
+
+void CustomAmpProcessor::applyKnobChanges()
+{
+    // A knob that is not where the preset puts it was moved (in the window or by the DAW): write it into the preset.
+    juce::var preset;
+    int moved = 0, which = -1;
+
+    for (size_t i = 0; i < panelKnobs.size(); ++i)
+    {
+        const double position = knobParams[i]->load();
+
+        if (std::abs (position - knobPositions[i]) <= knobTolerance)
+            continue;
+
+        if (moved == 0)
+            preset = getPresetData();
+
+        if (! preset.isObject())
+            return;
+
+        panel::setValue (preset, panelKnobs[i], panelKnobs[i].toValue (position));
+        knobPositions[i] = position;
+        which = (int) i;
+        ++moved;
+    }
+
+    if (moved == 0)
+        return;
+
+    const auto now = juce::Time::getMillisecondCounter();
+    const bool merge = moved == 1 && which == lastKnobEdited && now - lastKnobTime < mergeKnobMs;
+    applyingKnob = true;
+    setEditedPreset (juce::JSON::toString (preset, true), merge);
+    applyingKnob = false;
+    lastKnobEdited = moved == 1 ? which : -1;
+    lastKnobTime = now;
+    statusChanged = true;  // the window shows the new value in the chain
 }
 
 void CustomAmpProcessor::undo()
@@ -153,6 +234,8 @@ void CustomAmpProcessor::restore (const Step& step)
     if (step.level > 0.0)
         currentLevel = step.level;  // the level it had then
 
+    lastKnobEdited = -1;
+    updatePanel();
     requestBuild (step.level <= 0.0);
     statusChanged = true;
 }
@@ -222,6 +305,7 @@ bool CustomAmpProcessor::saveEditedPreset (const juce::File& file)
     presetFileTime = file.getLastModificationTime();
     presetSource = "file:" + file.getFullPathName();
     presetText = text;
+    updatePanel();
     statusChanged = true;
     return true;
 }
@@ -289,6 +373,8 @@ std::unique_ptr<amp::Engine> CustomAmpProcessor::buildEngine (const BuildRequest
         options.factorLog2 = r.factorLog2;
         options.fixedLevel = r.fixedLevel;
         auto built = std::make_unique<amp::Engine> (options);
+        bool guessed = false;
+        panel::read (preset, help, guessed);  // a mistake in the panel stops the preset like any other (same as Python)
 
         if (r.warmUp)
         {
@@ -397,6 +483,7 @@ void CustomAmpProcessor::Builder::run()
 void CustomAmpProcessor::timerCallback()
 {
     delete retiredEngine.exchange (nullptr);
+    applyKnobChanges();
 
     if (auto latency = newLatency.exchange (-1); latency >= 0 && latency != getLatencySamples())
         setLatencySamples (latency);
@@ -606,6 +693,7 @@ void CustomAmpProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     undoSteps.clear();  // a project was loaded: nothing before it to go back to
     redoSteps.clear();
+    updatePanel();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

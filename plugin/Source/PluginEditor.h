@@ -5,6 +5,7 @@
 #include "ChainView.h"
 #include "Help.h"
 #include "Inspector.h"
+#include "PanelView.h"
 #include "PluginProcessor.h"
 
 class CustomAmpEditor final : public juce::AudioProcessorEditor,
@@ -24,6 +25,14 @@ public:
     const Selection& getSelection() const { return selection; }
     juce::var getEditedPreset() const { return preset; }
 
+    // The front panel (shown first) or the chain editor.
+    void showView (bool panel);
+    bool isShowingPanel() const { return processor.showPanelView; }
+    const PanelView& getPanelView() const { return panelView; }
+
+    // What "Put on the front panel" does (right-click a slider in the chain editor).
+    void putOnPanel (const juce::var& block, const juce::String& setting);
+
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void handleAsyncUpdate() override;
@@ -32,6 +41,8 @@ private:
     void refreshStatus();
     void layoutViews();
     void presetEdited (bool rebuildInspector);
+    void refreshPanel();
+    void showMessage (const juce::String& text, bool isProblem);
 
     CustomAmpProcessor& processor;
     SettingsHelp help;
@@ -55,7 +66,8 @@ private:
     juce::Label inputLabel, outputLabel, qualityLabel, chainLabel;
     juce::ComboBox qualityBox;
     juce::TextEditor statusBox;
-    juce::TextButton addBlockButton { "Add block..." }, undoButton { "Undo" }, redoButton { "Redo" };
+    juce::TextButton addBlockButton { "Add block..." }, undoButton { "Undo" }, redoButton { "Redo" }, viewButton;
+    PanelView panelView { processor };
     juce::Viewport chainViewport, inspectorViewport;
     ChainView chainView { help };
     Inspector inspector { help };

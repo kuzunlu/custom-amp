@@ -21,6 +21,39 @@
         "label": "Chain", "type": "block-list", "default": [],
         "short": "The blocks of the amp, in the order the sound goes through them.",
         "tooltip": "The order matters a lot. EQ before a gain stage changes WHAT gets clipped (cut the bass before the clipping for a tight sound; boost the mids before it for a singing lead). EQ after a gain stage only changes the TONE of the clipped sound, like the tone knobs on a real amp. Put the cab IR last."
+      },
+      "panel": {
+        "label": "Front panel", "type": "panel", "default": [],
+        "short": "The knobs on the plugin's front panel: which setting each one turns (at most 8).",
+        "tooltip": "Each knob turns one number setting of one block, found by the block's id. Example: { \"label\": \"Master\", \"block\": \"master\", \"setting\": \"level_db\", \"range\": [-40, 0] }. It does not change the sound by itself. Without a panel, the plugin guesses a few knobs (a tone stack's three knobs, the last eq's level). In the plugin, right-click a slider in the chain editor and pick 'Put on the front panel'."
+      }
+    }
+  },
+
+  "panel_knob": {
+    "label": "Front panel knob",
+    "short": "One knob on the front panel. It reads 0 to 10, like an amp knob.",
+    "tooltip": "A knob is only a handle on a setting that is already in the chain: turning it changes that setting, like moving its slider in the chain editor. The knob reads 0 to 10; the real value is shown under it.",
+    "settings": {
+      "label": {
+        "label": "Label", "type": "text", "default": null,
+        "short": "The name printed under the knob. Without it, the setting's own name is used.",
+        "tooltip": "Use the name the real amp uses: Gain, Bass, Middle, Treble, Presence, Master. Double-click the name on the panel to change it."
+      },
+      "block": {
+        "label": "Block", "type": "id", "default": null,
+        "short": "The id of the block the knob turns.",
+        "tooltip": "The block can be anywhere: in the main chain, inside a feedback loop or inside a split path. It needs an id; the plugin gives it one when you put one of its settings on the panel."
+      },
+      "setting": {
+        "label": "Setting", "type": "text", "default": null,
+        "short": "The setting the knob turns, like \"level_db\". A dot path reaches into a list: \"path.0.gain_db\".",
+        "tooltip": "It must be a number setting. Dot paths reach filter bands and split paths: \"bands.1.gain_db\" is the gain of the second band of an eq, \"path.0.gain_db\" the first band of a feedback loop's path, \"paths.0.level_db\" the level of a split block's first path. Counting starts at 0."
+      },
+      "range": {
+        "label": "Range", "type": "range", "default": null,
+        "short": "What 0 and 10 on the knob mean, in the setting's own unit, like [-40, 0].",
+        "tooltip": "Without it, the setting's own range is used (the one its slider has). It can run backwards: a Presence knob is [0, -12] because cutting the treble in the feedback path makes the amp brighter. Values in between are spread evenly, so for a dB setting the knob feels like a real volume pot."
       }
     }
   },
@@ -586,6 +619,11 @@
         },
         "short": "How much higher than the session sample rate the amp runs (oversampling).",
         "tooltip": "Clipping makes very high harmonics. At the normal sample rate, the ones above the top of the hearing range fold back down as harsh, out-of-tune noise ('aliasing'). So the amp runs at a higher rate inside: 8x means 384 kHz in a 48 kHz session. The value is for 44.1/48 kHz sessions; at 88.2/96 kHz the plugin uses half of it, at 176.4/192 kHz a quarter, so the amp always runs at about the same rate and sounds the same. The oversampling adds a small delay (a few samples), which the DAW makes up for automatically. Changing it reloads the amp."
+      },
+      "knob": {
+        "label": "Knob 1-8", "type": "number", "unit": "", "min": 0, "max": 10, "default": 5,
+        "short": "The front panel's knobs, for automation and MIDI control in your DAW.",
+        "tooltip": "Knob 1 is the first knob on the front panel, and so on. Your DAW always calls them Knob 1 to Knob 8, because their meaning changes with the preset; the plugin window shows the real names. Moving one changes the preset, so the amp is rebuilt: a moving knob updates the sound about 10 times a second. That is fine for slow changes, but too coarse for fast sweeps."
       }
     }
   }

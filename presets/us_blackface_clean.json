@@ -1,9 +1,15 @@
 {
   "name": "American blackface-style clean (6L6 pair)",
   "notes": "Mid-60s American clean style: sparkling highs, deep scooped mids, lots of headroom. Path: V1a -> tone stack driven straight from the plate (no cathode follower) -> volume -> V2a -> phase inverter (12AT7) -> 2x 6L6GC with strong feedback and no presence control. FROM SCHEMATICS (fairly sure): 12AX7 stages with 100k plate resistors and 1.5k/25 uF cathodes; tone stack 250p treble cap, 0.1u bass cap, 0.047u mid cap, 250k treble and bass pots, 100k slope resistor, a fixed 6.8k resistor instead of a mid pot (so 'mid' is set to 10), driven from the plate (about 38k source); 12AT7 long-tailed pair phase inverter; 6L6GC pair. UNSURE / APPROXIMATED: the real amp has a reverb mixing stage between V2 and the phase inverter; it is left out and only its loss is kept (-18 dB, a guess: without it the phase inverter was overdriven and the preset distorted 26% when played hard); phase inverter as one triode that gets half the input (each triode of the real long-tailed pair sees half the signal, so it has twice the headroom of a single stage); feedback amount (set for about 10 dB); output into 4.2k.",
+  "panel": [
+    { "label": "Volume", "block": "volume", "setting": "level_db", "range": [-40, 0] },
+    { "label": "Treble", "block": "tone", "setting": "treble" },
+    { "label": "Middle", "block": "tone", "setting": "mid" },
+    { "label": "Bass", "block": "tone", "setting": "bass" }
+  ],
   "chain": [
     { "type": "gain", "id": "v1a", "curve": "triode", "tube": "12AX7", "plate_v": 250, "plate_ohms": 100e3, "bias_v": -1.5, "plate_volts": true },
-    { "type": "tonestack", "style": "american",
+    { "type": "tonestack", "id": "tone", "style": "american",
       "parts": { "C1": 250e-12, "C2": 100e-9, "C3": 47e-9, "R1": 250e3, "R2": 250e3, "R3": 6.8e3, "R4": 100e3 },
       "treble": 6, "mid": 10, "bass": 4, "source_ohms": 38000 },
     { "type": "eq", "id": "volume", "level_db": -20 },

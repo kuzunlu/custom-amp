@@ -2,8 +2,11 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "Help.h"
+#include "Panel.h"
 #include "dsp/Engine.h"
 
+#include <array>
 #include <optional>
 
 class CustomAmpProcessor final : public juce::AudioProcessor,
@@ -58,6 +61,12 @@ public:
     void redo();
     bool canUndo() const                   { return ! undoSteps.empty(); }
     bool canRedo() const                   { return ! redoSteps.empty(); }
+
+    // The front panel of the current preset. Its knobs are the parameters knob_1 to knob_8: moving one (in the
+    // window or from the DAW) changes the preset, like an edit in the window.
+    const std::vector<PanelKnob>& getPanel() const { return panelKnobs; }
+    bool isPanelGuessed() const            { return panelGuessed; }
+    bool showPanelView = true;             // what the window shows (kept while the window is closed)
 
     juce::String getPresetSource() const   { return presetSource; }
     juce::String getPresetText() const     { return presetText; }
@@ -115,6 +124,8 @@ private:
 
     void setPresetText (const juce::String& source, const juce::String& text, bool measure, bool newStep = true);
     void restore (const Step& step);
+    void updatePanel();
+    void applyKnobChanges();
     void readPresetFile (const juce::File& file, bool measure);
     int factorLog2ForRate (double rate) const;
     void timerCallback() override;
@@ -147,6 +158,14 @@ private:
     int builtQuality = -1;
     std::atomic<double> currentLevel { 0.0 };
     std::vector<Step> undoSteps, redoSteps;
+
+    SettingsHelp help;  // for the panel: setting names, ranges and units from settings.json
+    std::vector<PanelKnob> panelKnobs;
+    std::vector<double> knobPositions;  // where the preset puts each knob (0-10)
+    std::array<std::atomic<float>*, panel::maxKnobs> knobParams {};
+    bool panelGuessed = false, applyingKnob = false;
+    int lastKnobEdited = -1;  // so a moving knob is one undo step
+    juce::uint32 lastKnobTime = 0;
 
     mutable juce::CriticalSection statusLock;
     Status status;

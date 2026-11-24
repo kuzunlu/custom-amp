@@ -1,5 +1,6 @@
 #include "Inspector.h"
 
+#include "MenuSlider.h"
 #include "Theme.h"
 #include "dsp/Engine.h"
 
@@ -109,8 +110,7 @@ static bool isLoopChain (const juce::var& node, const juce::Array<juce::var>* li
     return false;
 }
 
-// Every "id" in a preset, or in a part of one.
-static void collectIds (const juce::var& node, juce::StringArray& ids)
+void collectIds (const juce::var& node, juce::StringArray& ids)
 {
     if (auto* array = node.getArray())
     {
@@ -255,10 +255,28 @@ void setupSlider (juce::Slider& slider, const juce::var& entry, double value)
     slider.setValue (value, juce::dontSendNotification);
 }
 
+// The right-click menu of a number slider.
+void offerPanelMenu (juce::Component* slider, std::function<void()> putOnPanel)
+{
+    if (putOnPanel == nullptr)
+        return;
+
+    juce::PopupMenu menu;
+    menu.addItem (1, "Put on the front panel");
+    juce::Component::SafePointer<juce::Component> safe (slider);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (slider), [safe, putOnPanel] (int result)
+    {
+        if (result == 1 && safe != nullptr)  // not if the row was rebuilt meanwhile
+            putOnPanel();
+    });
+}
+
 // One setting of an object (a block, a split path): the name, a control, a reset button, the short help.
 class ValueRow final : public Inspector::Row
 {
 public:
+    std::function<void()> putOnPanel;  // set for the number settings of blocks
+
     ValueRow (juce::var objectIn, const juce::String& keyIn, const juce::var& entryIn, const juce::String& noteText,
               std::function<void (bool)> changedIn, bool rebuildOnChange)
         : object (objectIn), key (keyIn), entry (entryIn), changed (std::move (changedIn)), rebuild (rebuildOnChange)
@@ -296,6 +314,7 @@ public:
             slider.setTooltip (tipText);
             slider.setComponentID (key);
             slider.onValueChange = [this] { set (tidyNumber (slider.getValue())); };
+            slider.onMenu = [this] { offerPanelMenu (&slider, putOnPanel); };
             addAndMakeVisible (slider);
             control = &slider;
         }
@@ -445,7 +464,7 @@ private:
 
     juce::Label name, note;
     juce::TextButton reset;
-    juce::Slider slider;
+    MenuSlider slider;
     juce::ComboBox combo;
     juce::ToggleButton toggle;
     juce::TextEditor text;
@@ -456,6 +475,8 @@ private:
 class BandsRow final : public Inspector::Row
 {
 public:
+    std::function<void (const juce::String& setting)> putOnPanel;  // gets "bands.0.gain_db" and the like
+
     BandsRow (juce::var objectIn, const juce::String& keyIn, const juce::var& entry, const juce::var& bandDocIn,
               std::function<void (bool)> changedIn)
         : object (objectIn), key (keyIn), bandDoc (bandDocIn), changed (std::move (changedIn))
@@ -549,6 +570,11 @@ private:
                 slider->setColour (juce::Slider::trackColourId, theme::chipSelected);
                 slider->setTooltip (SettingsHelp::tip (entry));
                 slider->onValueChange = [this, slider, key = juce::String (setting)] { setValue (key, tidyNumber (slider->getValue()), false); };
+                slider->onMenu = [this, slider, key = juce::String (setting)]
+                {
+                    const auto path = row.key + "." + juce::String (index) + "." + key;
+                    offerPanelMenu (slider, row.putOnPanel == nullptr ? std::function<void()>() : [this, path] { row.putOnPanel (path); });
+                };
 
                 if (slider != &gain || hasGain)
                     row.addAndMakeVisible (*slider);
@@ -590,7 +616,7 @@ private:
         int index;
         bool hasGain = false;
         juce::ComboBox kind;
-        juce::Slider freq, gain, q;
+        MenuSlider freq, gain, q;
         juce::TextButton remove;
     };
 
@@ -1032,7 +1058,9 @@ void Inspector::addRowsForBlock (const juce::var& block)
 
         if (kind == "band-list")
         {
-            rows.push_back (std::make_unique<BandsRow> (block, key, entry, help.section ("band"), changedFn));
+            auto bandsRow = std::make_unique<BandsRow> (block, key, entry, help.section ("band"), changedFn);
+            bandsRow->putOnPanel = [this, block] (const juce::String& setting) { if (onPutOnPanel != nullptr) onPutOnPanel (block, setting); };
+            rows.push_back (std::move (bandsRow));
             continue;
         }
 
@@ -1060,6 +1088,10 @@ void Inspector::addRowsForBlock (const juce::var& block)
 
             changed (true);
         }) : changedFn, false);
+
+        if (kind == "number")
+            row->putOnPanel = [this, block, key] { if (onPutOnPanel != nullptr) onPutOnPanel (block, key); };
+
         rows.push_back (std::move (row));
     }
 

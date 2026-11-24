@@ -52,7 +52,7 @@ Amp::Amp (const juce::var& preset, double baseRate, double coreRate, const juce:
           const juce::File& irOverride)
 {
     Cfg cfg (preset, "preset");
-    cfg.checkKeys ({ "name", "notes", "chain" });
+    cfg.checkKeys ({ "name", "notes", "chain", "panel" });  // the panel is checked by the plugin (Panel.cpp)
 
     if (! cfg.has ("chain"))
         throw PresetError ("preset: needs a 'chain' (the list of blocks)");

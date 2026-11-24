@@ -66,6 +66,8 @@ target_sources(CustomAmp
         plugin/Source/ChainView.cpp
         plugin/Source/Help.cpp
         plugin/Source/Inspector.cpp
+        plugin/Source/Panel.cpp
+        plugin/Source/PanelView.cpp
         plugin/Source/PluginEditor.cpp
         plugin/Source/PluginProcessor.cpp)
 
@@ -97,6 +99,8 @@ target_sources(PluginTest
         plugin/Source/ChainView.cpp
         plugin/Source/Help.cpp
         plugin/Source/Inspector.cpp
+        plugin/Source/Panel.cpp
+        plugin/Source/PanelView.cpp
         plugin/Source/PluginEditor.cpp
         plugin/Source/PluginProcessor.cpp
         plugin/tests/PluginTest.cpp)

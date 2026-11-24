@@ -7,6 +7,7 @@
 #include "../Source/PluginProcessor.h"
 
 #include <iostream>
+#include <map>
 
 namespace
 {
@@ -189,6 +190,7 @@ int snapshots (const juce::File& folder)
         std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
         auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
         editor->setSize (1120, 820);
+        ed->showView (false);
         ed->select ({ ed->getEditedPreset()["chain"], index, false });
         pump (100);
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
@@ -197,6 +199,23 @@ int snapshots (const juce::File& folder)
         juce::FileOutputStream out (file);
         juce::PNGImageFormat().writeImageToStream (image, out);
         std::cout << "wrote " << file.getFullPathName() << "\n";
+    }
+
+    // The front panel of two more amps.
+    for (auto [preset, name] : { std::pair { "us_hotrod_lead.json", "plugin_panel_hotrod.png" }, std::pair { "brit_top_boost.json", "plugin_panel_top_boost.png" } })
+    {
+        p->loadBuiltInPreset (preset);
+        waitForBuild (*p);
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
+        dynamic_cast<CustomAmpEditor*> (editor.get())->showView (true);
+        editor->setSize (1120, 720);
+        pump (100);
+        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+        auto out = folder.getChildFile (name);
+        out.deleteFile();
+        juce::FileOutputStream stream (out);
+        juce::PNGImageFormat().writeImageToStream (image, stream);
+        std::cout << "wrote " << out.getFullPathName() << "\n";
     }
 
     auto file = folder.getChildFile ("my_amp.json");
@@ -210,6 +229,7 @@ int snapshots (const juce::File& folder)
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    std::cout << std::unitbuf;  // every line out at once, so a crash still shows how far it got
 
     if (argc == 3 && juce::String (argv[1]) == "--snapshot")
         return snapshots (juce::File (argv[2]));
@@ -446,6 +466,8 @@ int main (int argc, char* argv[])
         waitForBuild (*q);
         std::unique_ptr<juce::AudioProcessorEditor> editor (q->createEditor());
         auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
+        check (! ed->keyPressed (juce::KeyPress ('d', juce::ModifierKeys::commandModifier, 0)), "on the front panel the block keys do nothing");
+        ed->showView (false);  // the chain editor, where the blocks are
         const auto key = [ed] (int k) { return ed->keyPressed (juce::KeyPress (k, juce::ModifierKeys::commandModifier, 0)); };
         const auto chain = [ed] { return ed->getEditedPreset()["chain"]; };
         const auto selectAt = [ed, chain] (int index) { ed->select ({ chain(), index, false }); pump (50); };
@@ -476,8 +498,14 @@ int main (int argc, char* argv[])
         selectAt (0);
         check (key ('v'), "Ctrl+V pastes");
         pump (50);
-        check (chain().size() == 13 && juce::JSON::toString (chain()[1]) == juce::JSON::toString (chain()[7]),
-               "the pasted block is the same as the copied one");
+        const auto withoutId = [] (const juce::var& item)
+        {
+            auto copy = juce::JSON::parse (juce::JSON::toString (item));
+            copy.getDynamicObject()->removeProperty ("id");
+            return juce::JSON::toString (copy);
+        };
+        check (chain().size() == 13 && withoutId (chain()[1]) == withoutId (chain()[7]) && chain()[1]["id"].toString() == "tone_2",
+               "the pasted block is the same as the copied one, with its own id: " + chain()[1]["id"].toString());
         check (ed->getSelection().index == 1, "the pasted block is selected");
 
         check (key ('x') && chain().size() == 12, "Ctrl+X takes it out");
@@ -562,6 +590,147 @@ int main (int argc, char* argv[])
         check (makePastedItem ("hello", preset, false, problem).isVoid(), "text that is not a block is refused");
 
         juce::SystemClipboard::copyTextToClipboard (userClipboard);
+    }
+
+    std::cout << "Front panel\n";
+    {
+        SettingsHelp help;
+
+        // The same cases as tools/check_panel.py: the same errors as Python.
+        juce::var cases;
+        const auto casesFile = juce::File::getCurrentWorkingDirectory().getChildFile ("plugin/tests/panel_cases.json");
+        check (juce::JSON::parse (casesFile.loadFileAsString(), cases).wasOk(), "read " + casesFile.getFullPathName());
+        int same = 0, total = 0;
+
+        for (int i = 0; cases["cases"].isArray() && i < cases["cases"].size(); ++i, ++total)
+        {
+            auto* preset = new juce::DynamicObject();
+            preset->setProperty ("chain", cases["chain"]);
+            preset->setProperty ("panel", cases["cases"][i]["panel"]);
+            juce::String error;
+            bool guessed = false;
+
+            try
+            {
+                panel::read (juce::var (preset), help, guessed);
+            }
+            catch (const amp::PresetError& e)
+            {
+                error = e.what();
+            }
+
+            const auto expected = cases["cases"][i]["error"];
+
+            if (error == (expected.isVoid() ? juce::String() : expected.toString()))
+                ++same;
+            else
+                std::cout << "        case " << i + 1 << ": got '" << error << "', expected '" << expected.toString() << "'\n";
+        }
+
+        check (total > 10 && same == total, "the shared panel cases give the same errors as Python: " + juce::String (same) + " of " + juce::String (total));
+
+        const std::map<juce::String, int> knobCounts { { "brit_800.json", 6 }, { "brit_plexi.json", 6 }, { "brit_top_boost.json", 3 },
+                                                       { "clean.json", 5 }, { "crunch.json", 5 }, { "german_high_gain.json", 6 },
+                                                       { "high_gain.json", 6 }, { "us_blackface_clean.json", 4 },
+                                                       { "us_hotrod_lead.json", 7 }, { "us_modern_high_gain.json", 6 } };
+        int right = 0;
+
+        for (auto& [fileName, count] : knobCounts)
+        {
+            q->loadBuiltInPreset (fileName);
+            waitForBuild (*q);
+
+            if ((int) q->getPanel().size() == count && ! q->isPanelGuessed() && ! q->getStatus().isError)
+                ++right;
+            else
+                std::cout << "        " << fileName << ": " << q->getPanel().size() << " knobs, " << q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false) << "\n";
+        }
+
+        check (right == (int) knobCounts.size(), "every built-in preset has its own panel and builds");
+
+        q->loadBuiltInPreset ("brit_800.json");
+        waitForBuild (*q);
+        const auto knob = [&q] (int n) { return q->parameters.getParameter ("knob_" + juce::String (n)); };
+        const auto position = [&knob] (int n) { return knob (n)->convertFrom0to1 (knob (n)->getValue()); };
+        const auto chain = [&q] { return q->getPresetData()["chain"]; };
+        check (std::abs (position (1) - 7.0f) < 0.01f && std::abs (position (4) - 6.0f) < 0.01f && std::abs (position (5) - 5.0f) < 0.01f
+                   && std::abs (position (6) - 5.75f) < 0.01f,
+               "the knobs show the preset: Gain " + juce::String (position (1), 2) + " (-12 dB of -40..0), Treble "
+                   + juce::String (position (4), 2) + ", Presence " + juce::String (position (5), 2) + ", Master " + juce::String (position (6), 2));
+
+        knob (6)->setValueNotifyingHost (1.0f);  // Master to 10
+        knob (5)->setValueNotifyingHost (1.0f);  // Presence to 10 (its range runs backwards: 0 dB at 0, -12 dB at 10)
+        waitForBuild (*q);
+        check ((double) chain()[7]["level_db"] == 0.0 && (double) chain()[9]["path"][0]["gain_db"] == -12.0 && q->isEdited(),
+               "moving knobs from the DAW changes the preset: master " + chain()[7]["level_db"].toString() + " dB, presence band "
+                   + chain()[9]["path"][0]["gain_db"].toString() + " dB");
+        check (q->getStatus().text.contains ("level kept"), "and keeps the level");
+
+        // A knob moved in small steps (like a drag or automation) is one undo step.
+        q->undo();
+        waitForBuild (*q);
+        const auto gainBefore = chain()[1]["level_db"].toString();
+
+        for (float v = 0.75f; v <= 0.951f; v += 0.05f)
+        {
+            knob (1)->setValueNotifyingHost (v);
+            pump (150);  // the timer writes each move
+        }
+
+        waitForBuild (*q);
+        const auto gainAfter = chain()[1]["level_db"].toString();
+        q->undo();
+        waitForBuild (*q);
+        check (gainAfter == "-2" && chain()[1]["level_db"].toString() == gainBefore && std::abs (position (1) - 7.0f) < 0.01f,
+               "a moving knob is one undo step: " + gainBefore + " dB -> " + gainAfter + " dB -> undo -> "
+                   + chain()[1]["level_db"].toString() + " dB, knob back at " + juce::String (position (1), 2));
+
+        // A preset without a panel: guessed knobs, and they work.
+        auto noPanel = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("custom_amp_no_panel.json");
+        noPanel.replaceWithText (R"({ "name": "No panel", "chain": [ { "type": "gain", "drive_db": 12 }, { "type": "tonestack" },
+                                    { "type": "eq", "level_db": -6 } ] })");
+        q->loadPresetFile (noPanel);
+        waitForBuild (*q);
+        check (q->isPanelGuessed() && q->getPanel().size() == 4 && q->getPanel()[3].label == "Master",
+               "without a panel: guessed Bass, Middle, Treble, Master (" + juce::String ((int) q->getPanel().size()) + " knobs)");
+        knob (1)->setValueNotifyingHost (0.8f);
+        waitForBuild (*q);
+        check ((double) chain()[1]["bass"] == 8.0 && ! q->getPresetData().hasProperty ("panel"), "a guessed knob turns the tone stack's bass");
+
+        // Put on the front panel (right-click a slider): a guessed panel becomes the preset's own, the block gets an id.
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> editor (q->createEditor());
+            auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
+            check (! ed->isShowingPanel(), "the window remembers the last view (the chain editor, from the copy test)");
+            ed->showView (true);
+            check (ed->isShowingPanel() && ed->getPanelView().getNumKnobsShown() == 4, "the panel shows the 4 knobs");
+            ed->putOnPanel (ed->getEditedPreset()["chain"][0], "drive_db");
+            waitForBuild (*q);
+            const auto panelList = q->getPresetData()["panel"];
+            check (panelList.size() == 5 && panelList[4]["block"].toString() == "gain" && chain()[0]["id"].toString() == "gain"
+                       && chain()[1]["id"].toString() == "tonestack" && ! q->isPanelGuessed() && ed->getPanelView().getNumKnobsShown() == 5,
+                   "Put on the front panel adds knob 5; the blocks get ids (gain, tonestack)");
+
+            for (auto* setting : { "level_db", "bias", "bias_shift", "shift_release_ms" })
+                ed->putOnPanel (ed->getEditedPreset()["chain"][0], setting);
+
+            pump (50);
+            check (q->getPresetData()["panel"].size() == 8, "up to 8 knobs");
+            ed->putOnPanel (ed->getEditedPreset()["chain"][0], "shift_attack_ms");
+            pump (50);
+            check (q->getPresetData()["panel"].size() == 8, "a ninth is refused");
+            waitForBuild (*q);
+            check (! q->getStatus().isError, "the preset with 8 knobs builds: " + q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false));
+        }
+
+        // A mistake in the panel stops the preset with Python's message; the last amp keeps playing.
+        noPanel.replaceWithText (R"({ "name": "Bad panel", "chain": [ { "type": "gain", "id": "v1" } ],
+                                    "panel": [ { "block": "v2", "setting": "drive_db" } ] })");
+        q->loadPresetFile (noPanel);
+        waitForBuild (*q);
+        check (q->getStatus().isError && q->getStatus().text.startsWith ("panel knob 1: no block has the id 'v2'"),
+               "a wrong panel shows the error: " + q->getStatus().text.upToFirstOccurrenceOf ("\n", false, false));
+        noPanel.deleteFile();
     }
 
     file.deleteFile();
