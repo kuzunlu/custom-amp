@@ -517,11 +517,15 @@ int main (int argc, char* argv[])
 
         // Copy the tone stack, paste it after the first block.
         selectAt (6);
-        const bool copied = key ('c');
-        bool onClipboard = false;
+        bool copied = true, onClipboard = false;
 
-        for (int i = 0; i < 10 && ! onClipboard; ++i, juce::Thread::sleep (20))  // it may be busy for a moment
+        for (int i = 0; i < 100 && ! onClipboard; ++i, juce::Thread::sleep (20))  // it may be busy for a while: copy again every 0.5 s
+        {
+            if (i % 25 == 0)
+                copied = key ('c') && copied;
+
             onClipboard = juce::SystemClipboard::getTextFromClipboard().contains ("\"tonestack\"");
+        }
 
         check (copied && onClipboard, "Ctrl+C copies it as JSON");
         selectAt (0);

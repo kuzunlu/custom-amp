@@ -301,18 +301,18 @@ void Gain::process (double* x, int n) noexcept
 double Gain::peek (double v) const noexcept
 {
     const double g = pre.peek (v) * drive / h + bias;
+    triedG = g;
     return post.peek (h * (curve (g + shift) - offset)) * level;
 }
 
-double Gain::commit (double v) noexcept
+void Gain::commitTried() noexcept
 {
-    const double g = pre.tick (v) * drive / h + bias;
-    const double y = h * (curve (g + shift) - offset);
+    pre.commitTried();
 
     if (shiftAmount != 0)
-        shift = nextShift (shift, g);
+        shift = nextShift (shift, triedG);
 
-    return post.tick (y) * level;
+    post.commitTried();
 }
 
 juce::String Gain::describe() const
@@ -405,18 +405,19 @@ void Power::beginSample (int n) noexcept
 
 double Power::peek (double v) const noexcept
 {
-    return post.peek (tubes.shape (pre.peek (v) * drive, h, hPow, sa, sb) - offset) * level;
+    const double u = pre.peek (v) * drive;
+    triedU = u;
+    return post.peek (tubes.shape (u, h, hPow, sa, sb) - offset) * level;
 }
 
-double Power::commit (double v) noexcept
+void Power::commitTried() noexcept
 {
-    const double u = pre.tick (v) * drive;
-    const double y = tubes.shape (u, h, hPow, sa, sb) - offset;
+    pre.commitTried();
 
     if (shiftAmount != 0)
-        nextShifts (u);
+        nextShifts (triedU);
 
-    return post.tick (y) * level;
+    post.commitTried();
 }
 
 juce::String Power::describe() const
@@ -593,6 +594,39 @@ static double solveFalling (Function f, double y0, double tol = 1e-10, int maxSt
     return c;
 }
 
+// The same answer as solveFalling (within tol), usually with far fewer tries of f: from one sample to the next
+// (at the oversampled rate) the loop hardly changes, so jump straight to the answer with the slope the last
+// sample ended with (Newton's method with an old slope). If two jumps do not land within tol, or the slope
+// looks wrong (g must fall), the safe search takes over. C++ only: Python keeps the plain search, and the two
+// still agree within tol (checked by tools/cpp_check.py).
+template <typename Function>
+static double solveFallingFast (Function f, double y0, double& slope, double tol = 1e-10) noexcept
+{
+    double a = y0, fa = f (a);
+
+    if (std::abs (fa) < tol)
+        return a;
+
+    for (int i = 0; i < 2 && slope < 0 && std::isfinite (slope); ++i)
+    {
+        const double b = a - fa / slope, fb = f (b);
+
+        if (b != a)
+        {
+            const double s = (fb - fa) / (b - a);
+            slope = s < 0 && std::isfinite (s) ? s : slope;
+        }
+
+        if (std::abs (fb) < tol)
+            return b;
+
+        a = b;
+        fa = fb;
+    }
+
+    return solveFalling (f, a, tol);
+}
+
 //==============================================================================
 // The positive feedback check (steepest, first_gain and max_slope in blocks.py).
 static constexpr int slopePoints = 200000;        // how finely steepest() samples a curve
@@ -687,7 +721,8 @@ Feedback::Feedback (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "am
 void Feedback::reset() noexcept
 {
     path.reset();
-    y1 = y2 = 0.0;
+    y1 = y2 = y3 = 0.0;
+    slope = -1.0;
 
     for (auto& b : blocks)
         b->reset();
@@ -714,12 +749,14 @@ double Feedback::loopPeek (double xv, double y) const noexcept
     return v;
 }
 
-void Feedback::loopCommit (double xv, double y) noexcept
+void Feedback::loopCommitTried() noexcept
 {
-    double v = xv - amount * path.tick (y);
+    // The solver's answer is always the last value it tried, so every filter and tube already holds what it
+    // computed for it: move them on without running the loop again (the same as working it out once more).
+    path.commitTried();
 
     for (auto& b : blocks)
-        v = b->commit (v);
+        b->commitTried();
 }
 
 void Feedback::process (double* x, int n) noexcept
@@ -731,8 +768,10 @@ void Feedback::process (double* x, int n) noexcept
             b->beginSample (i);
 
         const double xv = x[i];
-        const double y = solveFalling ([this, xv] (double yy) { return loopPeek (xv, yy) - yy; }, 2 * y1 - y2);
-        loopCommit (xv, y);
+        // First guess: the last three answers continued as a smooth curve (the loop runs oversampled).
+        const double y = solveFallingFast ([this, xv] (double yy) { return loopPeek (xv, yy) - yy; }, 3 * y1 - 3 * y2 + y3, slope);
+        loopCommitTried();
+        y3 = y2;
         y2 = y1;
         y1 = y;
         x[i] = y * level;

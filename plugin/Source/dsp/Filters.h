@@ -20,13 +20,26 @@ struct Biquad
         return y;
     }
 
-    // What tick() would give, without moving on to the next sample (for feedback loops).
-    double peek (double v) const noexcept { return b0 * v + z1; }
+    // What tick() would give, without moving on to the next sample (for feedback loops). It remembers this try,
+    // so commitTried() can move on from it without working it out again.
+    double peek (double v) const noexcept
+    {
+        triedIn = v;
+        return triedOut = b0 * v + z1;
+    }
+
+    // Move on to the next sample as tick (v) would, for the v of the last peek() (the loop's answer).
+    void commitTried() noexcept
+    {
+        z1 = b1 * triedIn - a1 * triedOut + z2;
+        z2 = b2 * triedIn - a2 * triedOut;
+    }
 
     void reset() noexcept { z1 = z2 = 0.0; }
 
     double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
     double z1 = 0.0, z2 = 0.0;
+    mutable double triedIn = 0.0, triedOut = 0.0;
 };
 
 // Filters applied one after another.
@@ -45,6 +58,12 @@ struct FilterList
         for (auto& f : filters)
             v = f.peek (v);
         return v;
+    }
+
+    void commitTried() noexcept
+    {
+        for (auto& f : filters)
+            f.commitTried();
     }
 
     void reset() noexcept
@@ -77,10 +96,26 @@ struct Iir
         return y;
     }
 
-    double peek (double v) const noexcept { return b[0] * v + z[0]; }
+    double peek (double v) const noexcept
+    {
+        triedIn = v;
+        return triedOut = b[0] * v + z[0];
+    }
+
+    // Move on as tick (v) would, for the v of the last peek().
+    void commitTried() noexcept
+    {
+        const size_t last = z.size() - 1;
+
+        for (size_t k = 0; k < last; ++k)
+            z[k] = b[k + 1] * triedIn - a[k + 1] * triedOut + z[k + 1];
+
+        z[last] = b[last + 1] * triedIn - a[last + 1] * triedOut;
+    }
     void reset() noexcept { std::fill (z.begin(), z.end(), 0.0); }
 
     std::vector<double> b, a, z;
+    mutable double triedIn = 0.0, triedOut = 0.0;
 };
 
 } // namespace amp

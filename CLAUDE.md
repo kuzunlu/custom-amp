@@ -4,8 +4,13 @@ A guitar amp built from a few blocks (EQ, gain stage, sag, feedback, cab IR) tha
 so it can copy any amp. The idea: every amp is EQ and clipping, plus power supply sag and a feedback loop.
 
 **Final product:** a C++ JUCE plugin (VST3 + standalone app) for live playing. It is in `plugin/` and works.
-**Also:** a Python prototype (`ampsim/`) that processes `.wav` files offline, to get the sound design right.
-The Python code stays the reference: the plugin must give the same output for the same preset.
+**Also:** a Python prototype (`ampsim/`) that processes `.wav` files offline. It was used to get the sound design right.
+
+**Python is FROZEN (decided 2026-11-24).** It is never part of the plugin; it only costs development time (every
+feature written twice, slow checks, and its whole-file design blocks features like sag before the sag block).
+So: the blocks that exist today stay in Python as a check (`cpp_check.py` keeps comparing them with C++; keep
+them working). NEW features are written in C++ only, with their tests on the C++ engine (EngineTest/PluginTest).
+The user's goal: the final plugin as fast and plain as possible.
 
 ## Commands
 
@@ -194,7 +199,8 @@ C++ checks:
   is very sensitive to the last digits of its coefficients (not a wiring difference: that would be near 0 dB).
 - Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
   share within 0.2 points on every preset at 8x and 4x; low/mid/high balance of the riff within 1%.
-- CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 3-13% of one core (feedback presets ~10-13%). Build time
+- CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 2.8-9.8% of one core (feedback presets 6.8-9.8%; they were
+  10-13.8% before the faster solver of 2026-11-24). brit_800 without its loop: 4.1%, so the loop is still most of it. Build time
   36-216 ms. Latency 6 samples at 8x (0.13 ms at 48 kHz), 4 samples at 2x.
 - Cab IR level: the 48 kHz test IR gives 1 kHz at 9.48 dB in 44.1/48/96 kHz sessions (before the
   `ir_rate / rate` fix: 8.76 / 9.48 / 15.50 dB). C++ vs Python tail at 96 and 44.1 kHz: -143 / -137 dB.
@@ -279,6 +285,12 @@ C++ checks:
 - **Where new blocks go:** "Add block..." and paste with nothing selected go at `endInsertIndex`: before the
   cab (`amp::tailStart`), since only eq/ir can follow it; an eq or ir goes at the very end. Inside a feedback
   loop (`isLoopChain`), "Add after..." offers only eq/tonestack/gain/power and paste refuses other blocks.
+- **Feedback solver (C++ only, faster than Python's, same answer within 1e-10):** `solveFallingFast` first guesses
+  from the last three answers (3y1 - 3y2 + y3), then jumps with the slope the last sample ended with (Newton with an
+  old slope, at most 2 jumps), else falls back to the plain bracketing search. 2.48 tries per sample on brit_800
+  (was about 5). The answer is always the LAST value tried, so `commitTried()` moves every filter and tube on from
+  what its last `peek()` remembered (`triedIn/triedOut`, `triedG`, `triedU`) instead of running the loop again:
+  bit-identical output. Keep that rule if the solver changes.
 - **Swapping engines without a click:** the new engine is warmed up with the last 0.25 s of input (a history
   ring the audio thread writes), keeps catching up on the builder thread until less than one block is missing,
   the audio thread plays it the last few samples just before the swap, then old and new cross-fade over 30 ms.

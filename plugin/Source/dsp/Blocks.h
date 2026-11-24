@@ -46,7 +46,7 @@ public:
 
     virtual void beginSample (int n) noexcept { juce::ignoreUnused (n); }  // n = sample index in this buffer
     virtual double peek (double v) const noexcept = 0;   // the output for v, without moving on
-    virtual double commit (double v) noexcept = 0;       // the output for v, and move on to the next sample
+    virtual void commitTried() noexcept = 0;             // move on to the next sample with the v of the last peek()
 
     // The most the output can move per unit of input within one sample (for the positive feedback check).
     virtual double maxSlope() const = 0;
@@ -67,7 +67,7 @@ public:
     void process (double* x, int n) noexcept override;
     void reset() noexcept override { filters.reset(); }
     double peek (double v) const noexcept override { return filters.peek (v) * level; }
-    double commit (double v) noexcept override { return filters.tick (v) * level; }
+    void commitTried() noexcept override { filters.commitTried(); }
     double maxSlope() const override;
 
 private:
@@ -83,7 +83,7 @@ public:
     void process (double* x, int n) noexcept override;
     void reset() noexcept override { filter.reset(); }
     double peek (double v) const noexcept override { return filter.peek (v) * level; }
-    double commit (double v) noexcept override { return filter.tick (v) * level; }
+    void commitTried() noexcept override { filter.commitTried(); }
     double maxSlope() const override;
 
 private:
@@ -100,7 +100,7 @@ public:
     void reset() noexcept override;
     void beginSample (int n) noexcept override { h = headroom != nullptr ? headroom[n] : 1.0; }
     double peek (double v) const noexcept override;
-    double commit (double v) noexcept override;
+    void commitTried() noexcept override;
     double maxSlope() const override;
     juce::String describe() const override;
 
@@ -118,6 +118,7 @@ private:
     Curve curve;
     FilterList pre, post;
     double drive = 1, bias = 0, level = 1, offset = 0, top = 1;
+    mutable double triedG = 0;  // the grid value of the last peek(), for commitTried()
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, shift = 0;
     double h = 1.0;
     bool isTriode = false;
@@ -133,7 +134,7 @@ public:
     void reset() noexcept override;
     void beginSample (int n) noexcept override;
     double peek (double v) const noexcept override;
-    double commit (double v) noexcept override;
+    void commitTried() noexcept override;
     double maxSlope() const override;
     juce::String describe() const override;
 
@@ -143,6 +144,7 @@ private:
     PushPull tubes;
     FilterList pre, post;
     double drive = 1, level = 1, offset = 0;
+    mutable double triedU = 0;  // the drive of the last peek(), for commitTried()
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, sa = 0, sb = 0;
     double h = 1.0, hPow = 1.0;
     juce::String tubeName;
@@ -203,11 +205,12 @@ public:
 
 private:
     double loopPeek (double xv, double y) const noexcept;
-    void loopCommit (double xv, double y) noexcept;
+    void loopCommitTried() noexcept;
 
     std::vector<std::unique_ptr<LoopBlock>> blocks;
     FilterList path;
-    double amount = 0.3, level = 1, y1 = 0, y2 = 0;
+    double amount = 0.3, level = 1, y1 = 0, y2 = 0, y3 = 0;
+    double slope = -1.0;  // the loop equation's slope at the last answer (-1 = no feedback): the next first guess
 };
 
 class Split final : public Block
