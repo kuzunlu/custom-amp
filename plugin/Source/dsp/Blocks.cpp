@@ -300,7 +300,7 @@ void Gain::process (double* x, int n) noexcept
 
 double Gain::peek (double v) const noexcept
 {
-    const double g = pre.peek (v) * drive / h + bias;
+    const double g = pre.peek (v) * driveOverH + bias;
     triedG = g;
     return post.peek (h * (curve (g + shift) - offset)) * level;
 }
@@ -334,7 +334,8 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     tubeName = cfg.text ("tube", "EL34");
     tubes = PushPull::make (tubeName, plateV, screenV != 0 ? screenV : plateV, cfg.number ("bias_v", -45.0),
                             cfg.number ("raa_ohms", 3400.0), cfg.number ("mismatch", 0.0));
-    offset = tubes.shape (0.0, 1.0, 1.0, 0.0, 0.0);  // mismatched tubes leave a step at rest
+    supply = tubes.supply (1.0);
+    offset = tubes.shape (0.0, supply, 0.0, 0.0);  // mismatched tubes leave a step at rest
     drive = dbToGain (cfg.number ("drive_db", 0.0));
     level = dbToGain (cfg.number ("level_db", 0.0));
     pre = makeFilters (cfg.list ("pre"), ctx);
@@ -355,7 +356,8 @@ void Power::reset() noexcept
     pre.reset();
     post.reset();
     sa = sb = 0.0;
-    h = hPow = 1.0;
+    h = 1.0;
+    supply = tubes.supply (1.0);
 }
 
 void Power::nextShifts (double v) noexcept
@@ -382,10 +384,10 @@ void Power::process (double* x, int n) noexcept
         if (headroom != nullptr && headroom[i] != h)
         {
             h = headroom[i];
-            hPow = std::pow (h, pentodeEx);
+            supply = tubes.supply (h);
         }
 
-        const double y = tubes.shape (v, h, hPow, sa, sb) - offset;
+        const double y = tubes.shape (v, supply, sa, sb) - offset;
 
         if (shiftAmount != 0)
             nextShifts (v);
@@ -399,7 +401,7 @@ void Power::beginSample (int n) noexcept
     if (headroom != nullptr && headroom[n] != h)
     {
         h = headroom[n];
-        hPow = std::pow (h, pentodeEx);
+        supply = tubes.supply (h);
     }
 }
 
@@ -407,7 +409,7 @@ double Power::peek (double v) const noexcept
 {
     const double u = pre.peek (v) * drive;
     triedU = u;
-    return post.peek (tubes.shape (u, h, hPow, sa, sb) - offset) * level;
+    return post.peek (tubes.shape (u, supply, sa, sb) - offset) * level;
 }
 
 void Power::commitTried() noexcept

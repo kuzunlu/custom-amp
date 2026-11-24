@@ -98,7 +98,11 @@ public:
 
     void process (double* x, int n) noexcept override;
     void reset() noexcept override;
-    void beginSample (int n) noexcept override { h = headroom != nullptr ? headroom[n] : 1.0; }
+    void beginSample (int n) noexcept override
+    {
+        h = headroom != nullptr ? headroom[n] : 1.0;
+        driveOverH = drive / h;  // once per sample, so the tries only multiply
+    }
     double peek (double v) const noexcept override;
     void commitTried() noexcept override;
     double maxSlope() const override;
@@ -120,7 +124,7 @@ private:
     double drive = 1, bias = 0, level = 1, offset = 0, top = 1;
     mutable double triedG = 0;  // the grid value of the last peek(), for commitTried()
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, shift = 0;
-    double h = 1.0;
+    double h = 1.0, driveOverH = 1.0;
     bool isTriode = false;
     TriodeInfo tubeInfo;
 };
@@ -146,7 +150,8 @@ private:
     double drive = 1, level = 1, offset = 0;
     mutable double triedU = 0;  // the drive of the last peek(), for commitTried()
     double shiftAmount = 0, shiftAttack = 0, shiftRelease = 0, sa = 0, sb = 0;
-    double h = 1.0, hPow = 1.0;
+    double h = 1.0;
+    PushPull::Supply supply;  // tubes.supply (h)
     juce::String tubeName;
 };
 

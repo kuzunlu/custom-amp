@@ -20,7 +20,7 @@ constexpr double gridKneeV = 0.1;
 
 inline double gridClamp (double vg) noexcept
 {
-    const double z = vg / gridKneeV;
+    const double z = vg * (1 / gridKneeV);  // a multiply is faster than a divide (in feedback loops, every try waits for it)
 
     if (z < -40.0)
         return vg;  // the correction is below 1e-17 V here, so it would not change vg at all
@@ -51,7 +51,7 @@ struct Curve
             case Kind::table: break;
         }
 
-        const double i = (x - tableLo) / tableStep;
+        const double i = (x - tableLo) * tablePerVolt;
 
         if (i <= 0)
             return table.front();
@@ -66,7 +66,7 @@ struct Curve
     Kind kind = Kind::soft;
     double top = 1.0, topPower = 1.0, bottom = 1.0, bottomPower = 1.0;
     std::vector<double> table;
-    double tableLo = 0.0, tableStep = 0.01;
+    double tableLo = 0.0, tablePerVolt = 100.0;  // 1 / the table step
 };
 
 Curve makeCustomCurve (double top, double topSoftness, double bottom, double bottomSoftness);
@@ -81,6 +81,8 @@ struct TriodeInfo
 Curve makeTriodeCurve (const juce::String& tube, double plateV, double plateOhms, double biasV, TriodeInfo& info);
 juce::StringArray triodeNames();
 
+constexpr double pentodeEx = 1.35;
+
 // A push-pull pair of power tubes into an output transformer (make_pushpull in curves.py).
 struct PushPull
 {
@@ -89,7 +91,7 @@ struct PushPull
 
     double lookup (double vg) const noexcept
     {
-        const double i = (vg - lo) / step;
+        const double i = (vg - lo) * perVolt;
 
         if (i <= 0)
             return current.front();
@@ -101,14 +103,24 @@ struct PushPull
         return current[k] + (i - (double) k) * (current[k + 1] - current[k]);
     }
 
-    // x = drive in volts at the grids, h = headroom from sag, hPow = pow (h, pentodeEx),
-    // sa / sb = bias shift of each grid. Full output equals |bias_v|.
-    double shape (double x, double h, double hPow, double sa, double sb) const noexcept
+    // What shape() needs for one headroom h from sag, worked out only when h changes (not on every try).
+    struct Supply
     {
-        const double ia = lookup (gridClamp (bias + sa + x) / h);
-        const double ib = lookup (gridClamp (bias + sb - x) / h) * weaker;
-        const double v = quarter * (ia - ib) * hPow / (h * vmax);
-        return h * vmax * v / std::sqrt (std::sqrt (1 + v * v * v * v)) * scale;
+        double perH = 1, in = 1, out = 1;
+    };
+
+    Supply supply (double h) const noexcept
+    {
+        return { 1 / h, quarter * std::pow (h, pentodeEx) / (h * vmax), h * vmax * scale };
+    }
+
+    // x = drive in volts at the grids, s = supply (h), sa / sb = bias shift of each grid. Full output equals |bias_v|.
+    double shape (double x, const Supply& s, double sa, double sb) const noexcept
+    {
+        const double ia = lookup (gridClamp (bias + sa + x) * s.perH);
+        const double ib = lookup (gridClamp (bias + sb - x) * s.perH) * weaker;
+        const double v = (ia - ib) * s.in;
+        return s.out * v / std::sqrt (std::sqrt (1 + v * v * v * v));
     }
 
     // The pair without its output soft limit, at full supply and no bias shift. The real pair is never
@@ -121,12 +133,11 @@ struct PushPull
     }
 
     std::vector<double> current;
-    double lo = -400.0, step = 0.05;
+    double lo = -400.0, step = 0.05, perVolt = 20.0;  // perVolt = 1 / step
     double bias = -45, quarter = 850, vmax = 1, scale = 1, weaker = 1;
     double idleMa = 0, idleWatts = 0, maxWatts = 0;
 };
 
-constexpr double pentodeEx = 1.35;
 juce::StringArray pentodeNames();
 
 // np.arange (start, stop, step): the same count and the same values as NumPy makes them.

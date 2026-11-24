@@ -199,8 +199,9 @@ C++ checks:
   is very sensitive to the last digits of its coefficients (not a wiring difference: that would be near 0 dB).
 - Full plugin engine vs Python with its own per-stage oversampling, 220 Hz at 0.05/0.2/0.5 V, no cab: harmonics'
   share within 0.2 points on every preset at 8x and 4x; low/mid/high balance of the riff within 1%.
-- CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 2.8-9.8% of one core (feedback presets 6.8-9.8%; they were
-  10-13.8% before the faster solver of 2026-11-24). brit_800 without its loop: 4.1%, so the loop is still most of it. Build time
+- CPU (10 s riff, 48 kHz, 8x, 256-sample blocks): 2.6-8.7% of one core (feedback presets 5.7-8.7%; they were
+  10-13.8% before the faster solver of 2026-11-24, then 6.8-9.8% before the divides came out of the loop).
+  brit_800 without its loop: 4.3%; with the feedback amount at 0 the loop still costs its 2 tries per sample. Build time
   36-216 ms. Latency 6 samples at 8x (0.13 ms at 48 kHz), 4 samples at 2x.
 - Cab IR level: the 48 kHz test IR gives 1 kHz at 9.48 dB in 44.1/48/96 kHz sessions (before the
   `ir_rate / rate` fix: 8.76 / 9.48 / 15.50 dB). C++ vs Python tail at 96 and 44.1 kHz: -143 / -137 dB.
@@ -291,6 +292,12 @@ C++ checks:
   (was about 5). The answer is always the LAST value tried, so `commitTried()` moves every filter and tube on from
   what its last `peek()` remembered (`triedIn/triedOut`, `triedG`, `triedU`) instead of running the loop again:
   bit-identical output. Keep that rule if the solver changes.
+  Inside a loop every step waits for the one before, and a divide takes 3-4 times as long as a multiply. So the
+  tries only multiply: the tables keep `1 / step` (`tablePerVolt`, `perVolt`), `gridClamp` multiplies by `1 / gridKneeV`,
+  the gain stage works out `drive / h` once per sample (`beginSample`), and the power pair works out everything that
+  depends on the sag headroom only when it changes (`PushPull::supply`). 12-18% less CPU on the feedback presets; the
+  results move only in the last digit. (Measured and NOT kept: `fa * (1 / slope)` in the solver, continuing the last
+  two slopes for the first jump, a looser tolerance: 1e-8 saved only 3-8%.)
 - **Swapping engines without a click:** the new engine is warmed up with the last 0.25 s of input (a history
   ring the audio thread writes), keeps catching up on the builder thread until less than one block is missing,
   the audio thread plays it the last few samples just before the swap, then old and new cross-fade over 30 ms.

@@ -124,7 +124,7 @@ Curve makeTriodeCurve (const juce::String& tube, double plateV, double plateOhms
 
     Curve c;
     c.kind = Curve::Kind::table;
-    c.tableStep = step;
+    c.tablePerVolt = 1 / step;
     c.tableLo = grid.front() - biasV;
     c.table.resize (grid.size());
 
@@ -193,6 +193,7 @@ PushPull PushPull::make (const juce::String& tube, double plateV, double screenV
     PushPull pp;
     const auto grid = numpyArange (-400.0, 50.0 + pp.step, pp.step);
     pp.lo = grid.front();
+    pp.perVolt = 1 / pp.step;
     pp.current.resize (grid.size());
 
     for (size_t i = 0; i < grid.size(); ++i)
