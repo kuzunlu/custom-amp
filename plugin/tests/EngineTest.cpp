@@ -530,6 +530,38 @@ void roomChecks (const juce::File& root)
                + " Hz with a 3 s string (resonance width +-" + juce::String (width (3.0), 2) + "), " + juce::String (pulled10, 2)
                + " Hz with a 10 s string (+-" + juce::String (width (10.0), 2) + ")");
     check (afterMute < -100, "a hand on the strings stops it: " + juce::String (afterMute, 0) + " dB 0.3 s after");
+
+    // Bloom to the octave (harmonic 2, the string touched at its middle): at 0.4 m on the clean preset it only blooms
+    // when find_spot moves the sound's arrival into step; and the same playing gives the same result every time.
+    const auto bloom = [&root, rate] (bool spot)
+    {
+        auto preset = loadJson (root.getChildFile ("presets/clean.json"));
+        preset.getDynamicObject()->removeProperty ("panel");
+        preset["chain"].getArray()->add (juce::JSON::parse (juce::String (R"({ "type": "room", "distance_m": 0.4, "volume_db": -20, "harmonic": 2, "find_spot": )")
+                                                            + (spot ? "true" : "false") + " }"));
+        amp::Engine::Options options;
+        options.preset = preset;
+        options.presetFolder = root.getChildFile ("presets");
+        options.irOverride = juce::File ("C:/no/such/folder/ir.wav");
+        options.sampleRate = rate;
+        options.maxBlock = 256;
+        amp::Engine engine (options);
+        auto x = dyingNote (110, 4.0, rate);
+
+        for (size_t i = 0; i < x.size(); i += 256)
+            engine.process (x.data() + i, (int) std::min ((size_t) 256, x.size() - i));
+
+        return x;
+    };
+    const auto octaveOverNote = [rate] (const std::vector<double>& y)
+    {
+        const std::vector<double> late (y.begin() + (int) (2.75 * rate), y.begin() + (int) (3.25 * rate));
+        return 20 * std::log10 (tone (late, 220.0, rate) / tone (late, 110.0, rate));
+    };
+    const auto fixedSpot = bloom (false), spot = bloom (true), again = bloom (true);
+    check (octaveOverNote (fixedSpot) < 0 && octaveOverNote (spot) > 10 && spot == again,
+           "bloom to the octave at 0.4 m: at 3 s the octave is " + juce::String (octaveOverNote (fixedSpot), 1) + " dB against the note without "
+               + "find_spot, " + juce::String (octaveOverNote (spot), 1) + " dB with it; two runs are the same sample for sample");
 }
 
 void stringsChecks()

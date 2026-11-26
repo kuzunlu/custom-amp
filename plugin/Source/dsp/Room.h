@@ -2,6 +2,8 @@
 
 #include "Blocks.h"
 
+#include <complex>
+
 namespace amp
 {
 
@@ -34,7 +36,7 @@ public:
 private:
     void trackPitch() noexcept;
 
-    double rate = 48000, coupling = 0, sustainS = 3, tone = 0.1, muteLevel = 0.002, distance = 0.5;
+    double rate = 48000, coupling = 0, sustainS = 3, tone = 0.1, muteLevel = 0.002, distance = 0.5, harmonic = 1;
     int delay = 1, chunk = 1;
 
     std::vector<double> air;     // the speaker's sound on its way to the guitar
@@ -42,6 +44,11 @@ private:
     std::vector<double> string;  // the string's motion driven by that sound (a resonator one period long)
     int stringWrite = 0;
     double period = 0, readPeriod = 0, loopGain = 0, mutedGain = 0, smooth = 0;
+
+    // find_spot: how much later than distance_m the sound arrives (samples), and the two phases it compares.
+    bool findSpot = false;
+    double extra = 0, spotRate = 0, spotAverage = 0, spotStep = 0;
+    std::complex<double> pushSum, ringSum, phasor { 1.0, 0.0 };
 
     // Mute: a fast and a slow level follower of the clean input.
     double fastLevel = 0, slowLevel = 0, fastFall = 0, slowFall = 0;

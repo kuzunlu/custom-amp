@@ -700,6 +700,16 @@
           "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
           "short": "Below this input level (in volts: 0 dBV = 1 V) the strings count as muted.",
           "tooltip": "The plugin can not see your hand. So the strings count as muted when the input falls to a tenth within about 10 ms (a hand on the strings), or stays below this level. A guitar played hard gives about 0.5 V (-6 dBV)."
+        },
+        "harmonic": {
+          "label": "Ring at harmonic", "type": "number", "unit": "", "min": 1, "max": 8, "default": 1, "step": 1,
+          "short": "1 = the whole string. 2, 3, ...: like a finger resting lightly at 1/2, 1/3 of the string: the feedback blooms into that harmonic.",
+          "tooltip": "A finger resting lightly on a string at 1/2 of its length stops every mode that moves there, so only the octave (and its multiples) can ring: a natural harmonic. At 1/3 it is the fifth above the octave (3x the note), at 1/4 two octaves up. Here the string rings only at that harmonic, so the feedback can only bloom into it. The loop still has to come back in step there, so the distance still matters, as in a real room."
+        },
+        "find_spot": {
+          "label": "Find the spot", "type": "toggle", "default": false,
+          "short": "Like a player who steps until the note blooms: the sound's arrival moves until the chosen harmonic comes back in step.",
+          "tooltip": "Players move in front of the amp until the feedback blooms into the harmonic they want. This does that: at the chosen harmonic (Ring at harmonic) it compares the sound coming back with what the string is ringing, and makes the sound arrive a little later or sooner (by at most one period of that harmonic, so the distance stays close to Distance) until they are in step, in about 100 ms. Like the pitch tracker, this stands in for the player; the rest is the loop's physics. The result is the same every time for the same playing."
         }
       }
     },

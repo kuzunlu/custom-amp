@@ -198,6 +198,19 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   into the octave at 0.2-0.5 m, squeals at a high harmonic (2770 Hz) at 0.8 m, stays on the note at 1.2-2 m. With
   `brightness` (an earlier version: a weak per-period low-pass) brit_800 bloomed into its 17th-22nd harmonic.
   `tests/presets/room_feedback.json` (clean + room) has a reference recording. No built-in preset uses it yet.
+  **Bloom to a harmonic** (2026-11-26, the user asked why notes in recordings "turn into a harmonic" and whether that
+  can be recreated: it is feedback blooming, and it is deterministic). `harmonic` k (1-8): the string as if touched
+  lightly at 1/k (a natural harmonic): its resonator is one period of k x the note long, so only that harmonic and its
+  multiples ring. `find_spot` (NOT physics, stands in for the player stepping until it blooms): at k x the note it
+  compares the push with the string's own ringing (30 ms averages of both against a phasor) and moves the sound's
+  arrival (`extra` samples, within one period of that harmonic) towards in step, in about 100 ms; off = the old
+  integer-delay path, bit-identical. Measured (brit_800 + room, 110 Hz note, strongest frequency at 3 s, 12 distances
+  0.2-2 m): -40 dB: harmonic 2 blooms to 220 at 6/12 distances, with find_spot 9/12 (the rest too far: the push falls
+  with distance); harmonic 3 3/12 -> 9/12. -35 dB: harmonic 2 + find_spot 11/12; without it mostly high squeals.
+  The squeals at 2-3.3 kHz are the DIRECT path (the push reaches the pickup a little off the string's modes; a darker
+  string_tone_hz did NOT stop them, it made them worse): a broadband loop through a bright high-gain amp, like a real
+  rig's microphonic squeal. Checked (EngineTest): clean + room at 0.4 m, -20 dB, harmonic 2: at 3 s the octave is
+  -34.0 dB against the note without find_spot and +38.9 dB with it; two runs are equal sample for sample.
 - **Strings** (sympathetic strings, `Strings.h/.cpp`, 2026-11-26): anywhere in a chain (not in a feedback loop).
   One resonator per note in `notes` (a `text-list`: names like F#3 or Hz; default a guitar's open strings E2-E4):
   v = coupling x input + gain x lowpass(v one period ago); output = input + mix x all strings. The 1-pole low-pass at
