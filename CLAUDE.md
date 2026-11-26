@@ -410,11 +410,22 @@ C++ checks:
 
 ## Releases (option B chosen: the JUCE plugin)
 
-Like the user's `github.com/kuzunlu/stream-bridge`:
-- `.github/workflows/build.yml` on `windows-latest`: only a pushed `v*` tag (or "Run workflow" on the Actions page)
-  builds (`build.bat`), runs `PluginTest` and, for a tag, runs `gh release create` with the installer and two zips
-  (VST3, app). Normal pushes do not build: the user ran low on Actions minutes (2026-11-24), so run the tests
-  locally before pushing.
+**Releases are made on this PC (2026-11-26, the user's choice: no GitHub Actions minutes):**
+`powershell -ExecutionPolicy Bypass -File release.ps1 -Version 0.2.0`. It refuses unless main is clean and equal to
+origin/main, the tag is new (here and on GitHub) and `gh` is logged in; tags `v<Version>` locally FIRST (the plugin's
+version comes from `git describe` at configure time), runs check.bat (on failure the tag is removed), builds the
+installer (`ISCC /DAppVersion=<Version>`) and the two zips into `build\release\`, asks "yes", then pushes the tag and
+runs `gh release create <tag> <files> --verify-tag` with the same notes the workflow used. Tools (winget, pinned):
+Inno Setup 6.7.3 (`JRSoftware.InnoSetup`, installed per user: `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`) and
+GitHub CLI 2.106.0 (`GitHub.cli`, `C:\Program Files\GitHub CLI\gh.exe`); the user runs `gh auth login` once (never
+read their token). Tested: it stops with "gh is not logged in" and on a bad version; ISCC built a 5.2 MB installer.
+A locked Windows clipboard (another program holding it; 20 of 20 opens failed on 2026-11-26) fails PluginTest's
+copy test, which then blocks a release until the clipboard is free.
+
+The old way, still there for a manual run, like the user's `github.com/kuzunlu/stream-bridge`:
+- `.github/workflows/build.yml` on `windows-latest`: ONLY "Run workflow" on the Actions page builds (the tag trigger was
+  removed, or `release.ps1`'s tag push would also build there and try to publish the same release again): `build.bat`,
+  `PluginTest`, the installer, and for a tag ref `gh release create`.
   Actions are pinned by commit SHA (the same ones as stream-bridge). The repo is private: a release is only
   visible to people with access, and Actions minutes come from the user's allowance (Windows counts double).
 - `installer/CustomAmp.iss` (Inno Setup 6, installed in CI with `choco install innosetup`; not installed on
