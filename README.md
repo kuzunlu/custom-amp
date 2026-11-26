@@ -15,6 +15,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `ir` | Cabinet sound from an impulse response `.wav` file |
 | `room` | Acoustic feedback: the amp's sound goes back into the guitar's strings, as in front of a loud amp (last block) |
 | `strings` | Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's |
+| `restring` | Play your guitar, hear a virtual string with physics you choose (lower, stiffer, longer, bending by itself) |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
@@ -251,6 +252,22 @@ Strings that nobody plays, tuned to `notes` (names like `F#3` or numbers in Hz; 
 Your playing shakes them; each one takes up only what matches its own note and harmonics and rings on after you stop
 (measured: a string answers 25 dB louder to its own note than to one a semitone away). Before the amp it is like an
 acoustic instrument with extra strings, after it like a reverb that only rings in tune.
+
+### Restring
+
+```json
+{ "type": "restring", "transpose": -12, "stretch_cents": 10, "sustain_s": 6, "string_tone_hz": 3000,
+  "bend_semitones": 0.5, "bend_s": 0.1, "mix": 1 }
+```
+
+Put it first. Every pick attack plucks a virtual string with your DI's last period, stretched to the new string's
+length (so where and how hard you pick carries over: a DI without a 3rd harmonic gives a string without one). Then it
+rings on its own physics: `transpose` semitones from your note (-12 = a bass), its harmonics stretched sharp like a
+stiff string (`stretch_cents` = how sharp the 10th is: a guitar 1-9, a piano 17-80, more = towards a bell), its own
+`sustain_s` (it goes on after your note fades), highs that fade 10 times as fast at `string_tone_hz`, and a pitch that
+glides back from `bend_semitones` after each pluck. It follows your note while it rings (slides, hammer-ons), and a
+hand on the strings stops it in 50 ms. A pitch tracker stands in for you: the new string starts 15-30 ms after the
+pick (30 ms on a low E, like a guitar synth), and it follows one note.
 
 ### Gate
 

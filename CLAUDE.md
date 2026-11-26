@@ -220,6 +220,36 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   E#x, "" refused); an A2 string rings at 110.005 Hz and falls 30.0 dB in 2 s (sustain 4 s), and 7.5 dB in 0.5 s
   after a note stops (theory 7.5); at its own note it answers 24.9 dB louder than a semitone higher.
   `tests/presets/strings_drone.json` (a D drone before the clean chain) has a reference recording.
+- **Player** (`Player.h/.cpp`, 2026-11-26): the part that stands in for the guitarist, shared by room and restring:
+  YIN pitch tracker, muted / `isStopped` (input to a tenth within ~10 ms), `attacked` (the 100 ms peak follower jumps
+  above twice its 20 ms-late copy + mute level; armed again near it). Room: window 512, every 10 ms, the OLDEST part
+  of the memory (bit-identical to before it was moved out of Room). Restring: `recent` (the newest samples against
+  older ones), window 192, every 2.5 ms. The tracker copies its ring into a straight array once per look: the two
+  `%` per read had made restring cost 7.5% of a core (10.8 -> 3.6% for the whole test preset, results bit-identical).
+- **Restring** (`Restring.h/.cpp`, 2026-11-26, "impossible strings"): a virtual string played by the DI, anywhere in a
+  chain (meant first; not in a feedback loop). Two voices: a pick attack, then the tracker finding the same note twice
+  in a row (within 3%), plucks the other voice (the old one stops: 60 dB in 50 ms, off after 0.3 s). The pluck fills
+  the line with the DI's last period (ending at its last upward zero crossing, so no jump), stretched to the string's
+  length, and runs the filters over 25 ms of it first (no start-up click). Loop: line (linear read) -> 16 first-order
+  all-passes (stiffness) -> 1-pole low-pass -> gain. The low-pass is set PER NOTE so harmonics at `string_tone_hz`
+  fall 10x as fast as the note per SECOND (quadratic in the pole; the loss grows with f^2 below it). The strings and
+  room blocks use a fixed 1-pole per round trip instead: that also detunes the upper harmonics (a 1 kHz note's 9th
+  48 cents sharp with a 3 kHz pole) and is far too strong for high notes; this one: harmonics 2-10 within 0.08 cents.
+  `stretch_cents` -> B ((r^2 - 1) / (100 - r^2), r = 2^(c/1200): the 10th harmonic c cents above 10 x the note); the
+  all-pass coefficient is a least-squares fit over the first 20 harmonics up to 2.5 kHz (41-point scan + golden
+  section), done only on a pluck or when the note moves a semitone from the fit (bends and vibrato only move the read).
+  Fit quality measured in Python before writing it (110 Hz, M = 16): 5 / 20 / 50 / 200 cents -> worst 0.6 / 4 / 13 /
+  46 cents off a stiff string; positive coefficients do NOT undo the low-pass's detuning at 384 kHz (the all-pass is
+  flat there). Read = period - all-passes' and low-pass's phase delay at the note. Retuned every 1 ms (read ramps),
+  the note followed through a 10 ms smoothing; the bend = bend_semitones e^(-age / bend_s).
+  Checked (EngineTest, 96 kHz): latency 30.0 / 22.5 / 15.0 ms at 82 / 110 / 330 Hz (50 ms with the room's tracker);
+  110.005 Hz; transpose 7 / -12 / 24: 164.82 / 55.002 / 440.02 Hz; stretch 5 / 20 / 50: 10th harmonic 5.3 / 22.2 /
+  57.3 cents sharp, harmonics 2-10 within 0.28 / 2.2 / 7.3 cents of the stiff string's; sustain 20 s: -1.50 dB in 0.5 s,
+  the 10th at string_tone_hz -15.2 (-15); bend 1 semitone / 0.5 s: 60.3 36.4 13.5 cents (60.7 36.8 13.5); a hammer-on
+  followed 110 -> 123.48 Hz; a new pluck at D3 146.834 Hz, the old string -76 dB; a hand stop: silence 0.35 s after;
+  a DI with no 3rd harmonic: the string's 2nd -6.00 (-6.02), 3rd -61 dB, 4th -12.05 (-12.04).
+  `tests/presets/restring_bass.json` (an octave down, slightly stiff, a small bend, before the clean chain) has a
+  reference recording. X-ray removes it like strings.
 - **X-ray listening** (2026-11-26): hear only what one block adds. A TWIN engine runs beside the amp on the same
   input: the same preset with that block switched off (`CustomAmpProcessor::twinPreset`: gain/power `linear: true`,
   sag/feedback amount 0, eq/tonestack/gate/ir/room/strings left out; a split can not; the panel is dropped), built on
@@ -492,7 +522,7 @@ The old way, still there for a manual run, like the user's `github.com/kuzunlu/s
 
 Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). Releases: tags `v0.1.0` and `v0.1.1` pushed on 2026-11-23
 (the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
-Done: eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
+Done (also room, strings, restring, X-ray): eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values; styles british, american, top_boost, james), power (push-pull EL34/6L6GC/EL84/6V6GT/KT88/6550), sag,
 feedback (also positive), split, gate, ir, rectifier supply on the power block;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).

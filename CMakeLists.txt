@@ -39,6 +39,8 @@ set(ENGINE_SOURCES
     plugin/Source/dsp/Curves.cpp
     plugin/Source/dsp/Engine.cpp
     plugin/Source/dsp/Filters.cpp
+    plugin/Source/dsp/Player.cpp
+    plugin/Source/dsp/Restring.cpp
     plugin/Source/dsp/Room.cpp
     plugin/Source/dsp/Strings.cpp)
 

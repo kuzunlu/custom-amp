@@ -1,0 +1,112 @@
+{
+  "name": "Test: restring",
+  "notes": "Not an amp: only for the reference check (EngineTest check), to cover the restring block. The DI restrung an octave down as a slightly stiff string (10 cents at the 10th harmonic) with a small pluck bend, in front of the clean preset's chain.",
+  "chain": [
+    {
+      "type": "restring",
+      "transpose": -12,
+      "stretch_cents": 10,
+      "bend_semitones": 0.5,
+      "bend_s": 0.1,
+      "sustain_s": 6
+    },
+    {
+      "type": "eq",
+      "bands": [
+        {
+          "kind": "highpass",
+          "freq": 70
+        }
+      ]
+    },
+    {
+      "type": "gain",
+      "id": "v1",
+      "drive_db": 0,
+      "curve": "tube",
+      "bias": 0.05,
+      "pre": [
+        {
+          "kind": "highshelf",
+          "freq": 2000,
+          "gain_db": 4
+        }
+      ],
+      "post": [
+        {
+          "kind": "lowpass",
+          "freq": 12000
+        }
+      ]
+    },
+    {
+      "type": "eq",
+      "id": "tonestack",
+      "bands": [
+        {
+          "kind": "lowshelf",
+          "freq": 150,
+          "gain_db": 2
+        },
+        {
+          "kind": "peak",
+          "freq": 500,
+          "gain_db": -6,
+          "q": 0.6
+        },
+        {
+          "kind": "highshelf",
+          "freq": 3000,
+          "gain_db": 3
+        }
+      ]
+    },
+    {
+      "type": "sag",
+      "amount": 0.2,
+      "attack_ms": 5,
+      "release_ms": 120,
+      "targets": [
+        "power"
+      ]
+    },
+    {
+      "type": "feedback",
+      "id": "nfb",
+      "amount": 0.4,
+      "path": [
+        {
+          "kind": "highshelf",
+          "freq": 3000,
+          "gain_db": -6
+        }
+      ],
+      "chain": [
+        {
+          "type": "eq",
+          "id": "transformer",
+          "bands": [
+            {
+              "kind": "highpass",
+              "freq": 60
+            },
+            {
+              "kind": "lowpass",
+              "freq": 9000
+            }
+          ]
+        },
+        {
+          "type": "gain",
+          "id": "power",
+          "drive_db": 6,
+          "curve": "soft"
+        }
+      ]
+    },
+    {
+      "type": "ir",
+      "file": "audio/fake_4x12.wav"
+    }
+  ]
+}

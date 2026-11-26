@@ -755,6 +755,53 @@
           "tooltip": "The strings' sound is added to the sound that comes in, which passes unchanged."
         }
       }
+    },
+    "restring": {
+      "label": "Restring",
+      "short": "Play your guitar, hear a virtual string with physics you choose: lower, stiffer, longer, bending by itself.",
+      "tooltip": "Each pick attack plucks a virtual string with your own DI's last period, stretched to the new string's length, so where and how hard you pick carries over. Then the string rings on its own physics: transposed (a bass, a tiny high string), stiff like a piano or a bell (stretched harmonics), with any sustain, its pitch gliding back after each pluck. It follows your note while it rings (slides, bends, hammer-ons), and a hand on the strings stops it. Not physics, standing in for you: a pitch tracker finds your note, so a new note starts about 15-30 ms after the pick (like a guitar synth; lower notes take longer), and it follows one note (with a chord, the strongest). Put it first, before the amp.",
+      "settings": {
+        "transpose": {
+          "label": "Transpose", "type": "number", "unit": "semitones", "min": -24, "max": 24, "default": 0,
+          "short": "How far the virtual string is tuned from the note you play (12 = an octave).",
+          "tooltip": "-12 turns the guitar into a bass, +12 or +24 into a mandolin-like tiny string. Fractions work too (microtones)."
+        },
+        "stretch_cents": {
+          "label": "Stiffness", "type": "number", "unit": "cents", "min": 0, "max": 1200, "default": 0,
+          "short": "How stiff the string is: how many cents sharp its 10th harmonic is (0 = a perfect string).",
+          "tooltip": "A stiff string (thick, short, like a piano's bass strings) springs back on its own, so its higher harmonics come out sharp: harmonic n is at n f0 sqrt(1 + B n^2). This gives B: 1-9 cents = B 0.00001-0.0001 (guitar strings), 17-80 cents = B 0.0002-0.001 (most piano strings), hundreds = far stiffer than any string, towards a bar or a bell. The status line shows B. Modelled with 16 all-pass filters fitted over the first 20 harmonics up to 2.5 kHz (higher ones are only close)."
+        },
+        "sustain_s": {
+          "label": "Sustain", "type": "number", "unit": "s", "min": 0.2, "max": 60, "default": 4, "scale": "log",
+          "short": "How long the note rings (time to fall 60 dB).",
+          "tooltip": "Its own sustain, whatever your guitar does: 60 s rings on like an endless string, 0.3 s is a short muted pluck. It goes on after your guitar's note fades, until you stop the string with your hand or pick a new note."
+        },
+        "string_tone_hz": {
+          "label": "String tone", "type": "number", "unit": "Hz", "min": 200, "max": 10000, "default": 3000, "scale": "log",
+          "short": "Harmonics at this frequency fade 10 times as fast as the note.",
+          "tooltip": "Real strings lose their highs faster than their note, in seconds, the same on every fret: the loss grows with the square of the frequency (twice the frequency, about 4 times as fast). Lower = a darker string whose pluck softens quickly. (The harmonics stay in tune.)"
+        },
+        "bend_semitones": {
+          "label": "Pluck bend", "type": "number", "unit": "semitones", "min": -12, "max": 12, "default": 0,
+          "short": "Each pluck starts this far above the note, then glides back to it.",
+          "tooltip": "A hard pluck stretches a slack string, so it starts sharp and falls back (a few cents on a guitar, a lot on a loose bass or a koto). Negative = it starts flat and rises, which no real string does."
+        },
+        "bend_s": {
+          "label": "Bend time", "type": "number", "unit": "s", "min": 0.01, "max": 5, "default": 0.2, "scale": "log",
+          "short": "How fast the pluck bend glides back (63% of the way in this time).",
+          "tooltip": "The bend falls as e^(-t / bend_s): after 3 x bend_s only 5% of it is left."
+        },
+        "mix": {
+          "label": "Mix", "type": "number", "min": 0, "max": 1, "default": 1,
+          "short": "1 = only the virtual string, 0 = only your guitar.",
+          "tooltip": "Output = (1 - mix) x your guitar + mix x the string. 0.5 = both, like a doubled instrument."
+        },
+        "mute_db": {
+          "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
+          "short": "Below this input level (0 dBV = 1 V) nothing counts as a note or a pick attack.",
+          "tooltip": "The plugin can not see your hand. A pick attack is the level jumping to twice where it was (and above this level); a hand on the strings is the input falling to a tenth within about 10 ms: the string then dies in 50 ms. A note fading away slowly does not stop it."
+        }
+      }
     }
   },
 

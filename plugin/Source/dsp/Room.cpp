@@ -33,16 +33,12 @@ Room::Room (const Cfg& cfg, const BuildContext& ctx)
     muteLevel = dbToGain (cfg.number ("mute_db", -60.0));  // volts at the input (a guitar: about 0.5 V played hard)
     delay = std::max (1, juce::roundToInt (distance / 343.0 * rate));  // the speed of sound
     chunk = std::min (delay, 64);
-    fastFall = std::exp (-1 / (0.005 * rate));
-    slowFall = std::exp (-1 / (0.1 * rate));
-    decimate = std::max (1, juce::roundToInt (rate / 12000.0));
+    player.prepare (rate, muteLevel);
     // With find_spot the sound may arrive up to one period (of a 50 Hz note) later than from distance_m.
     air.assign ((size_t) (delay + chunk + 2) + (findSpot ? (size_t) (rate / 50.0) + 2 : 0), 0.0);
     spotRate = 1.0 / (0.1 * rate);      // the player moves: about 100 ms to make up a phase error
     spotAverage = 1 - std::exp (-1 / (0.03 * rate));  // the phases are measured over about 30 ms
     string.assign ((size_t) (rate / 50.0) + 4, 0.0);  // one period of the lowest note it follows (60 Hz) fits
-    low.assign (1024, 0.0);
-    diff.assign (1024, 0.0);
 }
 
 void Room::prepare (int maxSamples)
@@ -54,9 +50,9 @@ void Room::reset() noexcept
 {
     std::fill (air.begin(), air.end(), 0.0);
     std::fill (string.begin(), string.end(), 0.0);
-    std::fill (low.begin(), low.end(), 0.0);
-    airWrite = stringWrite = lowWrite = decimCount = sinceCheck = 0;
-    decimSum = smooth = fastLevel = slowLevel = 0.0;
+    player.reset();
+    airWrite = stringWrite = 0;
+    smooth = 0.0;
     period = readPeriod = loopGain = mutedGain = 0.0;
     muted = true;
     extra = 0.0;
@@ -66,34 +62,17 @@ void Room::reset() noexcept
 
 void Room::addFeedback (double* input, int n) noexcept
 {
-    const int airSize = (int) air.size(), stringSize = (int) string.size(), lowSize = (int) low.size();
-    const int checkEvery = juce::roundToInt (0.01 * rate / decimate);
+    const int airSize = (int) air.size(), stringSize = (int) string.size();
 
     for (int i = 0; i < n; ++i)
     {
         const double di = input[i];
 
-        // Muted: the input falls fast (to a tenth within about 10 ms: a hand on the strings) or is very quiet.
-        const double level = std::abs (di);
-        fastLevel = std::max (level, fastLevel * fastFall);
-        slowLevel = std::max (level, slowLevel * slowFall);
-        muted = slowLevel < muteLevel || fastLevel < 0.1 * slowLevel;
+        // The note being played and a hand on the strings (Player: stands in for the guitarist).
+        if (player.hear (di))
+            setNote (player.period());
 
-        decimSum += di;
-
-        if (++decimCount == decimate)
-        {
-            low[(size_t) lowWrite] = decimSum / decimate;
-            lowWrite = (lowWrite + 1) % lowSize;
-            decimSum = 0.0;
-            decimCount = 0;
-
-            if (++sinceCheck >= checkEvery)
-            {
-                sinceCheck = 0;
-                trackPitch();
-            }
-        }
+        muted = player.isMuted();
 
         // The string: the sound that left the speaker `delay` samples ago pushes it, and what it did one period ago
         // comes round again (a little weaker, the higher harmonics more so).
@@ -160,57 +139,9 @@ void Room::hear (const double* output, int n) noexcept
     }
 }
 
-void Room::trackPitch() noexcept
+void Room::setNote (double newPeriod) noexcept
 {
-    // YIN (de Cheveigne and Kawahara 2002): d(lag) = how much the signal differs from itself `lag` later; the first
-    // lag where d (divided by its running average) falls under 0.15 is the period. 60 Hz to 1 kHz.
-    const int lowSize = (int) low.size();
-    const double lowRate = rate / decimate;
-    const int window = 512, maxLag = std::min ((int) (lowRate / 60.0), lowSize - window - 1), minLag = std::max (2, (int) (lowRate / 1000.0));
-    const int start = lowWrite - window - maxLag;
-    const auto at = [&] (int j) { return low[(size_t) (((start + j) % lowSize + lowSize) % lowSize)]; };
-
-    double energy = 0.0;
-
-    for (int j = 0; j < window; ++j)
-        energy += at (j) * at (j);
-
-    if (std::sqrt (energy / window) < muteLevel)
-        return;  // nothing playing: the string keeps its last note
-
-    double running = 0.0;
-    int found = -1;
-
-    for (int lag = 1; lag <= maxLag; ++lag)
-    {
-        double d = 0.0;
-
-        for (int j = 0; j < window; ++j)
-        {
-            const double e = at (j) - at (j + lag);
-            d += e * e;
-        }
-
-        running += d;
-        diff[(size_t) lag] = running > 0 ? d * lag / running : 1.0;
-    }
-
-    for (int lag = minLag; lag < maxLag && found < 0; ++lag)
-        if (diff[(size_t) lag] < 0.15)
-        {
-            found = lag;
-
-            while (found + 1 < maxLag && diff[(size_t) found + 1] < diff[(size_t) found])
-                ++found;
-        }
-
-    if (found < 0)
-        return;
-
-    // Between two lags: the bottom of a parabola through the three around it.
-    const double a = diff[(size_t) found - 1], b = diff[(size_t) found], c = diff[(size_t) found + 1];
-    const double shift = a - 2 * b + c != 0 ? 0.5 * (a - c) / (a - 2 * b + c) : 0.0;
-    period = (found + juce::jlimit (-0.5, 0.5, shift)) * decimate;
+    period = newPeriod;
 
     // The low-pass delays the note a little (its phase): read that much sooner, or the string would ring flat.
     // A finger resting at 1 / harmonic of the string stops every mode that moves there: only that harmonic and its

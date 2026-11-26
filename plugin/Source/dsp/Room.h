@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Blocks.h"
+#include "Player.h"
 
 #include <complex>
 
@@ -34,7 +35,7 @@ public:
     bool enabled = true;  // off while the engine measures its level
 
 private:
-    void trackPitch() noexcept;
+    void setNote (double period) noexcept;  // a note from the Player: the string's length and its losses
 
     double rate = 48000, coupling = 0, sustainS = 3, tone = 0.1, muteLevel = 0.002, distance = 0.5, harmonic = 1;
     int delay = 1, chunk = 1;
@@ -50,16 +51,8 @@ private:
     double extra = 0, spotRate = 0, spotAverage = 0, spotStep = 0;
     std::complex<double> pushSum, ringSum, phasor { 1.0, 0.0 };
 
-    // Mute: a fast and a slow level follower of the clean input.
-    double fastLevel = 0, slowLevel = 0, fastFall = 0, slowFall = 0;
+    Player player;
     bool muted = true;
-
-    // Pitch: the input at about 12 kHz, checked every 10 ms (YIN: the lag where the signal best repeats itself).
-    int decimate = 4, decimCount = 0, sinceCheck = 0;
-    double decimSum = 0;
-    std::vector<double> low;
-    int lowWrite = 0;
-    std::vector<double> diff;
 };
 
 } // namespace amp

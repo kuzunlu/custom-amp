@@ -650,6 +650,240 @@ void stringsChecks()
     check (std::abs (after + 7.5) < 1.0, "after the note stops it rings on: " + juce::String (after, 1) + " dB in 0.5 s (theory -7.5)");
 }
 
+// The frequency of the strongest peak between lo and hi Hz in y[from..to) s (Hann window, then a golden-section search).
+double peakHz (const std::vector<double>& y, double from, double to, double lo, double hi, double rate)
+{
+    const auto a = (size_t) (from * rate), b = std::min (y.size(), (size_t) (to * rate));
+    const auto size = [&] (double f)
+    {
+        std::complex<double> sum;
+
+        for (size_t i = a; i < b; ++i)
+            sum += y[i] * (0.5 - 0.5 * std::cos (2 * pi * (double) (i - a) / (double) (b - a))) * std::polar (1.0, -2 * pi * f * (double) i / rate);
+
+        return std::abs (sum);
+    };
+    double best = lo, bestSize = -1;
+
+    for (int k = 0; k <= 200; ++k)
+        if (const double f = lo + (hi - lo) * k / 200, m = size (f); m > bestSize)
+        {
+            bestSize = m;
+            best = f;
+        }
+
+    double l = best - (hi - lo) / 200, h = best + (hi - lo) / 200;
+    const double golden = (std::sqrt (5.0) - 1) / 2;
+
+    for (int k = 0; k < 40; ++k)
+    {
+        const double c = h - golden * (h - l), d = l + golden * (h - l);
+
+        if (size (c) > size (d))
+            h = d;
+        else
+            l = c;
+    }
+
+    return 0.5 * (l + h);
+}
+
+// The amplitude at f in y[from..to) s (Hann window).
+double levelAt (const std::vector<double>& y, double f, double from, double to, double rate)
+{
+    const auto a = (size_t) (from * rate), b = std::min (y.size(), (size_t) (to * rate));
+    std::complex<double> sum;
+    double weights = 0;
+
+    for (size_t i = a; i < b; ++i)
+    {
+        const double w = 0.5 - 0.5 * std::cos (2 * pi * (double) (i - a) / (double) (b - a));
+        sum += y[i] * w * std::polar (1.0, -2 * pi * f * (double) i / rate);
+        weights += w;
+    }
+
+    return 2 * std::abs (sum) / weights;
+}
+
+double cents (double f, double reference) { return 1200 * std::log2 (f / reference); }
+
+// A plucked note: harmonics with these amplitudes, dying away in `decay` s (to 1/e).
+std::vector<double> plucked (double f, std::initializer_list<double> harmonics, double seconds, double decay, double rate, double peak = 0.3)
+{
+    std::vector<double> x ((size_t) (seconds * rate));
+
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        const double t = (double) i / rate;
+        double v = 0;
+        int k = 1;
+
+        for (double h : harmonics)
+            v += h * std::sin (2 * pi * k++ * f * t);
+
+        x[i] = peak * std::exp (-t / decay) * v;
+    }
+
+    return x;
+}
+
+void restringChecks()
+{
+    std::cout << "Restring (a virtual string played by the DI)\n";
+    const double rate = 96000.0;
+    const auto run = [rate] (const juce::String& settings, const std::vector<double>& x)
+    {
+        return runJson ("[ { \"type\": \"restring\"" + settings + " } ]", x, rate);
+    };
+    const auto start = [] (const std::vector<double>& y)
+    {
+        size_t i = 0;
+
+        while (i < y.size() && std::abs (y[i]) < 1e-9)
+            ++i;
+
+        return i;
+    };
+
+    // Plucked at 110 Hz: the new string starts some ms after the pick and rings at the note, its harmonics in tune.
+    const std::initializer_list<double> rich { 1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12, 0.11, 0.1 };
+    const auto note = plucked (110, rich, 3.0, 1.0, rate);
+    const auto same = run ("", note);
+    const double latency = 1000.0 * (double) start (same) / rate;
+    const double f1 = peakHz (same, 0.5, 2.5, 105, 115, rate);
+    double worst = 0;
+
+    for (int n = 2; n <= 10; ++n)
+        worst = std::max (worst, std::abs (cents (peakHz (same, 0.5, 2.5, n * f1 - 5, n * f1 + 5, rate), n * f1)));
+
+    juce::String latencies;
+    double slowest = 0;
+
+    for (double f : { 82.41, 110.0, 329.63 })
+    {
+        const double ms = f == 110.0 ? latency : 1000.0 * (double) start (run ("", plucked (f, rich, 0.3, 1.0, rate))) / rate;
+        slowest = std::max (slowest, ms);
+        latencies << juce::String (ms, 1) << " ";
+    }
+
+    check (slowest < 35, "a pick attack plucks the new string after " + latencies + "ms (82, 110, 330 Hz: the tracker finds the note twice)");
+    check (std::abs (cents (f1, 110)) < 0.5 && worst < 2, "it rings at " + juce::String (f1, 3) + " Hz (110), harmonics 2-10 within "
+                                                              + juce::String (worst, 2) + " cents of n x the note");
+
+    for (auto [semis, hz] : { std::pair { 7.0, 164.8138 }, std::pair { -12.0, 55.0 }, std::pair { 24.0, 440.0 } })
+    {
+        const auto y = run (", \"transpose\": " + juce::String (semis), note);
+        const double f = peakHz (y, 0.5, 2.5, hz * 0.97, hz * 1.03, rate);
+        check (std::abs (cents (f, hz)) < 0.5, "transpose " + juce::String (semis, 0) + ": " + juce::String (f, 3) + " Hz (" + juce::String (hz, 2) + ")");
+    }
+
+    // Stiff: the 10th harmonic stretch_cents sharp, the others as a stiff string's sqrt(1 + B n^2).
+    for (double c : { 5.0, 20.0, 50.0 })
+    {
+        const auto y = run (", \"stretch_cents\": " + juce::String (c), note);
+        const double r2 = std::pow (2.0, 2 * c / 1200), B = (r2 - 1) / (100 - r2);
+        const double g1 = peakHz (y, 0.5, 2.5, 105, 115, rate);
+        double off = 0, tenth = 0;
+
+        for (int n = 2; n <= 10; ++n)
+        {
+            const double stretch = std::sqrt ((1 + B * n * n) / (1 + B)), want = n * g1 * stretch;
+            const double got = peakHz (y, 0.5, 2.5, want - 6, want + 6, rate);
+            off = std::max (off, std::abs (cents (got, want)));
+            tenth = n == 10 ? cents (got, 10 * g1) : tenth;
+        }
+
+        check (std::abs (cents (g1, 110)) < 0.5 && off < 0.3 * c + 1,
+               "stretch " + juce::String (c, 0) + " cents: note " + juce::String (g1, 3) + " Hz, 10th harmonic " + juce::String (tenth, 1)
+                   + " cents sharp, harmonics 2-10 within " + juce::String (off, 2) + " cents of a stiff string's (B = " + juce::String (B, 6) + ")");
+    }
+
+    // Sustain 20 s: the note falls 1.5 dB in 0.5 s while the guitar's note fades much faster (4.3 dB); harmonics at
+    // string_tone_hz (here the 10th, 1100 Hz) fall 10 times as fast (15 dB).
+    {
+        const auto y = run (", \"sustain_s\": 20, \"string_tone_hz\": 1100", note);
+        const double fall1 = 20 * std::log10 (levelAt (y, 110, 1.0, 1.1, rate) / levelAt (y, 110, 0.5, 0.6, rate));
+        const double fall10 = 20 * std::log10 (levelAt (y, 1100, 1.0, 1.1, rate) / levelAt (y, 1100, 0.5, 0.6, rate));
+        check (std::abs (fall1 + 1.5) < 0.2 && std::abs (fall10 + 15) < 1,
+               "sustain 20 s: the note falls " + juce::String (fall1, 2) + " dB in 0.5 s (-1.5), its 10th harmonic at string_tone_hz "
+                   + juce::String (fall10, 1) + " dB (-15)");
+    }
+
+    // The pluck bend: 1 semitone gliding back in 0.5 s: 100 e^(-t / 0.5) cents sharp t after the pluck.
+    {
+        const auto y = run (", \"bend_semitones\": 1, \"bend_s\": 0.5, \"sustain_s\": 20", note);
+        const double t0 = (double) start (y) / rate;
+        juce::String got;
+        double off = 0;
+
+        for (double t : { 0.25, 0.5, 1.0 })
+        {
+            const double c = cents (peakHz (y, t0 + t - 0.03, t0 + t + 0.03, 100, 125, rate), 110);
+            off = std::max (off, std::abs (c - 100 * std::exp (-t / 0.5)));
+            got << juce::String (c, 1) << " ";
+        }
+
+        check (off < 3, "pluck bend 1 semitone, 0.5 s: " + got + "cents sharp after 0.25 / 0.5 / 1 s (60.7 36.8 13.5)");
+    }
+
+    // It follows the note while it rings: 110 Hz going on into 123.47 Hz (B2) with no new attack (a hammer-on).
+    {
+        std::vector<double> x ((size_t) (2.0 * rate));
+        double phase = 0;
+
+        for (size_t i = 0; i < x.size(); ++i)
+        {
+            phase += 2 * pi * (i < x.size() / 2 ? 110.0 : 123.4708) / rate;
+            x[i] = 0.3 * std::sin (phase);
+        }
+
+        const auto y = run ("", x);
+        const double before = peakHz (y, 0.5, 0.95, 100, 130, rate), after = peakHz (y, 1.3, 1.95, 100, 130, rate);
+        check (std::abs (cents (before, 110)) < 1 && std::abs (cents (after, 123.4708)) < 1,
+               "a hammer-on: it follows from " + juce::String (before, 2) + " to " + juce::String (after, 2) + " Hz (110, 123.47)");
+    }
+
+    // A new pick attack, a new note: a new string at D3, and the old one is stopped by the pick.
+    {
+        auto x = plucked (110, rich, 2.0, 1.0, rate, 0.1);
+        const auto second = plucked (146.8324, rich, 1.0, 1.0, rate, 0.3);
+        std::copy (second.begin(), second.end(), x.begin() + (int) rate);
+        const auto y = run (", \"sustain_s\": 20", x);
+        const double f = peakHz (y, 1.3, 1.95, 140, 155, rate);
+        const double old = 20 * std::log10 (levelAt (y, 110, 1.4, 1.9, rate) / levelAt (y, 110, 0.4, 0.9, rate));
+        check (std::abs (cents (f, 146.8324)) < 0.5 && old < -60,
+               "a new pluck at D3: " + juce::String (f, 3) + " Hz (146.83), the old string " + juce::String (old, 0) + " dB");
+    }
+
+    // A hand on the strings stops it: the input stops dead, the string is gone 0.35 s later. A note that only
+    // fades rings on (see sustain).
+    {
+        auto x = plucked (110, rich, 1.0, 1.0, rate);
+        std::fill (x.begin() + (int) (0.5 * rate), x.end(), 0.0);
+        const auto y = run (", \"sustain_s\": 20", x);
+        double rest = 0;
+
+        for (size_t i = (size_t) (0.85 * rate); i < y.size(); ++i)
+            rest = std::max (rest, std::abs (y[i]));
+
+        const double ringing = levelAt (y, 110, 0.3, 0.45, rate);
+        check (rest < 1e-12 * ringing, "a hand on the strings stops it: " + juce::String (20 * std::log10 (std::max (rest, 1e-300) / ringing), 0)
+                                           + " dB 0.35 s after");
+    }
+
+    // The pluck carries the DI's own harmonics over (where it was picked): a DI without a 3rd harmonic gives a string
+    // without one, 5 semitones up; the 2nd stays 6 dB under the note.
+    {
+        const auto x = plucked (110, { 1, 0.5, 0, 0.25, 0.2 }, 1.5, 1.0, rate);
+        const auto y = run (", \"transpose\": 5, \"sustain_s\": 60, \"string_tone_hz\": 10000", x);
+        const double t0 = (double) start (y) / rate, f = 110 * std::pow (2.0, 5 / 12.0);
+        const auto h = [&] (int k) { return 20 * std::log10 (levelAt (y, k * f, t0 + 0.02, t0 + 0.2, rate) / levelAt (y, f, t0 + 0.02, t0 + 0.2, rate)); };
+        check (std::abs (h (2) + 6.02) < 0.5 && h (3) < -40 && std::abs (h (4) + 12.04) < 0.5,
+               "the DI's own harmonics carry over: 2nd " + juce::String (h (2), 2) + " dB (-6.02), 3rd " + juce::String (h (3), 0)
+                   + " dB (none), 4th " + juce::String (h (4), 2) + " dB (-12.04)");
+    }
+}
+
 void powerChecks()
 {
     std::cout << "Power tubes against their datasheets\n";
@@ -1201,6 +1435,7 @@ int main (int argc, char* argv[])
             biasShiftChecks();
             linearTwinChecks();
             stringsChecks();
+            restringChecks();
             roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);
