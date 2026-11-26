@@ -39,7 +39,8 @@ set(ENGINE_SOURCES
     plugin/Source/dsp/Curves.cpp
     plugin/Source/dsp/Engine.cpp
     plugin/Source/dsp/Filters.cpp
-    plugin/Source/dsp/Room.cpp)
+    plugin/Source/dsp/Room.cpp
+    plugin/Source/dsp/Strings.cpp)
 
 # Company name and manufacturer code are the same as in stream-bridge, so DAWs list both plugins
 # under "Kursat". Never change PLUGIN_CODE: DAWs use it to find the plugin in saved projects.

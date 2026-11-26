@@ -9,6 +9,12 @@
 #include <iostream>
 #include <map>
 
+#if JUCE_WINDOWS
+// Windows lets one program at a time open the clipboard (user32.dll, which JUCE links anyway).
+extern "C" __declspec (dllimport) int __stdcall OpenClipboard (void* window);
+extern "C" __declspec (dllimport) int __stdcall CloseClipboard();
+#endif
+
 namespace
 {
 int failures = 0;
@@ -604,7 +610,22 @@ int main (int argc, char* argv[])
             onClipboard = juce::SystemClipboard::getTextFromClipboard().contains ("\"tonestack\"");
         }
 
-        check (copied && onClipboard, "Ctrl+C copies it as JSON");
+        // Another program can hold the Windows clipboard open for minutes; then no program can copy, and this test can
+        // not tell anything (seen on 2026-11-26: 10 of 10 tries to open it failed). Say so instead of failing.
+        bool locked = false;
+#if JUCE_WINDOWS
+        if (! onClipboard)
+        {
+            locked = OpenClipboard (nullptr) == 0;
+
+            if (! locked)
+                CloseClipboard();
+        }
+#endif
+        if (locked)
+            std::cout << "  skip  Ctrl+C copies it as JSON: another program holds the Windows clipboard open, so nothing can copy now" << std::endl;
+        else
+            check (copied && onClipboard, "Ctrl+C copies it as JSON");
         selectAt (0);
         check (key ('v'), "Ctrl+V pastes");
         pump (50);

@@ -14,6 +14,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `gate` | Noise gate. Can listen at the clean input but mute after a later block (`apply_after`) |
 | `ir` | Cabinet sound from an impulse response `.wav` file |
 | `room` | Acoustic feedback: the amp's sound goes back into the guitar's strings, as in front of a loud amp (last block) |
+| `strings` | Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
@@ -235,6 +236,17 @@ distance, and shakes the string at the note you play and its harmonics; that goe
 800-style preset: the octave at 0.2-0.5 m, a high squeal at 0.8 m, the note itself at 1.2-2 m). A pitch tracker
 follows the note you play (one note), and the strings count as muted when your input falls fast or is very quiet:
 those two parts stand in for you, the rest is the physics of the loop.
+
+### Sympathetic strings
+
+```json
+{ "type": "strings", "notes": ["D2", "A2", "D3", "A3", "D4"], "coupling_db": -30, "sustain_s": 4, "mix_db": 0 }
+```
+
+Strings that nobody plays, tuned to `notes` (names like `F#3` or numbers in Hz; without a list: a guitar's open strings).
+Your playing shakes them; each one takes up only what matches its own note and harmonics and rings on after you stop
+(measured: a string answers 25 dB louder to its own note than to one a semitone away). Before the amp it is like an
+acoustic instrument with extra strings, after it like a reverb that only rings in tune.
 
 ### Gate
 

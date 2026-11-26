@@ -375,8 +375,11 @@ public:
         }
         else
         {
-            // Text-like settings: id, apply_after, file, a list of ids, or a setting the plugin does not know.
-            if (type == "id-list" && value.isArray())
+            // Text-like settings: id, apply_after, file, a list of ids or of other words (notes), or a setting the
+            // plugin does not know.
+            const bool isList = type == "id-list" || type == "text-list";
+
+            if (isList && value.isArray())
             {
                 juce::StringArray ids;
 
@@ -394,7 +397,8 @@ public:
                 text.setText (value.toString(), false);
             }
 
-            text.setTextToShowWhenEmpty (type == "id-list" ? "ids, separated by commas" : "not set", theme::muted);
+            text.setTextToShowWhenEmpty (type == "id-list" ? "ids, separated by commas" : type == "text-list" ? "separated by commas" : "not set",
+                                         theme::muted);
             text.setTooltip (tipText);
             text.setComponentID (key);
             text.onReturnKey = [this, type] { commitText (type); };
@@ -455,7 +459,7 @@ private:
             return;
         }
 
-        if (type == "id-list")
+        if (type == "id-list" || type == "text-list")
         {
             juce::Array<juce::var> ids;
 

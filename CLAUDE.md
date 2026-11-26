@@ -198,6 +198,15 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   into the octave at 0.2-0.5 m, squeals at a high harmonic (2770 Hz) at 0.8 m, stays on the note at 1.2-2 m. With
   `brightness` (an earlier version: a weak per-period low-pass) brit_800 bloomed into its 17th-22nd harmonic.
   `tests/presets/room_feedback.json` (clean + room) has a reference recording. No built-in preset uses it yet.
+- **Strings** (sympathetic strings, `Strings.h/.cpp`, 2026-11-26): anywhere in a chain (not in a feedback loop).
+  One resonator per note in `notes` (a `text-list`: names like F#3 or Hz; default a guitar's open strings E2-E4):
+  v = coupling x input + gain x lowpass(v one period ago); output = input + mix x all strings. The 1-pole low-pass at
+  `string_tone_hz` delays and lowers the note a little, so the read is shortened by its phase delay and the gain
+  divided by its level at the note: each string rings at its note and falls 60 dB in `sustain_s` there. Pure physics
+  (nothing tracks the player). Checked (EngineTest): note names (A4 440, C4 261.63, F#4 369.99, Bb2 116.54; H2, A,
+  E#x, "" refused); an A2 string rings at 110.005 Hz and falls 30.0 dB in 2 s (sustain 4 s), and 7.5 dB in 0.5 s
+  after a note stops (theory 7.5); at its own note it answers 24.9 dB louder than a semitone higher.
+  `tests/presets/strings_drone.json` (a D drone before the clean chain) has a reference recording.
 - **Presets**: every unknown setting name is an error (`check_keys`), so typos never pass silently.
 - **Front panel** (`panel`, top-level preset key, at most 8 knobs): `{label, block, setting, range}`. `block` = an id
   (found anywhere: main chain, feedback chains, split paths); `setting` = a NUMBER setting from `settings.json`, or a
@@ -364,6 +373,9 @@ C++ checks:
   Windows lets one program at a time open the clipboard and JUCE tries once; other programs (clipboard history)
   read every new copy at once. So copy waits 20 ms and checks (up to 5 times), and paste falls back to the
   plugin's own last copy when the clipboard has no block. (Before this, the copy test failed 2 runs out of 3.)
+  Some program on the user's PC sometimes holds the clipboard open for minutes (10 of 10 opens failed, also for
+  PowerShell); then PluginTest's copy test prints "skip" with that reason instead of failing (it checks with
+  `OpenClipboard` whether ANY program could open it). A copy bug still fails whenever the clipboard is free.
 - **Where new blocks go:** "Add block..." and paste with nothing selected go at `endInsertIndex`: before the
   cab (`amp::tailStart`), since only eq/ir can follow it; an eq or ir goes at the very end. Inside a feedback
   loop (`isLoopChain`), "Add after..." offers only eq/tonestack/gain/power and paste refuses other blocks.

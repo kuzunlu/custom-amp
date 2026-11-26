@@ -12,6 +12,7 @@
 // second, independent copy of all this math (the engine matched it to -131 dB or better); these checks replace it.
 
 #include "../Source/dsp/Engine.h"
+#include "../Source/dsp/Strings.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -529,6 +530,70 @@ void roomChecks (const juce::File& root)
                + " Hz with a 3 s string (resonance width +-" + juce::String (width (3.0), 2) + "), " + juce::String (pulled10, 2)
                + " Hz with a 10 s string (+-" + juce::String (width (10.0), 2) + ")");
     check (afterMute < -100, "a hand on the strings stops it: " + juce::String (afterMute, 0) + " dB 0.3 s after");
+}
+
+void stringsChecks()
+{
+    std::cout << "Sympathetic strings\n";
+    bool namesOk = true;
+
+    for (auto [name, hz] : { std::pair { "A4", 440.0 }, std::pair { "C4", 261.6256 }, std::pair { "F#4", 369.9944 }, std::pair { "Bb2", 116.5409 } })
+        namesOk = namesOk && std::abs (amp::SympatheticStrings::noteHz (name) - hz) < 0.001;
+
+    int refused = 0;
+
+    for (auto* bad : { "H2", "A", "E#x", "" })
+    {
+        try { amp::SympatheticStrings::noteHz (bad); }
+        catch (const amp::PresetError&) { ++refused; }
+    }
+
+    check (namesOk && refused == 4, "note names: A4 440, C4 261.63, F#4 369.99, Bb2 116.54 Hz; H2, A, E#x and an empty name are refused");
+
+    // One string at A2, struck by a click: it rings at its note and falls 60 dB in sustain_s.
+    const double rate = 96000.0;
+    const juce::String a2 = R"([ { "type": "strings", "notes": [ "A2" ], "sustain_s": 4 } ])";
+    std::vector<double> click ((size_t) (4.0 * rate), 0.0);
+    click[0] = 1.0;
+    auto rung = runJson (a2, click, rate);
+    rung[0] -= 1.0;  // the strings' own sound: the output without the click that came in
+    const auto window = [&rung, rate] (double from, double to) { return std::vector<double> (rung.begin() + (int) (from * rate), rung.begin() + (int) (to * rate)); };
+    double best = 0.0, bestHz = 0.0;
+    const auto held = window (0.5, 2.5);
+
+    for (double f = 108.0; f <= 112.0; f += 0.005)
+        if (const double a = tone (held, f, rate); a > best)
+        {
+            best = a;
+            bestHz = f;
+        }
+
+    const double fall = 20 * std::log10 (tone (window (3.0, 3.5), 110.0, rate) / tone (window (1.0, 1.5), 110.0, rate));
+    check (std::abs (bestHz - 110.0) < 0.05 && std::abs (fall + 30.0) < 1.5,
+           "an A2 string rings at " + juce::String (bestHz, 3) + " Hz (110) and falls " + juce::String (fall, 1) + " dB in 2 s (60 dB in 4 s: -30)");
+
+    // It only takes up its own note: played at A2 it answers far louder than a semitone higher (A#2).
+    const auto answer = [&a2, rate] (double f)
+    {
+        const auto x = sine (f, 0.1, 1.0, rate);
+        auto y = runJson (a2, x, rate);
+        double sum = 0.0;
+
+        for (size_t i = (size_t) (0.8 * rate); i < x.size(); ++i)
+            sum += (y[i] - x[i]) * (y[i] - x[i]);
+
+        return 10 * std::log10 (sum);
+    };
+    const double fits = answer (110.0), misses = answer (116.5409);
+    check (fits - misses > 20, "played at its note it answers " + juce::String (fits - misses, 1) + " dB louder than a semitone higher");
+
+    // After the note stops it rings on: -7.5 dB after 0.5 s (60 dB in 4 s).
+    auto note = sine (110.0, 0.1, 2.0, rate);
+    std::fill (note.begin() + (int) (1.0 * rate), note.end(), 0.0);
+    const auto out = runJson (a2, note, rate);
+    const auto level = [&out, rate] (double t) { return tone (std::vector<double> (out.begin() + (int) (t * rate), out.begin() + (int) ((t + 0.1) * rate)), 110.0, rate); };
+    const double after = 20 * std::log10 (level (1.5) / level (1.0));
+    check (std::abs (after + 7.5) < 1.0, "after the note stops it rings on: " + juce::String (after, 1) + " dB in 0.5 s (theory -7.5)");
 }
 
 void powerChecks()
@@ -1080,6 +1145,7 @@ int main (int argc, char* argv[])
             preampSupplyChecks();
             transformerChecks();
             biasShiftChecks();
+            stringsChecks();
             roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);

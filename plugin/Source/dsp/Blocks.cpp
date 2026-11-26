@@ -1,4 +1,5 @@
 #include "Blocks.h"
+#include "Strings.h"
 
 #include "Circuit.h"
 
@@ -1136,11 +1137,12 @@ Chain buildChain (const juce::Array<juce::var>& cfgs, const BuildContext& ctx)
         else if (kind == "split")     block = std::make_unique<Split> (cfg, ctx);
         else if (kind == "gate")      block = std::make_unique<Gate> (cfg, ctx);
         else if (kind == "ir")        block = std::make_unique<IrBlock> (cfg, ctx);
+        else if (kind == "strings")   block = std::make_unique<SympatheticStrings> (cfg, ctx);
         else if (kind == "room")
             throw PresetError ("room: it must be the last block of the main chain (after the cab)");
         else
             throw PresetError ("block " + juce::String (i) + ": unknown type '" + kind
-                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir, room");
+                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir, room, strings");
 
         blocks.push_back (std::move (block));
     }

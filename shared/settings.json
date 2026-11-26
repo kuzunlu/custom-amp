@@ -73,7 +73,8 @@
           "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
           "gate": "Noise gate: turns the sound down when you stop playing, to remove hiss and hum.",
           "ir": "Speaker cabinet sound from an impulse response file.",
-    "room": "Acoustic feedback: the amp's sound goes back into the guitar, as when you stand in front of a loud amp."
+    "room": "Acoustic feedback: the amp's sound goes back into the guitar, as when you stand in front of a loud amp.",
+    "strings": "Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's."
         },
         "short": "What kind of block this is.",
         "tooltip": "Each block does one job. Combine them in any order to build any amp."
@@ -699,6 +700,39 @@
           "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
           "short": "Below this input level (in volts: 0 dBV = 1 V) the strings count as muted.",
           "tooltip": "The plugin can not see your hand. So the strings count as muted when the input falls to a tenth within about 10 ms (a hand on the strings), or stays below this level. A guitar played hard gives about 0.5 V (-6 dBV)."
+        }
+      }
+    },
+
+    "strings": {
+      "label": "Sympathetic strings",
+      "short": "Extra strings tuned to fixed notes ring along with your playing: a halo in the key you play in, like a sitar's.",
+      "tooltip": "A sitar, a sarangi or a piano with its sustain pedal down has strings that nobody plays. Your playing shakes them through the bridge, and each one takes up only the energy that matches its own note and its harmonics. So playing in their key makes a ringing cloud that goes on after you stop, while notes that do not fit stay dry. Without a list of notes it uses a guitar's own open strings (E A D G B E), which ring along on a real guitar too. Before the amp it is like an acoustic instrument; after the amp, like a reverb that only rings in tune. All of it is the physics of the strings: nothing listens to what you play.",
+      "settings": {
+        "notes": {
+          "label": "Tuning", "type": "text-list", "default": ["E2", "A2", "D3", "G3", "B3", "E4"],
+          "short": "The notes the strings are tuned to: names like D3, F#4, Bb2, or numbers in Hz.",
+          "tooltip": "One string per note. A4 = 440 Hz, C4 = middle C, E2 = a guitar's low E. A drone in your key works well (D2 A2 D3 A3 D4 for songs in D), or a whole scale for a sitar-like shimmer."
+        },
+        "coupling_db": {
+          "label": "Coupling", "type": "number", "unit": "dB", "min": -80, "max": 0, "default": -30,
+          "short": "How strongly your playing shakes the strings.",
+          "tooltip": "Through the bridge only a little of your playing reaches each string, but it adds up period after period when the note fits. Higher = louder, faster halo."
+        },
+        "sustain_s": {
+          "label": "String sustain", "type": "number", "unit": "s", "min": 0.2, "max": 30, "default": 4, "scale": "log",
+          "short": "How long the strings ring at their notes (time to fall 60 dB).",
+          "tooltip": "Long: a big halo that hangs on after you stop, and the strings take up only notes very close to their own. Short: a quick shimmer, less picky about tuning."
+        },
+        "string_tone_hz": {
+          "label": "String tone", "type": "number", "unit": "Hz", "min": 200, "max": 10000, "default": 2000, "scale": "log",
+          "short": "Above this the strings' harmonics die fast.",
+          "tooltip": "Real strings lose their highs faster than their note. Lower = a darker, softer halo. (The strings stay in tune.)"
+        },
+        "mix_db": {
+          "label": "Mix", "type": "number", "unit": "dB", "min": -60, "max": 12, "default": 0,
+          "short": "How loud the strings are next to your own sound.",
+          "tooltip": "The strings' sound is added to the sound that comes in, which passes unchanged."
         }
       }
     }
