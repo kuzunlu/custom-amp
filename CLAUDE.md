@@ -397,6 +397,11 @@ C++ checks:
   0.8 dB off (220 Hz falls between bins, 440 Hz on one), which showed 2.84% instead of the true 2.64%.
   Running it costs nothing while it is hidden (it runs when shown); the probes cost the audio path one pointer check
   per block and one store per loop try.
+  **Curve view** (2026-11-26): each block's output against its INPUT over the time span (`Block::probeIn`, recorded
+  before `process` in `runBlocks`; inside a loop the input of the answer, `Feedback::triedIn`). Not for the input,
+  sag, gate, supply and room strips. Checked (PluginTest): a hard clip x4 without coupling = clip (4 x input) to 6e-8
+  over 65664 pairs; pi inside brit_800's loop has its 65664 inputs. What it shows on brit_800 at 0.5 V: v1a an ellipse
+  (its filters' phase), v1b a one-sided clipping curve, v2a two paths (bias shift memory), master a straight line.
 
 ## Releases (option B chosen: the JUCE plugin)
 

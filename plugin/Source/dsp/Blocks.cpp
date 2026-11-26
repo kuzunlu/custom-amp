@@ -32,6 +32,10 @@ void runBlocks (const Chain& blocks, double* x, int n) noexcept
 {
     for (auto& block : blocks)
     {
+        if (block->probeIn != nullptr)
+            for (int i = 0; i < n; ++i)
+                block->probeIn->push_back ((float) x[i]);
+
         block->process (x, n);
 
         if (block->afterGain != nullptr)
@@ -811,6 +815,7 @@ Feedback::Feedback (const Cfg& cfg, const BuildContext& ctx) : Block (cfg, { "am
     }
 
     tried.assign (blocks.size(), 0.0);
+    triedIn.assign (blocks.size(), 0.0);
 
     if (amount < 0)
     {
@@ -853,7 +858,10 @@ double Feedback::loopPeek (double xv, double y) const noexcept
     double v = xv - amount * path.peek (y);
 
     for (size_t k = 0; k < blocks.size(); ++k)
+    {
+        triedIn[k] = v;
         tried[k] = v = blocks[k]->peek (v);
+    }
 
     return v;
 }
@@ -882,8 +890,13 @@ void Feedback::process (double* x, int n) noexcept
         loopCommitTried();
 
         for (size_t k = 0; k < blocks.size(); ++k)
+        {
             if (auto* p = blocks[k]->probe)
                 p->push_back ((float) tried[k]);
+
+            if (auto* p = blocks[k]->probeIn)
+                p->push_back ((float) triedIn[k]);
+        }
 
         y3 = y2;
         y2 = y1;

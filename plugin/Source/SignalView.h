@@ -25,6 +25,7 @@ public:
     enum class Signal { sine, pluck, chord, loudSoft, playing };
     void setSignal (Signal s, double freq, double peakV);  // also used by the test program
     void setFrequencyView (bool frequency);
+    void setCurveView (bool curve);  // each block's output against its input
     void setTimeSpanMs (int ms);
 
     // One recorded signal: the input, or the output of one block.
@@ -37,6 +38,7 @@ public:
         double unitVolts = 0.0;  // a power supply strip: the volts that 1 stands for (plate_v)
         double rate = 48000.0;
         std::vector<float> samples;
+        std::vector<float> inputs;  // the block's input at the same moments (empty for the input, sag, gate, supply, room)
         float peak = 0.0f;
         std::vector<float> spectrumDb;  // dB of a sine's peak volts, per FFT bin
         double binHz = 1.0;
@@ -97,13 +99,13 @@ private:
     Selection selection;
 
     juce::ComboBox signalBox, spanBox;
-    juce::TextButton timeButton { "Time" }, frequencyButton { "Frequency" };
+    juce::TextButton timeButton { "Time" }, frequencyButton { "Frequency" }, curveButton { "Curve" };
     juce::Slider freqSlider, levelSlider;
     juce::Label freqLabel, levelLabel, infoLabel;
     juce::Viewport viewport;
     std::unique_ptr<Strips> strips;
 
-    bool frequencyView = false, dirty = false;
+    bool frequencyView = false, curveView = false, dirty = false;
     int generation = 0, shownGeneration = 0;
     std::vector<Trace> traces;
     juce::String problem;

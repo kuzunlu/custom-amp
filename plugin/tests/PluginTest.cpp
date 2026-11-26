@@ -222,19 +222,24 @@ int snapshots (const juce::File& folder)
     p->loadBuiltInPreset ("brit_800.json");
     waitForBuild (*p);
 
-    for (auto [signal, freq, peak, frequencyView, name] :
-         { std::tuple { SignalView::Signal::sine, 220.0, 0.1, false, "signals_sine_soft_time.png" },
-           std::tuple { SignalView::Signal::sine, 220.0, 0.5, false, "signals_sine_hard_time.png" },
-           std::tuple { SignalView::Signal::sine, 220.0, 0.1, true, "signals_sine_soft_spectrum.png" },
-           std::tuple { SignalView::Signal::sine, 220.0, 0.5, true, "signals_sine_hard_spectrum.png" },
-           std::tuple { SignalView::Signal::loudSoft, 110.0, 0.5, false, "signals_loud_soft_time.png" } })
+    for (auto [signal, freq, peak, mode, name] :  // mode: 0 time, 1 frequency, 2 curve
+         { std::tuple { SignalView::Signal::sine, 220.0, 0.1, 0, "signals_sine_soft_time.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.5, 0, "signals_sine_hard_time.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.1, 1, "signals_sine_soft_spectrum.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.5, 1, "signals_sine_hard_spectrum.png" },
+           std::tuple { SignalView::Signal::loudSoft, 110.0, 0.5, 0, "signals_loud_soft_time.png" },
+           std::tuple { SignalView::Signal::sine, 220.0, 0.5, 2, "signals_sine_hard_curve.png" } })
     {
         std::unique_ptr<juce::AudioProcessorEditor> editor (p->createEditor());
         auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
         editor->setSize (1120, 720);
         ed->showSignals (true);
         auto& view = ed->getSignalView();
-        view.setFrequencyView (frequencyView);
+        view.setFrequencyView (mode == 1);
+
+        if (mode == 2)
+            view.setCurveView (true);
+
         view.setSignal (signal, freq, peak);
 
         for (int i = 0; i < 300 && view.isWaiting(); ++i)
@@ -898,6 +903,8 @@ int main (int argc, char* argv[])
             check (traces[11].rate > 300000.0 && inner > 0.17 && traces[11].peak > 1.0f,
                    "the power block inside the loop is recorded at the core rate: " + juce::String (inner, 3) + " s, peak "
                        + juce::String (traces[11].peak, 1) + " V");
+            check (traces[10].inputs.size() == traces[10].samples.size() && traces[10].inputs.size() > 1000,
+                   "a block inside the loop has its inputs too (curve view): " + juce::String ((int) traces[10].inputs.size()) + " pairs");
 
             view.onSelect (traces[3].target);
             pump (50);
@@ -931,6 +938,32 @@ int main (int argc, char* argv[])
         waitForSignals();
         check (view.getTraces().size() == 2 && view.getTraces()[0].peak > 0.45f && ! view.getTraces()[1].spectrumDb.empty(),
                "a plucked note, spectrum view: peak " + juce::String (view.getTraces().empty() ? 0.0f : view.getTraces()[0].peak, 3) + " V");
+
+        // Curve view: each block's input is recorded at the same moments as its output. A hard clip with drive x4
+        // (no coupling capacitor) must be exactly clip (4 x input) at every sample.
+        triode.replaceWithText (R"({ "name": "Clip", "chain": [ { "type": "gain", "curve": "hard", "drive_db": 12.0412, "coupling_nf": 0 } ] })");
+        s->loadPresetFile (triode);
+        waitForBuild (*s);
+        view.setCurveView (true);
+        view.setSignal (SignalView::Signal::sine, 220.0, 0.5);
+        waitForSignals();
+
+        if (view.getTraces().size() == 2)
+        {
+            const auto& t = view.getTraces()[1];
+            double worst = 0.0;
+
+            for (size_t i = 0; i < std::min (t.samples.size(), t.inputs.size()); ++i)
+                worst = std::max (worst, std::abs ((double) t.samples[i] - juce::jlimit (-1.0, 1.0, 4.0 * (double) t.inputs[i])));
+
+            check (! t.inputs.empty() && t.inputs.size() == t.samples.size() && worst < 1e-5,
+                   "the curve view pairs input and output: a hard clip x4 is clip (4 x input) to " + juce::String (worst, 8)
+                       + " (" + juce::String ((int) t.inputs.size()) + " pairs)");
+        }
+        else
+        {
+            check (false, "curve view: 2 strips, got " + juce::String ((int) view.getTraces().size()) + " " + view.getProblem());
+        }
 
         // Rectifier sag (supply_ohms): a 40 V loud part, then 10 V, through one EL34 pair.
         view.setFrequencyView (false);

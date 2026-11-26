@@ -34,6 +34,7 @@ public:
 
     // Set by the plugin's signal view (never on the audio thread): every output sample is added to it.
     std::vector<float>* probe = nullptr;
+    std::vector<float>* probeIn = nullptr;  // the same for its input (the signal view's curve: output against input)
 
     // What the signal view records: the output, or for sag and gate their headroom or gain.
     virtual const double* probeValues (const double* x) const noexcept { return x; }
@@ -239,7 +240,7 @@ private:
     void loopCommitTried() noexcept;
 
     std::vector<std::unique_ptr<LoopBlock>> blocks;
-    mutable std::vector<double> tried;  // each inner block's output in the last loopPeek() (= the answer), for probes
+    mutable std::vector<double> tried, triedIn;  // each inner block's output and input in the last loopPeek() (= the answer), for probes
     FilterList path;
     double amount = 0.3, level = 1, y1 = 0, y2 = 0, y3 = 0;
     double slope = -1.0;  // the loop equation's slope at the last answer (-1 = no feedback): the next first guess

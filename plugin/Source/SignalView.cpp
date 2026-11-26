@@ -106,13 +106,62 @@ public:
         g.setColour (theme::background);
         g.fillRect (plot);
 
-        if (view.frequencyView)
+        if (view.curveView)
+            paintCurve (g, plot);
+        else if (view.frequencyView)
             paintSpectrum (g, plot);
         else
             paintWave (g, plot);
     }
 
 private:
+    // Output against input over the time span: a clipping stage draws its curve, a filter an ellipse (its phase),
+    // bias shift and sag make the line wander from one cycle to the next.
+    void paintCurve (juce::Graphics& g, juce::Rectangle<float> plot)
+    {
+        const int count = juce::jmin ((int) trace.samples.size(), (int) trace.inputs.size(),
+                                      juce::roundToInt (view.spanBox.getSelectedId() * 0.001 * trace.rate));
+
+        if (count < 2)
+        {
+            g.setColour (theme::muted);
+            g.setFont (juce::FontOptions (11.0f));
+            g.drawText (trace.target.isValid() ? "(not a signal: see the time view)" : "(the input itself)", plot, juce::Justification::centred);
+            return;
+        }
+
+        float inTop = 1e-9f, outTop = 1e-9f;
+
+        for (int i = 0; i < count; ++i)
+        {
+            inTop = juce::jmax (inTop, std::abs (trace.inputs[(size_t) i]));
+            outTop = juce::jmax (outTop, std::abs (trace.samples[(size_t) i]));
+        }
+
+        inTop *= 1.1f;
+        outTop *= 1.1f;
+        auto box = plot.withWidth (juce::jmin (plot.getWidth(), plot.getHeight() * 3)).withCentre (plot.getCentre());
+        const auto xOf = [&] (float v) { return box.getCentreX() + v / inTop * box.getWidth() * 0.5f; };
+        const auto yOf = [&] (float v) { return box.getCentreY() - v / outTop * box.getHeight() * 0.5f; };
+
+        g.setColour (theme::chip);
+        g.drawHorizontalLine ((int) box.getCentreY(), box.getX(), box.getRight());
+        g.drawVerticalLine ((int) box.getCentreX(), box.getY(), box.getBottom());
+
+        juce::Path path;
+        const int step = juce::jmax (1, count / 4000);
+
+        for (int i = 0; i < count; i += step)
+        {
+            const float x = xOf (trace.inputs[(size_t) i]), y = yOf (trace.samples[(size_t) i]);
+            i == 0 ? path.startNewSubPath (x, y) : path.lineTo (x, y);
+        }
+
+        g.setColour (juce::Colours::white);
+        g.strokePath (path, juce::PathStrokeType (1.0f));
+        drawScale (g, plot, "in +/- " + formatVolts (inTop) + "  ->  out +/- " + formatVolts (outTop));
+    }
+
     void paintWave (juce::Graphics& g, juce::Rectangle<float> plot)
     {
         const int count = juce::jmin ((int) trace.samples.size(), juce::roundToInt (view.spanBox.getSelectedId() * 0.001 * trace.rate));
@@ -289,7 +338,7 @@ SignalView::SignalView (CustomAmpProcessor& p) : processor (p)
     spanBox.onChange = [this] { requestRun(); };
     addAndMakeVisible (spanBox);
 
-    for (auto* b : { &timeButton, &frequencyButton })
+    for (auto* b : { &timeButton, &frequencyButton, &curveButton })
     {
         b->setClickingTogglesState (true);
         b->setRadioGroupId (1);
@@ -301,8 +350,12 @@ SignalView::SignalView (CustomAmpProcessor& p) : processor (p)
     timeButton.setTooltip ("Waveforms: the signal over time after each block.");
     frequencyButton.setTooltip ("Spectra: which frequencies come out of each block, and how loud. For a sine, the summary "
                                 "lists the harmonics each block adds (H2 = twice the frequency, and so on).");
+    curveButton.setTooltip ("Curves: each block's output against its input over the time span. A clipping stage draws its "
+                            "clipping curve, a filter an ellipse (it shifts the timing), and bias shift or sag make the line "
+                            "wander from one cycle to the next.");
     timeButton.onClick = [this] { setFrequencyView (false); };
     frequencyButton.onClick = [this] { setFrequencyView (true); };
+    curveButton.onClick = [this] { setCurveView (true); };
 
     freqSlider.setRange (20.0, 5000.0, 1.0);
     freqSlider.setSkewFactorFromMidPoint (300.0);
@@ -377,8 +430,20 @@ void SignalView::setSignal (Signal s, double freq, double peakV)
 void SignalView::setFrequencyView (bool frequency)
 {
     frequencyView = frequency;
+    curveView = false;
     (frequency ? frequencyButton : timeButton).setToggleState (true, juce::dontSendNotification);
     spanBox.setEnabled (! frequency);
+
+    for (auto& strip : strips->strips)
+        strip->repaint();
+}
+
+void SignalView::setCurveView (bool curve)
+{
+    curveView = curve;
+    frequencyView = false;
+    (curve ? curveButton : timeButton).setToggleState (true, juce::dontSendNotification);
+    spanBox.setEnabled (true);  // the curve is drawn over the time span
 
     for (auto& strip : strips->strips)
         strip->repaint();
@@ -571,6 +636,12 @@ SignalView::Result SignalView::compute (const Request& r)
             t.samples.reserve (reserve);
             blocks[k]->probe = &t.samples;
 
+            if (! t.isUnit && dynamic_cast<amp::Room*> (blocks[k]) == nullptr)
+            {
+                t.inputs.reserve (reserve);
+                blocks[k]->probeIn = &t.inputs;  // for the curve view (a headroom, gain or string motion has no input to plot it against)
+            }
+
             if (ti + 1 < traces.size() && traces[ti + 1].unitVolts > 0)
                 if (auto* power = dynamic_cast<amp::Power*> (blocks[k]))
                 {
@@ -588,7 +659,7 @@ SignalView::Result SignalView::compute (const Request& r)
 
         for (auto* b : blocks)
         {
-            b->probe = nullptr;
+            b->probe = b->probeIn = nullptr;
 
             if (auto* power = dynamic_cast<amp::Power*> (b))
                 power->supplyProbe = nullptr;
@@ -761,6 +832,7 @@ void SignalView::resized()
     row.removeFromLeft (6);
     timeButton.setBounds (row.removeFromLeft (60));
     frequencyButton.setBounds (row.removeFromLeft (84));
+    curveButton.setBounds (row.removeFromLeft (60));
     row.removeFromLeft (6);
     spanBox.setBounds (row.removeFromLeft (80));
 
