@@ -779,7 +779,7 @@
         "string_tone_hz": {
           "label": "String tone", "type": "number", "unit": "Hz", "min": 200, "max": 10000, "default": 3000, "scale": "log",
           "short": "Harmonics at this frequency fade 10 times as fast as the note.",
-          "tooltip": "Real strings lose their highs faster than their note, in seconds, the same on every fret: the loss grows with the square of the frequency (twice the frequency, about 4 times as fast). Lower = a darker string whose pluck softens quickly. (The harmonics stay in tune.)"
+          "tooltip": "Real strings lose their highs faster than their note, in seconds, the same on every fret: the loss grows with the square of the frequency (twice the frequency, about 4 times as fast). Lower = a darker string whose pluck softens quickly. (The harmonics stay in tune. Below about 3 x the note this would need the string to GAIN energy at 0 Hz: then sustain_s wins and the highs fade less than asked.)"
         },
         "bend_semitones": {
           "label": "Pluck bend", "type": "number", "unit": "semitones", "min": -12, "max": 12, "default": 0,
@@ -800,6 +800,73 @@
           "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
           "short": "Below this input level (0 dBV = 1 V) nothing counts as a note or a pick attack.",
           "tooltip": "The plugin can not see your hand. A pick attack is the level jumping to twice where it was (and above this level); a hand on the strings is the input falling to a tenth within about 10 ms: the string then dies in 50 ms. A note fading away slowly does not stop it."
+        }
+      }
+    },
+    "bow": {
+      "label": "Bow",
+      "short": "Your playing bows a virtual string: endless, swelling notes, with a real bow's scratch and squeak.",
+      "tooltip": "Your level is the bow's speed and force (both together), your note sets the string's length, a hand on the strings lifts the bow. The friction is solved exactly every sample: the string sticks to the bow, then slips back, once a period when it works (Helmholtz motion, what a violin does). Too little force: it slips several times a period (a whistly 'surface sound'). Too much: it can not let go in time and grinds (raucous). Where you put the bow changes both limits and the tone. The status line shows the most force for clean motion (Schelleng). Not physics, standing in for you: a pitch tracker finds your note (about 15-30 ms after the pick). Put it first, before the amp.",
+      "settings": {
+        "transpose": {
+          "label": "Transpose", "type": "number", "unit": "semitones", "min": -24, "max": 24, "default": 0,
+          "short": "How far the bowed string is tuned from the note you play (12 = an octave).",
+          "tooltip": "-12 = a cello-like low string, +12 a violin-like high one."
+        },
+        "bow_position": {
+          "label": "Bow position", "type": "number", "min": 0.02, "max": 0.5, "default": 0.12,
+          "short": "Where the bow sits: its distance from the bridge, as a share of the string.",
+          "tooltip": "Near the bridge (0.05, 'sul ponticello'): bright and glassy, needs more force but allows more. Far from it (0.3, 'sul tasto'): soft and flute-like, needs little force but chokes easily. Each period the string sticks for 1 - this share of the time."
+        },
+        "bow_force_n": {
+          "label": "Bow force", "type": "number", "unit": "N", "min": 0, "max": 5, "default": 1.5,
+          "short": "How hard the bow presses on the string at full playing level (0.5 V).",
+          "tooltip": "It scales with your level, like the speed, so softer playing stays in the same kind of motion. Clean motion needs a force between a least and a most (Schelleng); the most is 2 Z v / (bow position (static - dynamic friction)): 2.0 N with the defaults. Measured with the defaults: clean at 1.0 and 1.4-1.9 N (between, the start decides, as with a real bow). Near the most the pitch goes a little flat."
+        },
+        "bow_speed": {
+          "label": "Bow speed", "type": "number", "unit": "m/s", "min": 0.01, "max": 2, "default": 0.2, "scale": "log",
+          "short": "How fast the bow moves at full playing level (0.5 V).",
+          "tooltip": "The string's swing grows with the bow speed. Faster also raises the most force for clean motion. A violinist uses about 0.05-1 m/s. The output is scaled so full playing stays about 0.5 V."
+        },
+        "friction_static": {
+          "label": "Static friction", "type": "number", "min": 0, "max": 2, "default": 0.8,
+          "short": "How strongly the rosined bow holds the string while they move together.",
+          "tooltip": "The force it can hold = this x the bow force. Rosin: about 0.8."
+        },
+        "friction_dynamic": {
+          "label": "Sliding friction", "type": "number", "min": 0, "max": 2, "default": 0.3,
+          "short": "The friction while the string slides along the bow (fast sliding).",
+          "tooltip": "Friction falls from the static value towards this one as the sliding gets faster (half way at 0.1 m/s). The gap between the two is what lets the string go and catch again: equal values = it never sticks."
+        },
+        "swell_s": {
+          "label": "Bow attack", "type": "number", "unit": "s", "min": 0.001, "max": 2, "default": 0.05, "scale": "log",
+          "short": "How fast the bow gets up to your playing level.",
+          "tooltip": "Short: the note speaks at once, with a scratch. Long: it swells in like a slow bow stroke. The start decides which kind of motion the string falls into (Guettler)."
+        },
+        "release_s": {
+          "label": "Bow hold", "type": "number", "unit": "s", "min": 0.05, "max": 30, "default": 2, "scale": "log",
+          "short": "How slowly the bow slows down after your note fades.",
+          "tooltip": "The bow follows your level's peaks and falls back no faster than this (63% in this time). Long: one pluck becomes a long bowed note. A hand on the strings lifts the bow at once."
+        },
+        "bridge_loss_db": {
+          "label": "Bridge loss", "type": "number", "unit": "dB", "min": 0.05, "max": 6, "default": 0.55, "scale": "log",
+          "short": "How much of the wave goes into the body at each trip to the bridge.",
+          "tooltip": "The same share on every trip whatever the note, as on a real bowed instrument: so low notes ring longer. 0.55 dB = 1 s to fall 60 dB at 110 Hz. This loss per trip decides how cleanly the bow works: Raman's extra waves die by it."
+        },
+        "string_tone_hz": {
+          "label": "String tone", "type": "number", "unit": "Hz", "min": 200, "max": 10000, "default": 2000, "scale": "log",
+          "short": "Harmonics at this frequency lose 10 times as much at the bridge as the note.",
+          "tooltip": "Lower = a darker string and a rounder corner in its motion. (The harmonics stay in tune.)"
+        },
+        "mix": {
+          "label": "Mix", "type": "number", "min": 0, "max": 1, "default": 1,
+          "short": "1 = only the bowed string, 0 = only your guitar.",
+          "tooltip": "Output = (1 - mix) x your guitar + mix x the bowed string."
+        },
+        "mute_db": {
+          "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
+          "short": "Below this input level (0 dBV = 1 V) nothing counts as a note or a pick attack.",
+          "tooltip": "The plugin can not see your hand. A hand on the strings is the input falling to a tenth within about 10 ms: then the bow lifts and the string dies in 50 ms."
         }
       }
     }

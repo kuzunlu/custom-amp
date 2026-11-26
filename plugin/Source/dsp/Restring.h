@@ -23,6 +23,12 @@ namespace amp
 //
 // NOT physics, standing in for the player: the Player's pitch tracker, attack and hand-stop detection. A new string is
 // plucked when the tracker finds the same note twice in a row after an attack (10 ms apart): that is the latency.
+// The 1-pole low-pass (1 - p) / (1 - p z^-1) in a string's loop, set per note: harmonics at toneHz fall 10 times as
+// fast as the note (per second), the note itself left to the loop gain. Its phase delay (samples) and level at w.
+double tonePole (double period, double rate, double sustainS, double toneHz);
+double lowpassDelay (double w, double p);
+double lowpassLevel (double w, double p);
+
 class Restring final : public Block
 {
 public:

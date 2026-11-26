@@ -16,6 +16,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `room` | Acoustic feedback: the amp's sound goes back into the guitar's strings, as in front of a loud amp (last block) |
 | `strings` | Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's |
 | `restring` | Play your guitar, hear a virtual string with physics you choose (lower, stiffer, longer, bending by itself) |
+| `bow` | Your playing bows a virtual string: endless, swelling notes, with a real bow's stick and slip |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
@@ -268,6 +269,21 @@ stiff string (`stretch_cents` = how sharp the 10th is: a guitar 1-9, a piano 17-
 glides back from `bend_semitones` after each pluck. It follows your note while it rings (slides, hammer-ons), and a
 hand on the strings stops it in 50 ms. A pitch tracker stands in for you: the new string starts 15-30 ms after the
 pick (30 ms on a low E, like a guitar synth), and it follows one note.
+
+### Bow
+
+```json
+{ "type": "bow", "transpose": -12, "bow_position": 0.12, "bow_force_n": 1.5, "bow_speed": 0.2,
+  "swell_s": 0.05, "release_s": 2, "bridge_loss_db": 0.55, "mix": 1 }
+```
+
+Put it first. Your playing level is the bow's speed and force (both together, so softer playing stays in the same kind
+of motion), your note sets the string's length, a hand on the strings lifts the bow. The friction at the bow is solved
+exactly every sample: the string sticks to the bow, then slips back. With the right force that happens once a period
+(Helmholtz motion, what a violin does: measured, the string is stuck 0.877 of each period with the bow at 0.12 of the
+string; theory 0.88). Too little force: it slips several times a period (the "surface sound": the demo's strongest
+frequency is the octave). Too much: it grinds and goes flat (Schelleng's limit, 2.0 N with the defaults; measured: clean
+up to 1.9 N). The loss is per trip to the bridge, like a real bowed instrument's body, so low notes ring longer.
 
 ### Gate
 

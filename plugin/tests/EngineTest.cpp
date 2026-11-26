@@ -12,6 +12,7 @@
 // second, independent copy of all this math (the engine matched it to -131 dB or better); these checks replace it.
 
 #include "../Source/dsp/Engine.h"
+#include "../Source/dsp/Bow.h"
 #include "../Source/dsp/Strings.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -882,6 +883,172 @@ void restringChecks()
                "the DI's own harmonics carry over: 2nd " + juce::String (h (2), 2) + " dB (-6.02), 3rd " + juce::String (h (3), 0)
                    + " dB (none), 4th " + juce::String (h (4), 2) + " dB (-12.04)");
     }
+
+    // string_tone_hz under about 3 x the note asks for more than a 1-pole can do without gaining energy at 0 Hz (it
+    // did: the loop grew without end). Then sustain_s wins: a 60 s string falls 1.0 dB per second and nothing grows.
+    {
+        const auto y = run (", \"sustain_s\": 60, \"string_tone_hz\": 200", note);
+        const double fall = 20 * std::log10 (levelAt (y, 110, 2.0, 2.5, rate) / levelAt (y, 110, 1.0, 1.5, rate));
+        double early = 0, late = 0;
+
+        for (size_t i = (size_t) (0.5 * rate); i < y.size(); ++i)
+            (i < (size_t) (1.0 * rate) ? early : late) = std::max (i < (size_t) (1.0 * rate) ? early : late, std::abs (y[i]));
+
+        check (std::abs (fall + 1.0) < 0.1 && late < early, "string_tone_hz 200 at a 110 Hz note: the note falls " + juce::String (fall, 2)
+                                                                + " dB per s (sustain 60 s: -1.0), the last 2 s peak " + juce::String (late / early, 3) + " x the 0.5-1 s peak");
+    }
+}
+
+// Runs one bow block on x and gives its output; `counts` gets its stick/slip counters over the second half.
+std::vector<double> bowRun (const juce::String& settings, std::vector<double> x, double rate, std::array<long long, 3>* counts = nullptr)
+{
+    amp::BuildContext ctx;
+    ctx.rate = ctx.checkRate = rate;
+    amp::Bow b (amp::Cfg (juce::JSON::parse ("{ \"type\": \"bow\"" + settings + " }"), "bow"), ctx);
+    b.prepare (4096);
+    b.reset();
+    const size_t half = x.size() / 2;
+    std::array<long long, 3> at {};
+
+    for (size_t i = 0; i < x.size(); i += 4096)
+    {
+        const size_t n = std::min ((size_t) 4096, x.size() - i);
+
+        if (i <= half && half < i + n)
+        {
+            b.process (x.data() + i, (int) (half - i));
+            at = { b.samples, b.stuckSamples, b.slips };
+            b.process (x.data() + half, (int) (i + n - half));
+            continue;
+        }
+
+        b.process (x.data() + i, (int) n);
+    }
+
+    if (counts != nullptr)
+        *counts = { b.samples - at[0], b.stuckSamples - at[1], b.slips - at[2] };
+
+    return x;
+}
+
+void bowChecks()
+{
+    std::cout << "Bow (a virtual string bowed by the DI)" << std::endl;
+    const double rate = 96000.0;
+    const auto steady = [rate] (double f, double volts, double seconds)
+    {
+        std::vector<double> x ((size_t) (seconds * rate));
+
+        for (size_t i = 0; i < x.size(); ++i)
+            x[i] = volts * std::sin (2 * pi * f * (double) i / rate);
+
+        return x;
+    };
+    const auto note = steady (110, 0.5, 2.0);
+    const auto motion = [&] (const juce::String& settings, double& stuck)
+    {
+        std::array<long long, 3> c {};
+        bowRun (settings, note, rate, &c);
+        stuck = (double) c[1] / (double) c[0];
+        return (double) c[2] / ((double) c[0] / rate * 110);  // slips per period
+    };
+
+    // Schelleng (1973): one clean slip per period (Helmholtz motion) only between a least and a most bow force. The
+    // most: 2 Z v / (bow position (mu_s - mu_d)) = 2 x 0.3 x 0.2 / (0.5 x bow position): 2.0 N at 0.12, 1.2 N at 0.2;
+    // the least grows with the losses. In the middle of that window it is stuck for 1 - bow position of each period
+    // (the corner needs bow position x the period to go from the bow to the bridge and back).
+    double highest = 0;
+
+    for (double beta : { 0.12, 0.2 })
+    {
+        const double most = 2 * 0.3 * 0.2 / (beta * 0.5);
+        juce::String window;
+        double lowest = 0, top = 0;
+
+        for (double force = 0.1; force < 2 * most; force += 0.1)
+        {
+            double stuck = 0;
+
+            if (std::abs (motion (", \"bow_position\": " + juce::String (beta) + ", \"bow_force_n\": " + juce::String (force, 1), stuck) - 1) < 0.02)
+            {
+                lowest = lowest == 0 ? force : lowest;
+                top = force;
+                window << juce::String (force, 1) << " ";
+            }
+        }
+
+        double stuck = 0;
+        const double middle = std::round ((lowest + top) / 2 * 10) / 10;
+        const double slips = motion (", \"bow_position\": " + juce::String (beta) + ", \"bow_force_n\": " + juce::String (middle, 1), stuck);
+        check (top < 1.2 * most && top > 0.7 * most && std::abs (slips - 1) < 0.02 && std::abs (stuck - (1 - beta)) < 0.01,
+               "bow at " + juce::String (beta) + ": clean Helmholtz motion at " + window + "N (Schelleng: under " + juce::String (most, 1)
+                   + " N); at " + juce::String (middle, 1) + " N stuck " + juce::String (stuck, 3) + " of each period (1 - bow position = "
+                   + juce::String (1 - beta, 2) + ")");
+        highest = beta == 0.12 ? top : highest;
+    }
+
+    // Too little force: the bow can not hold the string through a whole period and slips again (Schelleng's least
+    // force: the "surface sound", whistling at the harmonics).
+    double weakStuck = 0;
+    const double weak = motion (", \"bow_force_n\": 0.5", weakStuck);
+    check (weak > 1.5, "too little force (0.5 N): " + juce::String (weak, 2) + " slips per period (the surface sound)");
+
+    // At the note; a little flat at high force (the friction holds on to the string a little too long each period).
+    {
+        const auto at = [&] (double force) { return cents (peakHz (bowRun (", \"bow_force_n\": " + juce::String (force), note, rate), 1.0, 2.0, 100, 120, rate), 110); };
+        const double normal = at (1.5), hard = at (highest);
+        check (std::abs (normal) < 3 && hard < normal, "it plays the note: " + juce::String (normal, 2) + " cents at 1.5 N, "
+                                                           + juce::String (hard, 2) + " cents at " + juce::String (highest, 1) + " N (flatter when pressed harder)");
+    }
+
+    // The bow follows your level: half the level = half the bow speed and force = half the sound (Helmholtz: the
+    // string's speed jumps by bow speed / bow position).
+    {
+        const auto loud = bowRun ("", note, rate), soft = bowRun ("", steady (110, 0.25, 2.0), rate);
+        const double drop = 20 * std::log10 (levelAt (soft, 110, 1.0, 2.0, rate) / levelAt (loud, 110, 1.0, 2.0, rate));
+        check (std::abs (drop + 6.02) < 0.3, "half the playing level: " + juce::String (drop, 2) + " dB (-6.02)");
+    }
+
+    // A plucked note that fades fast keeps being bowed: the bow slows down in release_s (2 s): -2.17 dB in 0.5 s.
+    {
+        auto x = plucked (110, { 1, 0.5, 0.3 }, 2.0, 0.1, rate, 0.5);
+        const auto y = bowRun ("", x, rate);
+        const double fall = 20 * std::log10 (levelAt (y, 110, 1.5, 1.6, rate) / levelAt (y, 110, 1.0, 1.1, rate));
+        const double guitar = 20 * std::log10 (std::exp (-0.5 / 0.1));
+        check (std::abs (fall + 2.17) < 0.3, "after a pluck it goes on: " + juce::String (fall, 2) + " dB in 0.5 s (bow release 2 s: -2.17; the guitar's note "
+                                                 + juce::String (guitar, 1) + " dB)");
+    }
+
+    // A hand on the strings lifts the bow and stops the string.
+    {
+        auto x = note;
+        std::fill (x.begin() + (int) (1.0 * rate), x.end(), 0.0);
+        const auto y = bowRun ("", x, rate);
+        double rest = 0;
+
+        for (size_t i = (size_t) (1.35 * rate); i < y.size(); ++i)
+            rest = std::max (rest, std::abs (y[i]));
+
+        check (rest < 1e-12 * levelAt (y, 110, 0.5, 0.9, rate), "a hand on the strings stops it: "
+                                                                    + juce::String (20 * std::log10 (std::max (rest, 1e-300) / levelAt (y, 110, 0.5, 0.9, rate)), 0) + " dB 0.35 s after");
+    }
+
+    // It follows a hammer-on (no new attack), and transpose moves the string.
+    {
+        std::vector<double> x ((size_t) (2.0 * rate));
+        double phase = 0;
+
+        for (size_t i = 0; i < x.size(); ++i)
+        {
+            phase += 2 * pi * (i < x.size() / 2 ? 110.0 : 123.4708) / rate;
+            x[i] = 0.5 * std::sin (phase);
+        }
+
+        const auto y = bowRun ("", x, rate), low = bowRun (", \"transpose\": -12", note, rate);
+        const double before = peakHz (y, 0.5, 0.95, 100, 130, rate), after = peakHz (y, 1.3, 1.95, 100, 130, rate), octave = peakHz (low, 1.0, 2.0, 50, 60, rate);
+        check (std::abs (cents (before, 110)) < 3 && std::abs (cents (after, 123.4708)) < 3 && std::abs (cents (octave, 55)) < 1,
+               "a hammer-on: " + juce::String (before, 2) + " -> " + juce::String (after, 2) + " Hz (110, 123.47); transpose -12: " + juce::String (octave, 2) + " Hz (55)");
+    }
 }
 
 void powerChecks()
@@ -1423,6 +1590,12 @@ int main (int argc, char* argv[])
 
     try
     {
+        if (args.size() >= 1 && args[0] == "bow")  // only the bow checks (quicker while working on it)
+        {
+            bowChecks();
+            return failures == 0 ? 0 : 1;
+        }
+
         if (args.size() >= 1 && args[0] == "check")
         {
             toneStackChecks();
@@ -1436,6 +1609,7 @@ int main (int argc, char* argv[])
             linearTwinChecks();
             stringsChecks();
             restringChecks();
+            bowChecks();
             roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);

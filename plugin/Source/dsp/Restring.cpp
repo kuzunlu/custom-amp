@@ -9,11 +9,34 @@ namespace
 {
 const double pi = juce::MathConstants<double>::pi;
 
-// Phase delays (samples) at w radians per sample: a first-order all-pass (a + z^-1) / (1 + a z^-1), and the 1-pole
-// low-pass (1 - p) / (1 - p z^-1).
+// Phase delay (samples) at w radians per sample of a first-order all-pass (a + z^-1) / (1 + a z^-1).
 double allpassDelay (double w, double a) { return 1 - 2 / w * std::atan2 (a * std::sin (w), 1 + a * std::cos (w)); }
+}
+
 double lowpassDelay (double w, double p) { return std::atan2 (p * std::sin (w), 1 - p * std::cos (w)) / w; }
 double lowpassLevel (double w, double p) { return (1 - p) / std::abs (1.0 - p * std::polar (1.0, -w)); }
+
+double tonePole (double period, double rate, double sustainS, double toneHz)
+{
+    // Per round trip the note keeps m, harmonics at toneHz m^10: |lp(wt)| / |lp(w)| = m^9; squared, a quadratic in the
+    // pole. (1 - cos written as 2 sin^2 keeps the digits at high sample rates.)
+    const double w = 2 * pi / period, wt = 2 * pi * toneHz / rate;
+
+    if (wt <= 1.0001 * w)
+        return 0.0;
+
+    const double perRound = -3 * std::log (10.0) * period / (rate * sustainS);  // ln m
+    const double c1 = 2 * std::pow (std::sin (w / 2), 2), ct = 2 * std::pow (std::sin (wt / 2), 2);
+    const double oneMinusR = std::max (-std::expm1 (18 * perRound), 0.0);
+    const double r = std::max (1 - oneMinusR, 1.0001 * c1 / ct);  // a 1-pole can not cut more than this
+    const double q = 1 - r, b = q - c1 + r * ct;
+    const double pole = juce::jlimit (0.0, 1 - 1e-9, q / (b + std::sqrt (std::max (0.0, b * b - q * q))));
+
+    // A string can not gain energy: the loop gain (m / |lp(w)| at 0 Hz) must stay at most 1, so the low-pass may cut the
+    // note itself no further than m. With string_tone_hz under about 3 x the note the two ask for more than that; then
+    // sustain_s wins and the highs fade less than asked. |lp(w)| = m: a quadratic in the pole too.
+    const double a = -std::expm1 (2 * perRound), bm = a + std::exp (2 * perRound) * c1;  // 1 - m^2, 1 - m^2 cos w
+    return std::min (pole, a / (bm + std::sqrt (std::max (0.0, bm * bm - a * a))));
 }
 
 Restring::Restring (const Cfg& cfg, const BuildContext& ctx)
@@ -160,23 +183,11 @@ double Restring::wanted (const Voice& v) const noexcept
 void Restring::update (Voice& v, double period) noexcept
 {
     period = juce::jlimit (2.0, (double) v.line.size() - 4, period);
-    const double w = 2 * pi / period, wt = 2 * pi * toneHz / rate;
+    const double w = 2 * pi / period;
 
     // The low-pass: harmonics at string_tone_hz fall 10 times as fast as the note (per second, as on a real string).
-    // Per round trip the note keeps m, so they keep m^10: |lp(wt)| / |lp(w)| = m^9; squared, a quadratic in the pole.
-    // (1 - cos written as 2 sin^2 keeps the digits at high sample rates.)
-    double p = 0.0;
+    const double p = tonePole (period, rate, sustainS, toneHz);
     const double perRound = -3 * std::log (10.0) * period / (rate * sustainS);  // ln m
-
-    if (wt > 1.0001 * w)
-    {
-        const double c1 = 2 * std::pow (std::sin (w / 2), 2), ct = 2 * std::pow (std::sin (wt / 2), 2);
-        const double oneMinusR = std::max (-std::expm1 (18 * perRound), 0.0);
-        const double r = std::max (1 - oneMinusR, 1.0001 * c1 / ct);  // a 1-pole can not cut more than this
-        const double q = 1 - r, b = q - c1 + r * ct;
-        p = juce::jlimit (0.0, 1 - 1e-9, q / (b + std::sqrt (std::max (0.0, b * b - q * q))));
-    }
-
     v.pole = p;
 
     if (B > 0 && (v.designPeriod == 0 || std::abs (std::log (period / v.designPeriod)) > std::log (2.0) / 12))
@@ -187,7 +198,7 @@ void Restring::update (Voice& v, double period) noexcept
 
     // Stopped by a hand: it dies in 50 ms (60 dB).
     const double keep = std::exp (v.stopped ? -3 * std::log (10.0) * period / (rate * 0.05) : perRound);
-    v.gain = keep / lowpassLevel (w, p);
+    v.gain = std::min (1.0, keep / lowpassLevel (w, p));  // never more than 1 at 0 Hz
     const double delay = juce::jlimit (2.0, (double) v.line.size() - 3, period - v.count * allpassDelay (w, v.a) - lowpassDelay (w, p));
 
     if (v.read == 0)

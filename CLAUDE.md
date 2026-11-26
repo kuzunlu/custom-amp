@@ -250,6 +250,34 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   a DI with no 3rd harmonic: the string's 2nd -6.00 (-6.02), 3rd -61 dB, 4th -12.05 (-12.04).
   `tests/presets/restring_bass.json` (an octave down, slightly stiff, a small bend, before the clean chain) has a
   reference recording. X-ray removes it like strings.
+  **Loop gain at most 1** (2026-11-26, found while building the bow): the per-note 1-pole is 1 at 0 Hz and the gain makes
+  up its loss at the note, so the loop gain at 0 Hz was m / |lp(note)|; with string_tone_hz under about 3 x the note
+  (or more cut than a 1-pole can give) that was above 1 and the string GAINED energy (a bowed string blew up to 1e14).
+  `tonePole` now cuts the note no further than m (sustain_s wins, the highs fade less) and both blocks clamp the gain
+  at 1. Checked: string_tone_hz 200 at a 110 Hz note, sustain 60 s: -1.00 dB per s, nothing grows; restring_bass's
+  reference unchanged (-300 dB).
+- **Bow** (`Bow.h/.cpp`, 2026-11-26, the bowed guitar): the DI bows a virtual string (McIntyre, Schumacher and Woodhouse
+  1983). Two delay lines meet at the bow: bow -> nut -> bow ((1 - bow_position) x period) and bow -> bridge -> bow
+  (bow_position x period, with the bridge's loss and the per-note 1-pole, read shortened by its phase delay). Each
+  sample, the friction exactly (`Bow::friction`): hv = bow speed - the speed the two arriving waves give; stuck while
+  |hv| <= mu_s F / 2Z (the string takes the bow's speed); else slipping, mu = mu_d + (mu_s - mu_d) v0 / (v0 + |slip|),
+  v0 = 0.1 m/s, Z = 0.3 kg/s (fixed): a quadratic; two answers = it keeps slipping (hysteresis), none = it catches.
+  The DI: a peak follower falling in release_s, the bow rising to it in swell_s; bow speed AND force scale with it
+  (at 0.5 V = the settings), so dynamics keep the regime (both of Schelleng's limits grow with bow speed). Note from
+  the Player like restring (one string, no voices: a new note just changes the length; a hand stop lifts the bow and
+  damps the string, 60 dB in 50 ms). Output = the wave at the bridge x 0.5 bow_position / bow_speed (about 0.5 V).
+  **The loss is per round trip** (`bridge_loss_db`, default 0.55 = 1 s at 110 Hz), NOT per second: measured, a per
+  second loss gave a 55 Hz string 3-5 slips per period at every force (each trip lost less, so Raman's extra waves
+  lived on), and the same loss per trip (sustain 2 s there) clean at 0.9-1.8 N within 0.8 cents. Real bowed strings
+  lose most at the bridge, a share per reflection, so this is also the physics.
+  Checked (EngineTest, 96 kHz, 110 Hz at 0.5 V): Schelleng's most force 2 Z v / (beta (mu_s - mu_d)): bow at 0.12
+  clean at 1.0 and 1.4-1.9 N (theory under 2.0; between, the start decides, Guettler), stuck 0.877 at 1.5 N (theory
+  0.88); at 0.2 clean at 0.9-1.1 N (theory under 1.2), stuck 0.800 (0.80); 0.5 N: 2.01 slips per period (surface
+  sound); -0.54 cents at 1.5 N, flatter near the limit; half the level -6.29 dB (-6.02); after a fast-fading pluck
+  -2.17 dB in 0.5 s (release 2 s: -2.17); a hand stop -404 dB after 0.35 s; hammer-on 109.97 -> 123.39 Hz; transpose
+  -12 54.98 Hz. NOT shown by the data (tried, the check removed): "the least force grows with the losses". Demos
+  (measured): 0.4 N -> its strongest frequency is the octave; 3.5 N -> 102 Hz and noisy (spectral flatness 0.11 vs 0).
+  `tests/presets/bow_low.json` (an octave down before the clean chain) has a reference recording. CPU: about 0.2%.
 - **X-ray listening** (2026-11-26): hear only what one block adds. A TWIN engine runs beside the amp on the same
   input: the same preset with that block switched off (`CustomAmpProcessor::twinPreset`: gain/power `linear: true`,
   sag/feedback amount 0, eq/tonestack/gate/ir/room/strings left out; a split can not; the panel is dropped), built on
@@ -522,7 +550,7 @@ The old way, still there for a manual run, like the user's `github.com/kuzunlu/s
 
 Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). Releases: tags `v0.1.0` and `v0.1.1` pushed on 2026-11-23
 (the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
-Done (also room, strings, restring, X-ray): eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
+Done (also room, strings, restring, bow, X-ray): eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values; styles british, american, top_boost, james), power (push-pull EL34/6L6GC/EL84/6V6GT/KT88/6550), sag,
 feedback (also positive), split, gate, ir, rectifier supply on the power block;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).
