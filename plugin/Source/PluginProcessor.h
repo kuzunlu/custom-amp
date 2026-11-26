@@ -69,6 +69,18 @@ public:
     bool showPanelView = true;             // what the window shows (kept while the window is closed)
     bool showSignals = false;              // the chain editor shows the signal view instead of the block list
 
+    // X-ray listening: a twin of the amp, the same but with one block switched off (a gain or power block linear, sag
+    // or feedback at 0, any other block left out), runs beside it on the same input and at the same output level.
+    // You hear the amp (normal), only what that block adds (amp minus twin), or the amp without it (the twin).
+    // blockPath = the keys and list places from the preset down to the block, like a panel knob's.
+    enum class Listen { normal = 0, onlyAdds = 1, without = 2 };
+    void xray (const juce::StringArray& blockPath, Listen mode);  // returns quietly if that block can not be switched off
+    void stopXray();
+    Listen getListen() const               { return (Listen) listenMode.load(); }
+    juce::String getXrayBlock() const      { return xrayName; }  // empty = X-ray is off
+    juce::StringArray getXrayPath() const  { return xrayPath; }
+    static juce::String twinPreset (const juce::String& presetText, const juce::StringArray& blockPath);  // "" = not possible
+
     // For the signal view: how a preset is built here (folder, IR, rates), with the output level fixed at 1.
     amp::Engine::Options getSignalOptions() const;
     // The last `seconds` of input (after the Input knob), for the signal view.
@@ -99,6 +111,7 @@ private:
         int maxBlock = 512, factorLog2 = 3, generation = 0;
         double fixedLevel = 0.0;  // 0 = measure the level
         bool warmUp = false;      // play the last bit of input through it first
+        bool twin = false;        // the X-ray twin, not the amp
     };
 
     // Builds engines on its own thread, so the sound keeps going while a new preset is loaded.
@@ -135,6 +148,8 @@ private:
     void readPresetFile (const juce::File& file, bool measure);
     int factorLog2ForRate (double rate) const;
     void timerCallback() override;
+    void requestTwinBuild();
+    void catchUp (amp::Engine& fresh) noexcept;  // audio thread: play it what arrived after its warm-up
 
     std::atomic<float>* inputParam = nullptr;
     std::atomic<float>* outputParam = nullptr;
@@ -154,6 +169,17 @@ private:
     std::atomic<int> historyWrite { 0 };
 
     std::vector<double> mono, monoOld;
+
+    // X-ray: the twin belongs to the audio thread like the engine (pendingTwin in, retiredTwin out). It is built from
+    // the preset with one block switched off, at the amp's own output level (so the difference is exact).
+    std::unique_ptr<amp::Engine> twin;
+    std::atomic<amp::Engine*> pendingTwin { nullptr }, retiredTwin { nullptr };
+    std::atomic<int> listenMode { 0 };
+    std::atomic<bool> twinStale { false }, twinWanted { false };
+    juce::StringArray xrayPath;
+    juce::String xrayName;
+    int latestTwinGeneration = 0, twinFade = 0;
+    std::vector<double> twinBuffer;
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> inputGain { 1.0 }, outputGain { 1.0 };
     double currentRate = 0.0;
     int currentBlock = 512;
@@ -178,7 +204,7 @@ private:
     std::atomic<bool> statusChanged { false };
     std::atomic<int> newLatency { -1 };
 
-    Builder builder { *this };
+    Builder builder { *this }, twinBuilder { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CustomAmpProcessor)
 };

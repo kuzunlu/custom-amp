@@ -564,6 +564,28 @@ void roomChecks (const juce::File& root)
                + "find_spot, " + juce::String (octaveOverNote (spot), 1) + " dB with it; two runs are the same sample for sample");
 }
 
+void linearTwinChecks()
+{
+    std::cout << "Linear twins (what X-ray listening subtracts)\n";
+    const double rate = 384000.0;
+    const juce::String triode = R"({ "type": "gain", "curve": "triode", "plate_volts": true)";
+    const juce::String pair = R"({ "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -45, "transformer_sat_hz": 40)";
+    const auto run = [rate] (const juce::String& block, bool linear, double level)
+    {
+        return runJson ("[ " + block + (linear ? ", \"linear\": true }" : " }") + " ]", sine (220, level, 1.0, rate), rate);
+    };
+    const auto quiet = [&] (const juce::String& block, double level)
+    {
+        return std::abs (tone (run (block, true, level), 220, rate) / tone (run (block, false, level), 220, rate) - 1);
+    };
+    const double triodeQuiet = quiet (triode, 0.01), pairQuiet = quiet (pair, 0.1);
+    const double loud = harmonicPercent (run (triode, false, 0.5), 220, 2, rate), loudTwin = harmonicPercent (run (triode, true, 0.5), 220, 2, rate);
+    check (triodeQuiet < 0.001 && pairQuiet < 0.001 && std::abs (loud - 2.64) < 0.05 && loudTwin < 1e-6,
+           "quiet playing: the twin is " + juce::String (100 * triodeQuiet, 3) + "% (12AX7) and " + juce::String (100 * pairQuiet, 3)
+               + "% (EL34 pair) from the real stage; at 0.5 V the triode makes " + juce::String (loud, 2) + "% 2nd harmonic, its twin "
+               + juce::String (loudTwin, 6) + "%");
+}
+
 void stringsChecks()
 {
     std::cout << "Sympathetic strings\n";
@@ -1177,6 +1199,7 @@ int main (int argc, char* argv[])
             preampSupplyChecks();
             transformerChecks();
             biasShiftChecks();
+            linearTwinChecks();
             stringsChecks();
             roomChecks (root);
             settingsChecks (root);

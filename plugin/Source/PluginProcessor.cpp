@@ -27,6 +27,7 @@ CustomAmpProcessor::CustomAmpProcessor()
             loadBuiltInPreset (p.fileName);
 
     builder.startThread();
+    twinBuilder.startThread();
     startTimer (100);
 }
 
@@ -36,8 +37,114 @@ CustomAmpProcessor::~CustomAmpProcessor()
     builder.signalThreadShouldExit();
     builder.request ({});  // wakes it up
     builder.stopThread (10000);
+    twinBuilder.signalThreadShouldExit();
+    twinBuilder.request ({});
+    twinBuilder.stopThread (10000);
     delete pendingEngine.exchange (nullptr);
     delete retiredEngine.exchange (nullptr);
+    delete pendingTwin.exchange (nullptr);
+    delete retiredTwin.exchange (nullptr);
+}
+
+//==============================================================================
+juce::String CustomAmpProcessor::twinPreset (const juce::String& text, const juce::StringArray& blockPath)
+{
+    auto preset = juce::JSON::parse (text);
+
+    if (! preset.isObject() || blockPath.isEmpty())
+        return {};
+
+    // The steps lead to the list; the last one is the block's place in it (like a panel knob's path).
+    auto list = preset;
+
+    for (int i = 0; i + 1 < blockPath.size(); ++i)
+        list = list.isArray() ? list[blockPath[i].getIntValue()] : list.getProperty (juce::Identifier (blockPath[i]), {});
+
+    const int index = blockPath[blockPath.size() - 1].getIntValue();
+    auto* array = list.getArray();
+
+    if (array == nullptr || ! juce::isPositiveAndBelow (index, array->size()))
+        return {};
+
+    auto block = (*array)[index];
+    const auto type = block.getProperty ("type", {}).toString();
+    auto* obj = block.getDynamicObject();
+
+    if (obj == nullptr)
+        return {};
+
+    if (type == "gain" || type == "power")
+        obj->setProperty ("linear", true);  // the same stage without its non-linear parts
+    else if (type == "sag" || type == "feedback")
+        obj->setProperty ("amount", 0.0);
+    else if (type == "eq" || type == "tonestack" || type == "gate" || type == "ir" || type == "room" || type == "strings")
+        array->remove (index);
+    else
+        return {};  // a split: no single "off"
+
+    if (auto* root = preset.getDynamicObject())
+        root->removeProperty ("panel");  // it does not change the sound, and it may name a block that is gone
+
+    return juce::JSON::toString (preset, true);
+}
+
+void CustomAmpProcessor::xray (const juce::StringArray& blockPath, Listen mode)
+{
+    if (twinPreset (presetText, blockPath).isEmpty())
+        return;
+
+    auto list = getPresetData();
+
+    for (int i = 0; i + 1 < blockPath.size(); ++i)
+        list = list.isArray() ? list[blockPath[i].getIntValue()] : list.getProperty (juce::Identifier (blockPath[i]), {});
+
+    const auto block = list[blockPath[blockPath.size() - 1].getIntValue()];
+    const bool sameBlock = blockPath == xrayPath;
+    xrayPath = blockPath;
+    xrayName = block.getProperty ("id", block.getProperty ("type", "block")).toString();
+    listenMode = (int) mode;
+    twinWanted = true;
+
+    if (! sameBlock || twin == nullptr)
+        requestTwinBuild();
+
+    statusChanged = true;
+}
+
+void CustomAmpProcessor::stopXray()
+{
+    {
+        const juce::ScopedLock sl (postLock);
+        ++latestTwinGeneration;  // twins still being built are thrown away
+    }
+
+    xrayPath.clear();
+    xrayName = {};
+    listenMode = (int) Listen::normal;
+    twinWanted = false;
+    statusChanged = true;
+}
+
+void CustomAmpProcessor::requestTwinBuild()
+{
+    if (xrayPath.isEmpty() || currentRate <= 0.0)
+        return;
+
+    const auto text = twinPreset (presetText, xrayPath);
+
+    if (text.isEmpty())  // the block is gone (an edit or another preset)
+    {
+        stopXray();
+        return;
+    }
+
+    const juce::ScopedLock sl (postLock);
+    auto r = makeRequest (false);  // the amp's own output level, so amp minus twin is exact
+    r.presetText = text;
+    r.twin = true;
+    r.warmUp = true;
+    r.generation = ++latestTwinGeneration;
+    twinBuilder.request (r);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout CustomAmpProcessor::createParameterLayout()
@@ -127,6 +234,7 @@ void CustomAmpProcessor::setPresetText (const juce::String& source, const juce::
 
     updatePanel();
     requestBuild (measure);
+    requestTwinBuild();  // X-ray follows the edits
 }
 
 void CustomAmpProcessor::updatePanel()
@@ -454,6 +562,16 @@ void CustomAmpProcessor::engineBuilt (std::unique_ptr<amp::Engine> built, const 
 {
     const bool ok = built != nullptr;
 
+    if (r.twin)
+    {
+        const juce::ScopedLock sl (postLock);
+
+        if (r.generation == latestTwinGeneration && built != nullptr)
+            delete pendingTwin.exchange (built.release());
+
+        return;
+    }
+
     {
         const juce::ScopedLock sl (postLock);
 
@@ -463,6 +581,10 @@ void CustomAmpProcessor::engineBuilt (std::unique_ptr<amp::Engine> built, const 
         if (built != nullptr)
         {
             newLatency = built->latencySamples();
+
+            if (built->makeup != currentLevel.load())
+                twinStale = true;  // the twin must play at the amp's new level
+
             currentLevel = built->makeup;
             delete pendingEngine.exchange (built.release());  // an engine the audio thread never took
         }
@@ -507,6 +629,10 @@ void CustomAmpProcessor::Builder::run()
 void CustomAmpProcessor::timerCallback()
 {
     delete retiredEngine.exchange (nullptr);
+    delete retiredTwin.exchange (nullptr);
+
+    if (twinStale.exchange (false))
+        requestTwinBuild();
     applyKnobChanges();
 
     if (auto latency = newLatency.exchange (-1); latency >= 0 && latency != getLatencySamples())
@@ -516,7 +642,10 @@ void CustomAmpProcessor::timerCallback()
         sendChangeMessage();
 
     if ((int) qualityParam->load() != builtQuality)
+    {
         requestBuild (false);
+        requestTwinBuild();
+    }
 
     // A preset loaded from a file is loaded again when the file changes (edit it in any text editor).
     // This counts as an edit: the level is kept. Not after edits in the plugin window, which would be lost.
@@ -537,11 +666,17 @@ void CustomAmpProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     delete pendingEngine.exchange (nullptr);
     delete retiredEngine.exchange (nullptr);
     fadingEngine.reset();
+    ++latestTwinGeneration;
+    delete pendingTwin.exchange (nullptr);
+    delete retiredTwin.exchange (nullptr);
+    twin.reset();
+    twinStale = ! xrayPath.isEmpty();  // the timer builds it again for the new rate
 
     currentRate = sampleRate;
     currentBlock = juce::jmax (32, samplesPerBlock);
     mono.assign ((size_t) currentBlock, 0.0);
     monoOld.assign ((size_t) currentBlock, 0.0);
+    twinBuffer.assign ((size_t) currentBlock, 0.0);
     fadeLength = juce::jmax (1, (int) (fadeSeconds * sampleRate));
     inputGain.reset (sampleRate, 0.02);
     outputGain.reset (sampleRate, 0.02);
@@ -560,6 +695,27 @@ void CustomAmpProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     statusChanged = true;
 }
 
+void CustomAmpProcessor::catchUp (amp::Engine& fresh) noexcept
+{
+    // Play it the few samples that arrived after its warm-up, so it has heard exactly what the old one heard.
+    const int size = (int) history.size();
+    const int now = historyWrite.load (std::memory_order_relaxed);
+    int missing = fresh.heardUpTo >= 0 ? (now - fresh.heardUpTo + size) % size : 0;
+
+    if (missing <= 4 * fresh.maxBlock())
+        for (int from = fresh.heardUpTo; missing > 0;)
+        {
+            const int n = juce::jmin (missing, fresh.maxBlock());
+
+            for (int i = 0; i < n; ++i)
+                monoOld[(size_t) i] = history[(size_t) ((from + i) % size)].load (std::memory_order_relaxed);
+
+            fresh.process (monoOld.data(), n);
+            from = (from + n) % size;
+            missing -= n;
+        }
+}
+
 void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -572,27 +728,23 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     if (fadingEngine == nullptr)
         if (auto* fresh = pendingEngine.exchange (nullptr))
         {
-            // Play it the few samples that arrived after its warm-up, so it has heard exactly what the old one heard.
-            const int size = (int) history.size();
-            const int now = historyWrite.load (std::memory_order_relaxed);
-            int missing = fresh->heardUpTo >= 0 ? (now - fresh->heardUpTo + size) % size : 0;
-
-            if (missing <= 4 * fresh->maxBlock())
-                for (int from = fresh->heardUpTo; missing > 0;)
-                {
-                    const int n = juce::jmin (missing, fresh->maxBlock());
-
-                    for (int i = 0; i < n; ++i)
-                        monoOld[(size_t) i] = history[(size_t) ((from + i) % size)].load (std::memory_order_relaxed);
-
-                    fresh->process (monoOld.data(), n);
-                    from = (from + n) % size;
-                    missing -= n;
-                }
-
+            catchUp (*fresh);
             fadingEngine = std::move (engine);
             engine.reset (fresh);
             fadePos = fadingEngine != nullptr ? 0 : fadeLength;
+        }
+
+    // X-ray: drop the twin when it is off; take a new one when it is ready (the old one goes back to be deleted).
+    if (! twinWanted.load() && twin != nullptr && retiredTwin.load() == nullptr)
+        retiredTwin = twin.release();
+
+    if (twinWanted.load() && retiredTwin.load() == nullptr)
+        if (auto* fresh = pendingTwin.exchange (nullptr))
+        {
+            catchUp (*fresh);
+            retiredTwin = twin.release();
+            twin.reset (fresh);
+            twinFade = 0;
         }
 
     const int numIn = getTotalNumInputChannels(), numOut = getTotalNumOutputChannels();
@@ -629,6 +781,9 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         historyWrite.store (write);
         const bool fading = fadingEngine != nullptr && fadePos < fadeLength;
 
+        if (twin != nullptr)
+            std::copy (mono.begin(), mono.begin() + n, twinBuffer.begin());
+
         if (fading)
             std::copy (mono.begin(), mono.begin() + n, monoOld.begin());
 
@@ -655,6 +810,25 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             engine->reset();
             fadePos = fadeLength;
             std::fill (mono.begin(), mono.begin() + n, 0.0);
+        }
+
+        // X-ray: the twin heard the same input; play only what the block adds (amp minus twin), or the twin.
+        if (twin != nullptr)
+        {
+            twin->process (twinBuffer.data(), n);
+            const auto mode = (Listen) listenMode.load();
+
+            for (int i = 0; i < n; ++i)
+            {
+                const double tw = std::isfinite (twinBuffer[(size_t) i]) ? twinBuffer[(size_t) i] : 0.0;
+                const double heard = mode == Listen::onlyAdds ? mono[(size_t) i] - tw : mode == Listen::without ? tw : mono[(size_t) i];
+                const double g = (double) twinFade / fadeLength;  // a new twin fades in, so switching does not click
+
+                if (twinFade < fadeLength)
+                    ++twinFade;
+
+                mono[(size_t) i] += g * (heard - mono[(size_t) i]);
+            }
         }
 
         for (int i = 0; i < n; ++i)
@@ -688,6 +862,7 @@ void CustomAmpProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void CustomAmpProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    stopXray();  // a project starts with X-ray off
     auto xml = getXmlFromBinary (data, sizeInBytes);
 
     if (xml == nullptr)

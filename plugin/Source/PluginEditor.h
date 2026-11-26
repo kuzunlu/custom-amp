@@ -48,6 +48,8 @@ private:
     void presetEdited (bool rebuildInspector);
     void refreshPanel();
     void showMessage (const juce::String& text, bool isProblem);
+    void showXrayMenu (const juce::StringArray& blockPath, juce::Component* near);
+    void refreshXray();
 
     CustomAmpProcessor& processor;
     SettingsHelp help;
@@ -77,7 +79,7 @@ private:
     ChainView chainView { help };
     Inspector inspector { help };
     SignalView signalView { processor };
-    juce::TextButton signalsButton;
+    juce::TextButton signalsButton, xrayButton;
 
     juce::AudioProcessorValueTreeState::SliderAttachment inputAttachment, outputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> qualityAttachment;  // made after the items exist

@@ -8,11 +8,13 @@ namespace
 class ClickLabel final : public juce::Label
 {
 public:
-    std::function<void()> onClick;
+    std::function<void()> onClick, onMenu;
 
     void mouseUp (const juce::MouseEvent& e) override
     {
-        if (onClick != nullptr && e.mouseWasClicked())
+        if (e.mods.isPopupMenu() && onMenu != nullptr)
+            onMenu();
+        else if (onClick != nullptr && e.mouseWasClicked())
             onClick();
     }
 };
@@ -90,6 +92,9 @@ void ChainView::addItem (const juce::String& text, const juce::String& tip, cons
     {
         label->setMouseCursor (juce::MouseCursor::PointingHandCursor);
         label->onClick = [this, target] { if (onSelect != nullptr) onSelect (target); };
+
+        if (isHeader && ! target.isPath)
+            label->onMenu = [this, target] { if (onBlockMenu != nullptr) onBlockMenu (target); };
     }
 
     Item item;

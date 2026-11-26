@@ -153,6 +153,11 @@
       "short": "A push-pull power amp: two power tubes into an output transformer.",
       "tooltip": "The last tube stage of a tube amp. The phase inverter sends opposite signals to two power tubes; the output transformer passes on only the DIFFERENCE of their currents. Because of that, the even harmonics of the two tubes cancel (measured: 0.00% 2nd harmonic with matched tubes), so a power amp clips with a different, more 'open' sound than a preamp stage. The power tube type is one of the biggest differences between famous amps: EL34 (British amps), 6L6GC (big American amps and many high-gain amps), EL84 (small British 'chime' amps), 6V6GT (small American amps), KT88 and 6550 (big 100 W and bass amps: huge clean headroom). The tube curves are fitted to each tube's datasheet. The plugin shows the idle current and the rough output power of your settings. Put a sag block before it, and usually a feedback block around it.",
       "settings": {
+        "linear": {
+          "label": "Linear (no clipping)", "type": "toggle", "default": false,
+          "short": "The same stage without its non-linear parts, for comparing (X-ray listening uses it).",
+          "tooltip": "On: the pair becomes a perfect linear amplifier with the same gain for quiet playing: no clipping, no crossover, no bias shift, no transformer saturation, and its supply never sags. Comparing a stage with its linear twin shows exactly what the clipping does; X-ray listening subtracts one from the other so you hear only that."
+        },
         "tube": {
           "label": "Power tubes", "type": "choice", "default": "EL34",
           "choices": {
@@ -459,6 +464,11 @@
       "short": "One tube-like stage: filter, then drive into a clipping curve, then filter.",
       "tooltip": "This is where the distortion happens. The sound goes: pre filters, then Drive pushes it into the clipping curve, then post filters, then Level. One stage with low drive = clean or edge of breakup. Two or three stages in a row with EQ between them = classic high-gain amps. The clipping is done at a higher sample rate (oversampling) so it does not sound harsh or fizzy.",
       "settings": {
+        "linear": {
+          "label": "Linear (no clipping)", "type": "toggle", "default": false,
+          "short": "The same stage without its non-linear parts, for comparing (X-ray listening uses it).",
+          "tooltip": "On: the curve becomes the straight line through the stage's working point, with the same slope: quiet playing sounds the same, but nothing clips, and there is no bias shift. Comparing a stage with its linear twin shows exactly what the clipping does; X-ray listening subtracts one from the other so you hear only that."
+        },
         "drive_db": {
           "label": "Drive", "type": "number", "unit": "dB", "min": -12, "max": 60, "default": 0,
           "short": "How hard the sound hits the clipping curve. More = more distortion.",

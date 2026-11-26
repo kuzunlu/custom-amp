@@ -220,6 +220,20 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   E#x, "" refused); an A2 string rings at 110.005 Hz and falls 30.0 dB in 2 s (sustain 4 s), and 7.5 dB in 0.5 s
   after a note stops (theory 7.5); at its own note it answers 24.9 dB louder than a semitone higher.
   `tests/presets/strings_drone.json` (a D drone before the clean chain) has a reference recording.
+- **X-ray listening** (2026-11-26): hear only what one block adds. A TWIN engine runs beside the amp on the same
+  input: the same preset with that block switched off (`CustomAmpProcessor::twinPreset`: gain/power `linear: true`,
+  sag/feedback amount 0, eq/tonestack/gate/ir/room/strings left out; a split can not; the panel is dropped), built on
+  its own `twinBuilder` at the amp's own output level (`fixedLevel` = the amp's makeup; if a load re-measures the amp,
+  `twinStale` rebuilds it). Listen modes: normal, only what it adds (amp minus twin), without it (the twin). The audio
+  thread copies the input for the twin before the amp overwrites it; a new twin fades in over 30 ms; `catchUp` plays
+  either engine what arrived after its warm-up. Edits rebuild the twin (`setPresetText` -> `requestTwinBuild`); a
+  block that is gone stops X-ray. UI: right-click a block's name in the chain editor; the header button shows what you
+  hear. `linear` (gain: the curve becomes the straight line through the working point, `Curve::Kind::line`, no bias
+  shift; power: small-signal gain, no crossover/shift/transformer saturation, constant current so no sag). Checked:
+  EngineTest: quiet playing the twin is 0.000% from the real 12AX7 and EL34 pair, at 0.5 V the triode 2.64% H2 and its
+  twin 0; PluginTest: X-ray of an eq that changes nothing = -180 dB (the two line up sample for sample); of an 18 dB
+  tube stage "only what it adds" +2.7 dB against the amp (its linear twin is +6.9 dB: what clipping adds is mostly the
+  peaks it cuts); stop = the amp again (0.000 dB); a split refuses. Costs a second amp's CPU while on.
 - **Presets**: every unknown setting name is an error (`check_keys`), so typos never pass silently.
 - **Front panel** (`panel`, top-level preset key, at most 8 knobs): `{label, block, setting, range}`. `block` = an id
   (found anywhere: main chain, feedback chains, split paths); `setting` = a NUMBER setting from `settings.json`, or a

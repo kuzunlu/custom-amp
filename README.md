@@ -60,6 +60,10 @@ The plugin is `build\CustomAmp_artefacts\Release\VST3\Custom Amp.vst3` (copy it 
 - **Signals** (in the chain editor): see what every block does. Its own copy of the amp plays a test signal (a sine,
   a plucked note, a chord, loud-then-soft, or your last 0.6 s of playing) and shows each block's waveform or spectrum,
   with its peak in volts and, for a sine, the harmonics it adds. Change a setting and watch every stage change.
+- **X-ray listening** (right-click a block's name in the chain editor): hear **only what that block adds**, or the amp
+  without it, live while you play. A second copy of the amp with that block switched off (a clipping stage made
+  linear, sag or feedback at 0, any other block left out) runs beside it; the plugin plays the difference. Uses a second
+  amp's CPU while it is on.
 - Hover over anything for help. The amp adds 6 samples of delay at 8x (0.13 ms at 48 kHz).
 
 A cab IR must be at the end of the chain (only eq and ir blocks after it).

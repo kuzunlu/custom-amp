@@ -218,7 +218,7 @@ static const std::map<juce::String, std::set<juce::String>> curveSettings {
 static std::set<juce::String> gainSettings()
 {
     std::set<juce::String> s { "drive_db", "curve", "bias", "level_db", "pre", "post", "oversample",
-                               "bias_shift", "shift_attack_ms", "shift_release_ms", "coupling_nf", "grid_ohms" };
+                               "bias_shift", "shift_attack_ms", "shift_release_ms", "coupling_nf", "grid_ohms", "linear" };
 
     for (auto& [curve, names] : curveSettings)
         s.insert (names.begin(), names.end());
@@ -292,6 +292,20 @@ Gain::Gain (const Cfg& cfg, const BuildContext& ctx) : LoopBlock (cfg, gainSetti
         throw PresetError ("bias_shift must be from 0 to 1, got " + juce::String (shiftAmount));
 
     shiftAttack = shiftCoefficient (cfg.number ("shift_attack_ms", 1), ctx.rate);
+
+    // linear: the same stage without clipping (X-ray listening subtracts it to hear only what the clipping adds). Its
+    // curve becomes the straight line through its working point with the same slope, so quiet playing is unchanged;
+    // no bias shift (that needs clipping), and sag changes nothing (it only lowers the clipping ceiling).
+    if (cfg.flag ("linear", false))
+    {
+        const double e = 1e-4;
+        Curve line;
+        line.kind = Curve::Kind::line;
+        line.slope = (curve (bias + e) - curve (bias - e)) / (2 * e);
+        curve = line;
+        offset = curve (bias);
+        shiftAmount = 0.0;
+    }
 }
 
 void Gain::reset() noexcept
@@ -367,7 +381,7 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
                         "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
                         "supply_ohms", "supply_uf", "preamp_targets", "preamp_filter_ms", "transformer_low_hz",
-                        "transformer_sat_hz", "pairs", "coupling_nf", "grid_ohms" })
+                        "transformer_sat_hz", "pairs", "coupling_nf", "grid_ohms", "linear" })
 {
     const double plateV = cfg.number ("plate_v", 450.0);
     const double screenV = cfg.number ("screen_v", 0.0);
@@ -433,6 +447,18 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
         throw PresetError ("bias_shift must be from 0 to 1, got " + juce::String (shiftAmount));
 
     shiftAttack = shiftCoefficient (cfg.number ("shift_attack_ms", 1), ctx.rate);
+    idleCurrent = idleDraw;
+
+    // linear: the pair as a perfect linear amplifier with its small-signal gain (X-ray listening): no clipping, no
+    // crossover, no bias shift, no transformer saturation, and a constant current (so its supply never sags).
+    if (cfg.flag ("linear", false))
+    {
+        double unused = 0.0;
+        linear = true;
+        linSlope = (tubes.shape (1e-3, supply, 0.0, 0.0, unused) - tubes.shape (-1e-3, supply, 0.0, 0.0, unused)) / 2e-3;
+        otPerSat = 0.0;
+        shiftAmount = 0.0;
+    }
 }
 
 void Power::reset() noexcept
@@ -492,8 +518,8 @@ void Power::process (double* x, int n) noexcept
     {
         const double v = pre.tick (x[i]) * drive;
         setHeadroom (headroom != nullptr ? headroom[i] : 1.0);
-        double draw = 0.0;
-        const double y = tubes.shape (v, supply, sa, sb, draw) - offset;
+        double draw = idleCurrent;
+        const double y = linear ? linSlope * v : tubes.shape (v, supply, sa, sb, draw) - offset;
 
         if (shiftAmount != 0)
             nextShifts (v);
@@ -529,7 +555,8 @@ double Power::peek (double v) const noexcept
 {
     const double u = pre.peek (v) * drive;
     triedU = u;
-    triedY = tubes.shape (u, supply, sa, sb, triedDraw) - offset;
+    triedDraw = idleCurrent;
+    triedY = linear ? linSlope * u : tubes.shape (u, supply, sa, sb, triedDraw) - offset;
     return post.peek (transformer (triedY)) * level;
 }
 

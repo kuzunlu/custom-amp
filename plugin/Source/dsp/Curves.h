@@ -32,7 +32,7 @@ inline double gridClamp (double vg) noexcept
 // A clipping curve: a fixed shape, the 'custom' curve, or a table (the 'triode' curve).
 struct Curve
 {
-    enum class Kind { hard, soft, tube, diode, custom, table };
+    enum class Kind { hard, soft, tube, diode, custom, table, line };
 
     double operator() (double x) const noexcept
     {
@@ -48,6 +48,7 @@ struct Curve
                 const double p = x >= 0 ? topPower : bottomPower;
                 return x / std::pow (1 + std::pow (std::abs (x / level), p), 1 / p);
             }
+            case Kind::line:  return slope * x;  // no clipping at all (a stage's linear twin, for X-ray listening)
             case Kind::table: break;
         }
 
@@ -64,7 +65,7 @@ struct Curve
     }
 
     Kind kind = Kind::soft;
-    double top = 1.0, topPower = 1.0, bottom = 1.0, bottomPower = 1.0;
+    double top = 1.0, topPower = 1.0, bottom = 1.0, bottomPower = 1.0, slope = 1.0;
     std::vector<double> table;
     double tableLo = 0.0, tablePerVolt = 100.0;  // 1 / the table step
 };

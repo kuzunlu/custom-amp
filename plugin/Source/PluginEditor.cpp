@@ -217,6 +217,20 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     redoButton.onClick = [this] { processor.redo(); refresh(); };
 
     chainView.onSelect = [this] (const Selection& s) { select (s); };
+    chainView.onBlockMenu = [this] (const Selection& s)
+    {
+        juce::StringArray path;
+
+        if (findList (preset, s.list.getArray(), path))
+        {
+            path.add (juce::String (s.index));
+            showXrayMenu (path, nullptr);
+        }
+    };
+
+    addChildComponent (xrayButton);
+    xrayButton.setColour (juce::TextButton::buttonColourId, theme::chipSelected);
+    xrayButton.onClick = [this] { showXrayMenu (processor.getXrayPath(), &xrayButton); };
     chainViewport.setViewedComponent (&chainView, false);
     chainViewport.setScrollBarsShown (true, false);
     addAndMakeVisible (chainViewport);
@@ -287,13 +301,58 @@ void CustomAmpEditor::showView (bool showPanel)
     viewButton.setTooltip (showPanel ? "Show the blocks of the amp, to change any setting, add blocks or put more knobs on the panel."
                                      : "Back to the front panel.");
     showMessage ({}, false);
-    resized();
+    refreshXray();  // also lays the window out
 }
 
 void CustomAmpEditor::showSignals (bool signals)
 {
     processor.showSignals = signals;
     showView (false);
+}
+
+// X-ray listening: hear only what a block adds (the amp minus a twin with that block switched off), or the amp
+// without it. Right-click a block's name; the header button shows what you hear and opens the same menu.
+void CustomAmpEditor::showXrayMenu (const juce::StringArray& blockPath, juce::Component* near)
+{
+    const bool possible = CustomAmpProcessor::twinPreset (sentText, blockPath).isNotEmpty();
+    const bool active = processor.getXrayBlock().isNotEmpty();
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("X-ray listening");
+    menu.addItem (1, "Hear only what this block adds", possible);
+    menu.addItem (2, "Hear the amp without this block", possible);
+    menu.addSeparator();
+    menu.addItem (3, "Hear the amp normally (X-ray stays ready)", active);
+    menu.addItem (4, "Stop X-ray", active);
+    auto options = juce::PopupMenu::Options();
+
+    if (near != nullptr)
+        options = options.withTargetComponent (near);
+
+    menu.showMenuAsync (options, [this, blockPath] (int result)
+    {
+        using Listen = CustomAmpProcessor::Listen;
+
+        if (result == 1 || result == 2)
+            processor.xray (blockPath, result == 1 ? Listen::onlyAdds : Listen::without);
+        else if (result == 3)
+            processor.xray (processor.getXrayPath(), Listen::normal);
+        else if (result == 4)
+            processor.stopXray();
+
+        refreshXray();
+    });
+}
+
+void CustomAmpEditor::refreshXray()
+{
+    const auto name = processor.getXrayBlock();
+    const auto mode = processor.getListen();
+    xrayButton.setButtonText (mode == CustomAmpProcessor::Listen::onlyAdds ? "X-ray: only " + name
+                              : mode == CustomAmpProcessor::Listen::without ? "X-ray: without " + name
+                                                                            : "X-ray ready: " + name);
+    xrayButton.setTooltip ("X-ray listening on block '" + name + "'. Click to change what you hear or to stop it.");
+    xrayButton.setVisible (name.isNotEmpty() && ! processor.showPanelView);
+    resized();
 }
 
 void CustomAmpEditor::showMessage (const juce::String& text, bool isProblem)
@@ -340,6 +399,7 @@ void CustomAmpEditor::changeListenerCallback (juce::ChangeBroadcaster*)
         refreshStatus();
 
     refreshPresetBox();
+    refreshXray();
 }
 
 void CustomAmpEditor::select (const Selection& s)
@@ -533,6 +593,12 @@ void CustomAmpEditor::resized()
         header.removeFromRight (5);
         signalsButton.setBounds (header.removeFromRight (80));
         header.removeFromRight (5);
+
+        if (xrayButton.isVisible())
+        {
+            xrayButton.setBounds (header.removeFromRight (juce::jmin (170, header.getWidth() / 3)));
+            header.removeFromRight (5);
+        }
     }
 
     redoButton.setBounds (header.removeFromRight (60));

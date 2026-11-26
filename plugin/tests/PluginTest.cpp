@@ -865,6 +865,42 @@ int main (int argc, char* argv[])
         noPanel.deleteFile();
     }
 
+    std::cout << "X-ray listening\n";
+    {
+        auto x = makePlugin();
+        auto amp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("custom_amp_xray.json");
+        amp.replaceWithText (R"({ "name": "X-ray", "chain": [ { "type": "gain", "id": "v1", "curve": "triode", "plate_volts": true },
+            { "type": "eq", "id": "nothing" }, { "type": "eq", "level_db": -30 }, { "type": "gain", "id": "dirt", "curve": "tube", "drive_db": 18 },
+            { "type": "split", "id": "both", "paths": [ { "chain": [] } ] } ] })");
+        x->loadPresetFile (amp);
+        waitForBuild (*x);
+        const double normal = play (*x, 1.0);
+        const auto listen = [&x] (const juce::StringArray& path, CustomAmpProcessor::Listen mode)
+        {
+            x->xray (path, mode);
+            waitForBuild (*x);
+            play (*x, 2.0);        // the twin catches up with everything the amp has heard
+            return play (*x, 1.0);
+        };
+
+        // An eq with no bands changes nothing: amp minus twin must be silence (the two line up sample for sample).
+        const double same = listen ({ "chain", "1" }, CustomAmpProcessor::Listen::onlyAdds);
+        check (x->getXrayBlock() == "nothing" && same < normal - 100, "X-ray of a block that changes nothing: "
+                                                                          + juce::String (same - normal, 0) + " dB against the amp (silence)");
+        const double distortion = listen ({ "chain", "3" }, CustomAmpProcessor::Listen::onlyAdds);
+        const double without = listen ({ "chain", "3" }, CustomAmpProcessor::Listen::without);
+        check (x->getXrayBlock() == "dirt" && distortion > normal - 30 && std::abs (without - normal) > 0.1,
+               "X-ray of a distorting stage: only what it adds " + juce::String (distortion - normal, 1) + " dB against the amp; the amp without it "
+                   + juce::String (without - normal, 1) + " dB");
+        x->stopXray();
+        waitForBuild (*x);
+        const double back = play (*x, 1.0);
+        x->xray ({ "chain", "4" }, CustomAmpProcessor::Listen::onlyAdds);
+        check (std::abs (back - normal) < 0.01 && x->getXrayBlock().isEmpty(), "stop X-ray: the amp again (" + juce::String (back - normal, 3)
+                                                                                     + " dB); a split can not be X-rayed (no single 'off')");
+        amp.deleteFile();
+    }
+
     std::cout << "Signal view\n";
     {
         auto s = makePlugin();

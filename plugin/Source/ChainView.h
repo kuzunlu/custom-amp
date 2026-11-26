@@ -27,6 +27,7 @@ public:
     void layout (int width);  // sets its own height to fit
 
     std::function<void (const Selection&)> onSelect;
+    std::function<void (const Selection&)> onBlockMenu;  // right-click on a block's name (X-ray listening)
 
     static juce::String formatValue (const juce::String& key, const juce::var& value);
 
