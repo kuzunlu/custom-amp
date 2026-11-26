@@ -8,6 +8,12 @@
 namespace amp
 {
 
+// The 1-pole low-pass (1 - p) / (1 - p z^-1) in a string's loop, set per note: harmonics at toneHz fall 10 times as
+// fast as the note (per second), the note itself left to the loop gain. Its phase delay (samples) and level at w.
+double tonePole (double period, double rate, double sustainS, double toneHz);
+double lowpassDelay (double w, double p);
+double lowpassLevel (double w, double p);
+
 // Restring: you play your guitar, but you hear a virtual string with physics you choose, playing the same notes.
 // Each pick attack plucks it with your own DI's last period (stretched to the new string's length), so the pick's
 // place and brightness carry over; then it rings on its own: tuned transpose semitones from your note, its harmonics
@@ -19,16 +25,14 @@ namespace amp
 // string's high harmonics come round sooner; fitted over its first 20 harmonics up to 2.5 kHz), a 1-pole low-pass
 // set per note so the highs fade in SECONDS like a real string's (harmonics at string_tone_hz 10 times as fast as the
 // note, the loss rising with the square of the frequency below that), and a gain for sustain_s. The read is shortened
-// by both filters' delay at the note, so the note is in tune whatever they do.
+// by both filters' delay at the note, so the note is in tune whatever they do. All that is set at the pluck, in the
+// string's OWN steps; vibrato, bends and hammer-ons change how many of its steps run per output sample (`speed`):
+// the wave speed of the whole string, as a change of tension does. (Moving the read instead changed the length at one
+// point: each 1 ms step squeezed the waveform there and nothing smoothed it out, 7.6 cents of extra wobble.) Its
+// output is read at the plugin's rate between its steps (4-point cubic).
 //
 // NOT physics, standing in for the player: the Player's pitch tracker, attack and hand-stop detection. A new string is
-// plucked when the tracker finds the same note twice in a row after an attack (10 ms apart): that is the latency.
-// The 1-pole low-pass (1 - p) / (1 - p z^-1) in a string's loop, set per note: harmonics at toneHz fall 10 times as
-// fast as the note (per second), the note itself left to the loop gain. Its phase delay (samples) and level at w.
-double tonePole (double period, double rate, double sustainS, double toneHz);
-double lowpassDelay (double w, double p);
-double lowpassLevel (double w, double p);
-
+// plucked when the tracker finds the same note twice in a row after an attack (2.5 ms apart): that is the latency.
 class Restring final : public Block
 {
 public:
@@ -49,11 +53,15 @@ private:
     {
         std::vector<double> line;
         int write = 0;
-        double period = 0;              // the loop's length at the note (samples)
-        double read = 0, readStep = 0;  // the delay (samples), moving to its next value over one update
+        double period = 0;               // its length in its own steps (from the pluck)
+        double read = 0;                 // the delay that tunes it to that length, the filters' delay taken off
+        double speed = 1, speedStep = 0; // its own steps per output sample (the tension), moving over one update
         int rampLeft = 0;
-        double a = 0, designPeriod = 0; // the all-pass coefficient and the period it was fitted for
-        int count = 0;                  // all-pass sections in use (fewer for very short periods)
+        double pos = 0;                  // where the output is, in its own steps
+        long long ticks = 0;             // its own steps done
+        std::array<double, 8> recent {}; // its last outputs, for reading between them
+        double a = 0;                    // the all-pass coefficient
+        int count = 0;                   // all-pass sections in use (fewer for very short periods)
         std::array<double, sections> x1 {}, y1 {};
         double pole = 0, gain = 0, smooth = 0;
         double age = 0;                 // seconds since its pluck
@@ -62,7 +70,8 @@ private:
     };
 
     void pluck (double inputPeriod) noexcept;
-    void update (Voice& v, double period) noexcept;  // tunes v to a loop of `period` samples
+    void update (Voice& v) noexcept;                 // tunes v's filters and delay to v.period (at the pluck, on a stop)
+    void tick (Voice& v) noexcept;                   // one of its own steps
     double wanted (const Voice& v) const noexcept;    // the period it should have now
     double readLine (const Voice& v, double back) const noexcept;
     double loop (Voice& v, double x) noexcept;        // the all-passes and the low-pass

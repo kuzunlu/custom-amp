@@ -728,6 +728,105 @@ std::vector<double> plucked (double f, std::initializer_list<double> harmonics, 
     return x;
 }
 
+// A note with vibrato: f Hz, +-depthCents at 5.5 Hz from 0.8 s on, dying away in 3 s (a guitar's finger vibrato).
+std::vector<double> vibratoNote (double f, double depthCents, double rate)
+{
+    std::vector<double> x ((size_t) (2.5 * rate));
+    double phase = 0;
+
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        const double t = (double) i / rate, c = t > 0.8 ? depthCents * std::sin (2 * pi * 5.5 * (t - 0.8)) : 0.0;
+        phase += 2 * pi * f * std::pow (2.0, c / 1200) / rate;
+        x[i] = 0.4 * std::exp (-t / 3) * (std::sin (phase) + 0.5 * std::sin (2 * phase) + 0.3 * std::sin (3 * phase));
+    }
+
+    return x;
+}
+
+// How y's pitch around f0 follows x's (around fx) from 1.0 to 2.2 s: depth (share of x's), how late (ms), and how much
+// of y's pitch curve does not follow x's (cents rms). The pitch: mixed down by its note, averaged twice over one
+// period of y's note (that removes every harmonic of both when fx is a whole multiple of f0), the slope of the phase.
+void vibratoFollow (const std::vector<double>& y, double f0, const std::vector<double>& x, double fx, double rate,
+                    double& depth, double& lateMs, double& rest)
+{
+    const auto n = (size_t) std::round (rate / f0);  // both averaged over y's period: the same smoothing of both curves
+    const auto curve = [rate, n] (const std::vector<double>& s, double f)
+    {
+        std::vector<std::complex<double>> z (s.size());
+
+        for (size_t i = 0; i < s.size(); ++i)
+            z[i] = s[i] * std::polar (1.0, -2 * pi * f * (double) i / rate);
+
+        const auto average = [n] (const std::vector<std::complex<double>>& in)
+        {
+            std::vector<std::complex<double>> out (in.size());
+            std::complex<double> sum;
+
+            for (size_t i = 0; i < in.size(); ++i)
+            {
+                sum += in[i] - (i >= n ? in[i - n] : 0.0);
+                out[i] = sum / (double) n;
+            }
+
+            return out;
+        };
+        const auto b = average (average (z));
+
+        // Every 0.5 ms, the phase's slope over the 5 ms around it.
+        const size_t step = (size_t) std::round (0.0005 * rate), span = 10 * step;
+        std::vector<double> c (s.size() / step);
+
+        for (size_t k = span; k + span < c.size(); ++k)
+            c[k] = 1200 * std::log2 ((f + std::arg (b[k * step + span / 2] * std::conj (b[k * step - span / 2])) / (2 * pi) * rate / (double) span) / f);
+
+        return c;
+    };
+    const auto cy = curve (y, f0), cx = curve (x, fx);
+    const double perStep = std::round (0.0005 * rate) / rate;
+    const auto from = (size_t) (1.0 / perStep), to = (size_t) (2.2 / perStep);
+    const auto mean = [] (const std::vector<double>& c, size_t a, size_t b) { double m = 0; for (size_t i = a; i < b; ++i) m += c[i]; return m / (double) (b - a); };
+    const double mx = mean (cx, from, to);
+    size_t best = 0;
+    double bestDot = -1e300;
+
+    for (size_t lag = 0; lag < (size_t) (0.06 / perStep); ++lag)
+    {
+        const double my = mean (cy, from + lag, to + lag);
+        double dot = 0;
+
+        for (size_t i = from; i < to; ++i)
+            dot += (cx[i] - mx) * (cy[i + lag] - my);
+
+        if (dot > bestDot)
+        {
+            bestDot = dot;
+            best = lag;
+        }
+    }
+
+    const double my = mean (cy, from + best, to + best);
+    double sxx = 0, syy = 0;
+
+    for (size_t i = from; i < to; ++i)
+    {
+        sxx += (cx[i] - mx) * (cx[i] - mx);
+        syy += (cy[i + best] - my) * (cy[i + best] - my);
+    }
+
+    depth = std::sqrt (syy / sxx);
+    lateMs = 1000.0 * (double) best * perStep;
+    double left = 0;
+
+    for (size_t i = from; i < to; ++i)
+    {
+        const double e = (cy[i + best] - my) - depth * (cx[i] - mx);
+        left += e * e;
+    }
+
+    rest = std::sqrt (left / (double) (to - from));
+}
+
 void restringChecks()
 {
     std::cout << "Restring (a virtual string played by the DI)\n";
@@ -897,6 +996,26 @@ void restringChecks()
         check (std::abs (fall + 1.0) < 0.1 && late < early, "string_tone_hz 200 at a 110 Hz note: the note falls " + juce::String (fall, 2)
                                                                 + " dB per s (sustain 60 s: -1.0), the last 2 s peak " + juce::String (late / early, 3) + " x the 0.5-1 s peak");
     }
+
+    // Vibrato (+-30 cents at 5.5 Hz) is a change of the string's tension: its whole pitch follows, nothing else wobbles.
+    // Theory for the depth: the 10 ms smoothing keeps 94.5% at 5.5 Hz, the tracker's 16 ms window 98.7%: 93.3%.
+    // (Moving the read instead gave 101% / 116% an octave down, with 7.6 / 14.5 cents of wobble of its own.)
+    {
+        const auto x = vibratoNote (110, 30, rate);
+        juce::String got;
+        bool ok = true;
+
+        for (double semis : { 0.0, -12.0 })
+        {
+            double depth = 0, late = 0, rest = 0;
+            vibratoFollow (run (", \"transpose\": " + juce::String (semis, 0), x), 110 * std::pow (2.0, semis / 12), x, 110, rate, depth, late, rest);
+            ok = ok && std::abs (depth - 0.933) < 0.02 && rest < 1.5;
+            got << "transpose " << juce::String (semis, 0) << ": " << juce::String (100 * depth, 1) << "%, " << juce::String (late, 1) << " ms late, "
+                << juce::String (rest, 2) << " cents not following; ";
+        }
+
+        check (ok, "vibrato as tension: " + got + "(theory 93.3%)");
+    }
 }
 
 // Runs one bow block on x and gives its output; `counts` gets its stick/slip counters over the second half.
@@ -1048,6 +1167,16 @@ void bowChecks()
         const double before = peakHz (y, 0.5, 0.95, 100, 130, rate), after = peakHz (y, 1.3, 1.95, 100, 130, rate), octave = peakHz (low, 1.0, 2.0, 50, 60, rate);
         check (std::abs (cents (before, 110)) < 3 && std::abs (cents (after, 123.4708)) < 3 && std::abs (cents (octave, 55)) < 1,
                "a hammer-on: " + juce::String (before, 2) + " -> " + juce::String (after, 2) + " Hz (110, 123.47); transpose -12: " + juce::String (octave, 2) + " Hz (55)");
+    }
+
+    // Vibrato: the bow follows the note's length as restring follows its tension (theory for the depth 93.3%).
+    {
+        const auto x = vibratoNote (110, 30, rate);
+        double depth = 0, late = 0, rest = 0;
+        vibratoFollow (bowRun ("", x, rate), 110, x, 110, rate, depth, late, rest);
+        check (std::abs (depth - 0.933) < 0.02 && rest < 3, "vibrato: " + juce::String (100 * depth, 1) + "% of it (theory 93.3%), "
+                                                                + juce::String (late, 1) + " ms late, " + juce::String (rest, 2)
+                                                                + " cents not following (the stick-slip timing jitters a little)");
     }
 }
 

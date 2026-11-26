@@ -180,38 +180,31 @@ double Restring::wanted (const Voice& v) const noexcept
     return followed * ratio * (bend != 0 ? std::pow (2.0, -bend / 12) : 1.0);
 }
 
-void Restring::update (Voice& v, double period) noexcept
+void Restring::update (Voice& v) noexcept
 {
-    period = juce::jlimit (2.0, (double) v.line.size() - 4, period);
-    const double w = 2 * pi / period;
+    const double period = v.period, w = 2 * pi / period;
 
     // The low-pass: harmonics at string_tone_hz fall 10 times as fast as the note (per second, as on a real string).
     const double p = tonePole (period, rate, sustainS, toneHz);
     const double perRound = -3 * std::log (10.0) * period / (rate * sustainS);  // ln m
     v.pole = p;
 
-    if (B > 0 && (v.designPeriod == 0 || std::abs (std::log (period / v.designPeriod)) > std::log (2.0) / 12))
-    {
-        v.a = fitStiffness (period, B, p, rate, v.count);  // only on a new note: a bend or vibrato keeps it
-        v.designPeriod = period;
-    }
+    if (B > 0 && ! v.stopped)
+        v.a = fitStiffness (period, B, p, rate, v.count);
 
     // Stopped by a hand: it dies in 50 ms (60 dB).
     const double keep = std::exp (v.stopped ? -3 * std::log (10.0) * period / (rate * 0.05) : perRound);
     v.gain = std::min (1.0, keep / lowpassLevel (w, p));  // never more than 1 at 0 Hz
-    const double delay = juce::jlimit (2.0, (double) v.line.size() - 3, period - v.count * allpassDelay (w, v.a) - lowpassDelay (w, p));
+    v.read = juce::jlimit (2.0, (double) v.line.size() - 3, period - v.count * allpassDelay (w, v.a) - lowpassDelay (w, p));
+}
 
-    if (v.read == 0)
-    {
-        v.read = delay;
-        v.readStep = 0;
-    }
-    else
-    {
-        v.readStep = (delay - v.read) / every;  // moves there over the next update
-    }
-
-    v.rampLeft = every;
+void Restring::tick (Voice& v) noexcept
+{
+    const double out = loop (v, readLine (v, v.read));
+    v.line[(size_t) v.write] = out;
+    v.write = (v.write + 1) % (int) v.line.size();
+    v.recent[(size_t) (v.ticks & 7)] = out;
+    ++v.ticks;
 }
 
 double Restring::readLine (const Voice& v, double back) const noexcept
@@ -245,7 +238,8 @@ void Restring::pluck (double inputPeriod) noexcept
     if (old.active && ! old.stopped)
     {
         old.stopped = true;  // the pick stops the old string
-        update (old, old.period);
+        old.rampLeft = 0;
+        update (old);
     }
 
     current = 1 - current;
@@ -255,13 +249,16 @@ void Restring::pluck (double inputPeriod) noexcept
     v.stopped = false;
     v.silentFor = 0;
     v.age = 0.0;
-    v.read = 0.0;
-    v.designPeriod = 0.0;
     v.smooth = 0.0;
     v.x1.fill (0.0);
     v.y1.fill (0.0);
-    v.period = juce::jlimit (2.0, (double) v.line.size() - 4, wanted (v));
-    update (v, v.period);
+    v.recent.fill (0.0);
+    v.pos = 0.0;
+    v.ticks = 0;
+    v.rampLeft = 0;
+    v.period = juce::jlimit (2.0, (double) v.line.size() - 4, followed * ratio);  // the note without the pluck bend
+    v.speed = juce::jlimit (0.25, 4.0, v.period / wanted (v));                   // the bend: a tighter string at first
+    update (v);
 
     // The shape: the input's last whole period, ending where it last went up through zero (so the string starts
     // without a jump). `ago` = samples before now.
@@ -341,7 +338,8 @@ void Restring::process (double* x, int n) noexcept
         if (cur.active && ! cur.stopped && player.isStopped())
         {
             cur.stopped = true;  // a hand on the strings
-            update (cur, cur.period);
+            cur.rampLeft = 0;
+            update (cur);
         }
 
         if (--untilUpdate <= 0)
@@ -351,8 +349,9 @@ void Restring::process (double* x, int n) noexcept
 
             if (cur.active && ! cur.stopped)
             {
-                cur.period = juce::jlimit (2.0, (double) cur.line.size() - 4, wanted (cur));
-                update (cur, cur.period);
+                // The note moved (vibrato, a bend, a hammer-on) or the pluck bend glides: the tension, not the length.
+                cur.speedStep = (juce::jlimit (0.25, 4.0, cur.period / wanted (cur)) - cur.speed) / every;
+                cur.rampLeft = every;
             }
         }
 
@@ -365,13 +364,21 @@ void Restring::process (double* x, int n) noexcept
 
             if (v.rampLeft > 0)
             {
-                v.read += v.readStep;
+                v.speed += v.speedStep;
                 --v.rampLeft;
             }
 
-            const double out = loop (v, readLine (v, v.read));
-            v.line[(size_t) v.write] = out;
-            v.write = (v.write + 1) % (int) v.line.size();
+            // Its own steps up to where the output is, then the output between them (Catmull-Rom).
+            v.pos += v.speed;
+
+            while ((double) v.ticks < v.pos + 3)
+                tick (v);
+
+            const auto k = (long long) v.pos;
+            const double t = v.pos - (double) k;
+            const double p0 = v.recent[(size_t) ((k - 1) & 7)], p1 = v.recent[(size_t) (k & 7)];
+            const double p2 = v.recent[(size_t) ((k + 1) & 7)], p3 = v.recent[(size_t) ((k + 2) & 7)];
+            const double out = p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
             v.age += 1 / rate;
             sum += out;
 

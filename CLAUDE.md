@@ -237,19 +237,30 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   48 cents sharp with a 3 kHz pole) and is far too strong for high notes; this one: harmonics 2-10 within 0.08 cents.
   `stretch_cents` -> B ((r^2 - 1) / (100 - r^2), r = 2^(c/1200): the 10th harmonic c cents above 10 x the note); the
   all-pass coefficient is a least-squares fit over the first 20 harmonics up to 2.5 kHz (41-point scan + golden
-  section), done only on a pluck or when the note moves a semitone from the fit (bends and vibrato only move the read).
+  section), done only at the pluck.
   Fit quality measured in Python before writing it (110 Hz, M = 16): 5 / 20 / 50 / 200 cents -> worst 0.6 / 4 / 13 /
   46 cents off a stiff string; positive coefficients do NOT undo the low-pass's detuning at 384 kHz (the all-pass is
-  flat there). Read = period - all-passes' and low-pass's phase delay at the note. Retuned every 1 ms (read ramps),
-  the note followed through a 10 ms smoothing; the bend = bend_semitones e^(-age / bend_s).
+  flat there). Read = period - all-passes' and low-pass's phase delay at the note.
+  **Vibrato, bends, hammer-ons, the pluck bend = TENSION** (2026-11-26, the user asked what happens to vibrato): the
+  string is designed at the pluck in its OWN steps (length, filters, stiffness, read all fixed); every 1 ms `speed` =
+  its length / the wanted period (the note through a 10 ms smoothing x transpose x the bend bend_semitones
+  e^(-age / bend_s)) ramps there, the voice runs that many of its steps per output sample (`tick`) and the output is
+  read between them (4-point Catmull-Rom). The whole string's wave speed changes, as with a tension change. Before,
+  the READ moved (the length changed at one point): each 1 ms step squeezed the waveform there and nothing smooths a
+  free string, so the squeezes went round and added up: measured (DI 110 Hz, +-30 cents at 5.5 Hz) 101% depth with
+  7.6 cents of wobble of its own, an octave down 116% and 14.5 cents. Now 92.9% / 93.1% (theory 93.3%: the 10 ms
+  smoothing keeps 94.5% at 5.5 Hz, the tracker's 16 ms window 98.7%), 24 ms late, 0.52 / 1.35 cents not following
+  (`vibratoFollow`, the phase slope over 5 ms: over 0.5 ms the tool's own noise doubled the numbers, more so at 55 Hz).
+  The bow follows the LENGTH (its stick-slip rebuilds the waveform each period): 93.6%, 20.5 ms, 1.40 cents (the
+  stick-slip timing jitters a little: its limit is 3). The room: 89%, 41 ms (its slower tracker).
   Checked (EngineTest, 96 kHz): latency 30.0 / 22.5 / 15.0 ms at 82 / 110 / 330 Hz (50 ms with the room's tracker);
   110.005 Hz; transpose 7 / -12 / 24: 164.82 / 55.002 / 440.02 Hz; stretch 5 / 20 / 50: 10th harmonic 5.3 / 22.2 /
   57.3 cents sharp, harmonics 2-10 within 0.28 / 2.2 / 7.3 cents of the stiff string's; sustain 20 s: -1.50 dB in 0.5 s,
-  the 10th at string_tone_hz -15.2 (-15); bend 1 semitone / 0.5 s: 60.3 36.4 13.5 cents (60.7 36.8 13.5); a hammer-on
+  the 10th at string_tone_hz -15.2 (-15); bend 1 semitone / 0.5 s: 60.8 36.7 13.6 cents (60.7 36.8 13.5); a hammer-on
   followed 110 -> 123.48 Hz; a new pluck at D3 146.834 Hz, the old string -76 dB; a hand stop: silence 0.35 s after;
   a DI with no 3rd harmonic: the string's 2nd -6.00 (-6.02), 3rd -61 dB, 4th -12.05 (-12.04).
   `tests/presets/restring_bass.json` (an octave down, slightly stiff, a small bend, before the clean chain) has a
-  reference recording. X-ray removes it like strings.
+  reference recording (recorded again for the tension change). X-ray removes it like strings.
   **Loop gain at most 1** (2026-11-26, found while building the bow): the per-note 1-pole is 1 at 0 Hz and the gain makes
   up its loss at the note, so the loop gain at 0 Hz was m / |lp(note)|; with string_tone_hz under about 3 x the note
   (or more cut than a 1-pole can give) that was above 1 and the string GAINED energy (a bowed string blew up to 1e14).
