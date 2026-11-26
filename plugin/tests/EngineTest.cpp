@@ -315,13 +315,49 @@ void preampSupplyChecks()
            "it recovers through the 100 ms filter: " + juce::String (ratio, 3) + " of its drop is left after 100 ms (theory e^-1 = 0.368)");
 }
 
+void biasShiftChecks()
+{
+    std::cout << "Bias shift recovers through the coupling capacitor: C x R\n";
+    const double rate = 96000.0;
+
+    for (auto [settings, theoryMs, what] : { std::tuple { R"("coupling_nf": 10, "grid_ohms": 1000000)", 10.0, "10 nF into 1 Mohm" },
+                                            std::tuple { "", 22.0, "the default 22 nF into 1 Mohm" },
+                                            std::tuple { R"("coupling_nf": 10, "shift_release_ms": 5)", 5.0, "shift_release_ms 5 (overrides C x R)" },
+                                            std::tuple { R"("coupling_nf": 0)", 50.0, "DC-coupled (no capacitor: 50 ms)" } })
+    {
+        auto* preset = new juce::DynamicObject();
+        const juce::String extra (settings);
+        preset->setProperty ("chain", juce::JSON::parse (R"([ { "type": "gain", "curve": "hard", "bias_shift": 1)"
+                                                         + (extra.isNotEmpty() ? ", " + extra : juce::String()) + " } ]"));
+        amp::Amp a (juce::var (preset), rate, rate, juce::File(), juce::File ("C:/no/such/folder/ir.wav"));
+        a.prepare (1, 1);
+        amp::Gain* g = dynamic_cast<amp::Gain*> (amp::flatten (a.core)[0]);
+
+        // A hard 0.2 s burst charges the capacitor; then silence: the shift must fall to e^-1 in one time constant.
+        auto x = sine (220, 3.0, 0.6, rate);
+        std::fill (x.begin() + (int) (0.2 * rate), x.end(), 0.0);
+        std::vector<double> shift;
+
+        for (size_t i = 0; i < x.size(); ++i)
+        {
+            a.processCore (x.data() + i, 1);
+            shift.push_back (g->biasShift());
+        }
+
+        const size_t from = (size_t) (0.201 * rate), to = from + (size_t) (theoryMs * 0.001 * rate);  // 1 ms after the burst
+        const double ratio = shift[to] / shift[from];
+        check (shift[from] < -0.01 && std::abs (ratio - std::exp (-1.0)) < 0.002,
+               juce::String (what) + ": after " + juce::String (theoryMs, 0) + " ms " + juce::String (ratio, 4) + " of the shift is left (theory e^-1 = 0.3679)");
+    }
+}
+
 void transformerChecks()
 {
     std::cout << "Output transformer: a 1st-order bass roll-off, and a core that saturates on loud low notes\n";
     const double rate = 96000.0;
     const auto pair = [rate] (double satHz, double freq, double level)
     {
-        const auto chain = R"([ { "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -45, "raa_ohms": 3400, "transformer_sat_hz": )"
+        const auto chain = R"([ { "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -45, "raa_ohms": 3400, "coupling_nf": 0, "transformer_sat_hz": )"
                            + juce::String (satHz) + " } ]";
         return runJson (chain, sine (freq, level, 1.0, rate), rate);
     };
@@ -1043,6 +1079,7 @@ int main (int argc, char* argv[])
             powerChecks();
             preampSupplyChecks();
             transformerChecks();
+            biasShiftChecks();
             roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);

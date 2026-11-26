@@ -57,6 +57,26 @@ static double shiftCoefficient (double ms, double rate)
     return 1 - std::exp (-1 / (ms * 0.001 * rate));
 }
 
+// The coupling capacitor into this stage's grid resistor (coupling_nf into grid_ohms): a 1st-order high-pass at
+// 1 / (2 pi R C) at the very start of the stage. When the grid draws current (bias shift), it charges this same
+// capacitor, which then drains through R: so the shift recovers with C x R, unless shift_release_ms says otherwise.
+// 0 nF = DC-coupled: no high-pass and no capacitor to charge (shift_release_ms, default 50 ms, is used then).
+// Returns the release coefficient for the bias shift.
+static double inputCoupling (const Cfg& cfg, const BuildContext& ctx, FilterList& pre, double defaultGridOhms)
+{
+    const double nf = cfg.number ("coupling_nf", 22.0), ohms = cfg.number ("grid_ohms", defaultGridOhms);
+
+    if (nf < 0 || ohms <= 0)
+        throw PresetError ("coupling_nf must be 0 or more and grid_ohms above 0");
+
+    if (nf > 0)
+        pre.filters.insert (pre.filters.begin(), Biquad::make ("highpass1", 1 / (2 * juce::MathConstants<double>::pi * ohms * nf * 1e-9),
+                                                               ctx.rate, 0.707, 0.0, ctx.checkRate));
+
+    const double releaseMs = cfg.has ("shift_release_ms") || nf == 0 ? cfg.number ("shift_release_ms", 50) : nf * 1e-9 * ohms * 1000;
+    return shiftCoefficient (releaseMs, ctx.rate);
+}
+
 //==============================================================================
 EqBlock::EqBlock (const Cfg& cfg, const BuildContext& ctx) : LoopBlock (cfg, { "bands", "level_db" })
 {
@@ -264,25 +284,13 @@ Gain::Gain (const Cfg& cfg, const BuildContext& ctx) : LoopBlock (cfg, gainSetti
     offset = curve (bias);  // keeps silence at zero when bias is set
     pre = makeFilters (cfg.list ("pre"), ctx);
     post = makeFilters (cfg.list ("post"), ctx);
-
-    // The coupling capacitor into the next stage's grid resistor ends the stage: a 1st-order high-pass at
-    // 1 / (2 pi R C), which also removes the DC offset uneven clipping leaves. 0 nF = DC-coupled (no capacitor).
-    const double couplingNf = cfg.number ("coupling_nf", 22.0), gridOhms = cfg.number ("grid_ohms", 1e6);
-
-    if (couplingNf < 0 || gridOhms <= 0)
-        throw PresetError ("gain: coupling_nf must be 0 or more and grid_ohms above 0");
-
-    if (couplingNf > 0)
-        post.filters.push_back (Biquad::make ("highpass1", 1 / (2 * juce::MathConstants<double>::pi * gridOhms * couplingNf * 1e-9),
-                                              ctx.rate, 0.707, 0.0, ctx.checkRate));
-
+    shiftRelease = inputCoupling (cfg, ctx, pre, 1e6);  // a preamp grid resistor: usually 1 Mohm
     shiftAmount = cfg.number ("bias_shift", 0.0);
 
     if (shiftAmount < 0 || shiftAmount > 1)
         throw PresetError ("bias_shift must be from 0 to 1, got " + juce::String (shiftAmount));
 
     shiftAttack = shiftCoefficient (cfg.number ("shift_attack_ms", 1), ctx.rate);
-    shiftRelease = shiftCoefficient (cfg.number ("shift_release_ms", 50), ctx.rate);
 }
 
 void Gain::reset() noexcept
@@ -358,7 +366,7 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
                         "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
                         "supply_ohms", "supply_uf", "preamp_targets", "preamp_filter_ms", "transformer_low_hz",
-                        "transformer_sat_hz", "pairs" })
+                        "transformer_sat_hz", "pairs", "coupling_nf", "grid_ohms" })
 {
     const double plateV = cfg.number ("plate_v", 450.0);
     const double screenV = cfg.number ("screen_v", 0.0);
@@ -404,6 +412,7 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
     level = dbToGain (cfg.number ("level_db", 0.0));
     pre = makeFilters (cfg.list ("pre"), ctx);
     post = makeFilters (cfg.list ("post"), ctx);
+    shiftRelease = inputCoupling (cfg, ctx, pre, 220e3);  // power tubes' grid (bias feed) resistors: about 220k
     // The output transformer: its winding is an inductor across the load, a 1st-order high-pass at transformer_low_hz
     // (it passes no DC). Its core holds only so much flux (volts x time), so loud LOW notes saturate it: at
     // transformer_sat_hz a full-power note just reaches that flux. Flux lambda' = out, out = y - w m (lambda),
@@ -423,7 +432,6 @@ Power::Power (const Cfg& cfg, const BuildContext& ctx)
         throw PresetError ("bias_shift must be from 0 to 1, got " + juce::String (shiftAmount));
 
     shiftAttack = shiftCoefficient (cfg.number ("shift_attack_ms", 1), ctx.rate);
-    shiftRelease = shiftCoefficient (cfg.number ("shift_release_ms", 50), ctx.rate);
 }
 
 void Power::reset() noexcept

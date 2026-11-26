@@ -195,6 +195,16 @@
           "short": "How many pairs of power tubes work side by side. 2 = the four tubes of a 100 W amp.",
           "tooltip": "Big amps put two (or three) pairs in parallel: each side's current adds up, and they drive a transformer with half the load (raa_ohms) to get twice the power. Into half the load each tube works just as in a single pair, so the clipping sounds the same; what changes is the power (50 W -> 100 W) and that the power supply has to feed twice the current, so it sags more with the same rectifier. Halve raa_ohms when you go from 1 to 2 pairs (3.4k -> 1.7k for EL34s), as the real amps do."
         },
+        "coupling_nf": {
+          "label": "Coupling capacitors", "type": "number", "unit": "nF", "min": 0, "max": 1000, "default": 22, "scale": "log",
+          "short": "The capacitors from the phase inverter to the power tubes' grids. 0 = DC-coupled.",
+          "tooltip": "With the grid (bias feed) resistors they make a gentle bass cut, 1 / (2 pi R C): 22 nF into 220k = 33 Hz. They also cause the power tubes' bias shift: when a grid is driven past 0 V it charges its capacitor, which drains through the grid resistor in C x R (22 nF x 220k = 4.8 ms). Bigger capacitors: deeper bass and longer 'farting' recovery when driven hard."
+        },
+        "grid_ohms": {
+          "label": "Grid resistors", "type": "number", "unit": "ohm", "min": 10000, "max": 1000000, "default": 220000, "scale": "log",
+          "short": "The power tubes' grid (bias feed) resistors.",
+          "tooltip": "Usually 220k (sometimes 100k or 470k). With the coupling capacitors they set the bass cut and how fast bias shift recovers."
+        },
         "drive_db": {
           "label": "Drive", "type": "number", "unit": "dB", "min": -20, "max": 60, "default": 0,
           "short": "How many volts reach the power tube grids.",
@@ -232,8 +242,8 @@
           "tooltip": "Fast in a real amp (about 1 ms). Only matters when Bias shift is above 0."
         },
         "shift_release_ms": {
-          "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 50, "scale": "log",
-          "short": "How fast the grids recover.",
+          "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": null, "scale": "log",
+          "short": "How fast the grids recover. Empty = C x R of the coupling capacitors.",
           "tooltip": "In a real amp: the coupling capacitor times the bias resistor (for example 22 nF x 220k = 5 ms, 100 nF x 220k = 22 ms). Bigger coupling capacitors = longer recovery and more 'farting' when driven hard; that is why some amps use small ones. Only matters when Bias shift is above 0."
         },
         "supply_ohms": {
@@ -532,19 +542,19 @@
           "tooltip": "In a real stage the capacitor charges fast, through the low resistance of the conducting grid: around 0.5-2 ms. Shorter = the pick attack itself gets squashed. Longer = the first hit gets through, then the stage chokes. Only matters when Bias shift is above 0."
         },
         "shift_release_ms": {
-          "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": 50, "scale": "log",
-          "short": "How fast the working point comes back after a loud part.",
+          "label": "Shift release", "type": "number", "unit": "ms", "min": 5, "max": 1000, "default": null, "scale": "log",
+          "short": "How fast the working point comes back after a loud part. Empty = C x R of the coupling capacitor.",
           "tooltip": "In a real stage this is the coupling capacitor draining through the grid resistor (for example 22 nF x 1 Mohm = 22 ms). Short (10-30 ms): the stage recovers between notes; tight and fast. Long (100-500 ms): the stage stays choked after a hard hit; you hear a 'swell' as it recovers, and with fast palm mutes it sounds gated. Bigger coupling capacitors in a real amp = longer release. Only matters when Bias shift is above 0."
         },
         "coupling_nf": {
           "label": "Coupling capacitor", "type": "number", "unit": "nF", "min": 0, "max": 1000, "default": 22, "scale": "log",
-          "short": "The capacitor from this stage to the next one. 0 = DC-coupled (no capacitor).",
-          "tooltip": "Every tube stage passes its signal on through a capacitor into the next tube's grid resistor. Together they are a gentle (1st-order) high-pass at 1 / (2 pi R C): 22 nF into 1 Mohm = 7.2 Hz (passes all the bass), 1 nF into 1 Mohm = 160 Hz (a tight, thin stage, as in many high-gain amps), 0.5 nF = 320 Hz. It also removes the DC offset that uneven clipping leaves. 0 = no capacitor (DC-coupled, as into a cathode follower): then that offset goes on to the next block. The same capacitor charges up when the NEXT stage draws grid current: that is the next stage's bias shift, and its shift_release_ms is about this C x R (22 nF x 1 Mohm = 22 ms)."
+          "short": "The capacitor that brings the signal into this tube's grid. 0 = DC-coupled (no capacitor).",
+          "tooltip": "Every tube stage gets its signal through a capacitor into its grid resistor. Together they are a gentle (1st-order) high-pass at 1 / (2 pi R C): 22 nF into 1 Mohm = 7.2 Hz (passes all the bass), 1 nF into 1 Mohm = 160 Hz (a tight stage, as in many high-gain amps), 0.5 nF = 320 Hz. The SAME capacitor causes bias shift: when the grid is driven past 0 V it draws current and charges the capacitor, and the charge drains through the grid resistor, so the stage recovers in C x R (22 nF x 1 Mohm = 22 ms, 1 nF = 1 ms). That is why tight high-gain amps use small capacitors: they also recover fast instead of 'blocking'. 0 = no capacitor (DC-coupled, as from a stage into a cathode follower)."
         },
         "grid_ohms": {
-          "label": "Next grid resistor", "type": "number", "unit": "ohm", "min": 10000, "max": 10000000, "default": 1000000, "scale": "log",
-          "short": "The resistor the coupling capacitor feeds (the next tube's grid resistor, or a volume pot).",
-          "tooltip": "Usually 1 Mohm, 470k or 220k, or a 1 Mohm volume pot. With the coupling capacitor it sets the bass cut: 1 / (2 pi R C)."
+          "label": "Grid resistor", "type": "number", "unit": "ohm", "min": 10000, "max": 10000000, "default": 1000000, "scale": "log",
+          "short": "The resistor from this tube's grid to ground (or the volume pot before it).",
+          "tooltip": "Usually 1 Mohm, 470k or 220k, or a 1 Mohm volume pot. With the coupling capacitor it sets the bass cut, 1 / (2 pi R C), and how fast bias shift recovers, C x R."
         },
         "level_db": {
           "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 20, "default": 0,

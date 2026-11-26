@@ -113,6 +113,8 @@ public:
 
     // Set by a power block that lists this stage in preamp_targets: its supply's share of the voltage (1 = full).
     const double* supplyHeadroom = nullptr;
+
+    double biasShift() const noexcept { return shift; }  // the charge on the coupling capacitor now (for the checks)
     double peek (double v) const noexcept override;
     void commitTried() noexcept override;
     double maxSlope() const override;

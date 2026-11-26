@@ -1001,7 +1001,7 @@ int main (int argc, char* argv[])
         for (auto [ohms, into] : { std::pair { 0, &stiff }, std::pair { 250, &sagging } })
         {
             triode.replaceWithText (R"({ "name": "Supply", "chain": [ { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450,
-                                        "bias_v": -45, "supply_uf": 47, "supply_ohms": )" + juce::String (ohms) + " } ] }");
+                                        "bias_v": -45, "coupling_nf": 0, "supply_uf": 47, "supply_ohms": )" + juce::String (ohms) + " } ] }");
             s->loadPresetFile (triode);
             waitForBuild (*s);
             view.setSignal (SignalView::Signal::loudSoft, 110.0, 40.0);
@@ -1011,7 +1011,7 @@ int main (int argc, char* argv[])
 
         view.setTimeSpanMs (500);
         triode.replaceWithText (R"({ "name": "No supply setting", "chain": [ { "type": "power", "id": "pa", "tube": "EL34", "plate_v": 450,
-                                    "bias_v": -45 } ] })");
+                                    "bias_v": -45, "coupling_nf": 0 } ] })");
         s->loadPresetFile (triode);
         waitForBuild (*s);
         waitForSignals();

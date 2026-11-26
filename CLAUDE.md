@@ -54,18 +54,23 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
 ## How the blocks work (keep these rules)
 
 - **Gain**: pre filters -> drive -> `curve(x + bias) - curve(bias)` at 8x -> post filters -> level.
-  The stage ends with its COUPLING CAPACITOR into the next grid resistor (`coupling_nf`, `grid_ohms`; default 22 nF
-  into 1 Mohm = 7.2 Hz): a 1st-order high-pass at 1/(2 pi R C), which also removes the DC offset of uneven clipping.
-  `coupling_nf: 0` = DC-coupled (the offset goes on). Until 2026-11-24 this was a made-up 2nd-order 10 Hz high-pass;
-  two of those in a feedback loop turn the phase 180 degrees at 10 Hz (that made kt88_james ring). Real amps: every
-  coupling capacitor and a transformer's low end are 1st order, so filters have `highpass1`/`lowpass1` (bilinear,
-  corner exact; no q or gain_db: an error) and the amp-style presets use them; the plain `highpass`/`lowpass` (2nd
-  order, RBJ) stay for the simple presets and tone shaping. Amp-style presets: the stage before the cathode follower
-  and the cathode follower are DC-coupled (as in the real circuits), so clipping's DC shift moves the cathode
-  follower's working point; the tone stack's capacitors block it. Checked (EngineTest): 1 nF into 994718 ohm =
-  -3.010 dB at 160 Hz and -20.043 dB at 16 Hz, exactly the theory. Every preset dies away in silence (-218 dB or
-  less) with no DC while playing (-198 dB or less). Note: this capacitor causes the NEXT stage's bias shift (its
-  shift_release_ms is about C x R); the two settings are not linked yet.
+  The stage STARTS with its COUPLING CAPACITOR into its own grid resistor (`coupling_nf`, `grid_ohms`; default 22 nF
+  into 1 Mohm = 7.2 Hz; `inputCoupling` puts a 1st-order high-pass at 1/(2 pi R C) in front of the pre filters).
+  The same capacitor is what bias shift charges, so the shift recovers in C x R (22 ms by default; a 1 nF tight
+  stage 1 ms) unless `shift_release_ms` is set (no fixed default any more; DC-coupled = 50 ms). The power block has
+  the same input network (default 22 nF into 220k = 33 Hz, 4.8 ms). `coupling_nf: 0` = DC-coupled. History: until
+  2026-11-24 a made-up 2nd-order 10 Hz high-pass ended every stage (two of those in a loop turn the phase 180 degrees
+  at 10 Hz: that made kt88_james ring); then until 2026-11-26 the capacitor ended each stage, unrelated to the bias
+  shift's separately guessed release. Real amps: every coupling capacitor and a transformer's low end are 1st order,
+  so filters have `highpass1`/`lowpass1` (bilinear, corner exact; no q or gain_db: an error); the plain
+  `highpass`/`lowpass` (2nd order, RBJ) stay for the simple presets and tone shaping. Amp-style presets: their old
+  80-250 Hz high-passes in front of tight stages became capacitors (0.64-2 nF into 1 Mohm), power-tube high-passes
+  capacitors into 220k (21.9 nF = brit_800's 33 Hz: 4.8 ms, its old guess was 5 ms; us_blackface_clean's 7 Hz:
+  22.7 ms, old guess 22 ms), and the guessed releases were removed; the cathode follower's INPUT is DC-coupled
+  (coupling_nf 0), so clipping's DC shift moves its working point; the tone stack's capacitors block it. Checked
+  (EngineTest): 1 nF into 994718 ohm = -3.010 dB at 160 Hz and -20.043 dB at 16 Hz; after a hard burst the shift is
+  at 0.3679 (e^-1) after exactly C x R (10 nF x 1 Mohm, the default 22 nF, an explicit 5 ms, DC-coupled 50 ms).
+  Every preset dies away in silence; DC while playing -147 dB or less (crunch), so the output needs no DC filter.
 - **Curves**: `soft`, `tube`, `diode`, `hard` (fixed shapes in `Curve`), plus
   `custom` and `triode` built in `Curves.cpp` from their settings (a setting
   for one curve used with another curve is an error). `triode`: Koren 1996 model + plate resistor load
