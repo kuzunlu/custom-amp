@@ -173,6 +173,7 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
     statusBox.setScrollbarsShown (true);
     statusBox.setColour (juce::TextEditor::backgroundColourId, theme::panel);
     addAndMakeVisible (statusBox);
+    addAndMakeVisible (meterView);
 
     addAndMakeVisible (chainLabel);
 
@@ -579,6 +580,8 @@ void CustomAmpEditor::resized()
     qualityLabel.setBounds (qualityColumn.removeFromTop (18));
     qualityBox.setBounds (qualityColumn.removeFromTop (26).reduced (4, 0));
 
+    controls.removeFromLeft (8);
+    meterView.setBounds (controls.removeFromLeft (190));
     controls.removeFromLeft (8);
     statusBox.setBounds (controls);
 

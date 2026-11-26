@@ -502,6 +502,16 @@ C++ checks:
   "Put on the front panel" (`MenuSlider`); a guessed panel is first written into the preset (blocks get ids like
   `tonestack`). Right-click a knob: rename (or double-click its name), remove, show in the chain editor.
   The block keys (Ctrl+C/X/V/D, Delete) only work in the chain editor.
+- **Meters and tuner** (`MeterView`, in the header between the knobs and the status box, 2026-11-26): In (after
+  the Input knob: what the amp gets, 0 dB = 1 V) and Out (what leaves the plugin) as peak bars falling 20 dB/s, a clip
+  light each held 2 s (In: the RAW interface input reached full scale; Out: the output did; a click clears them); a
+  tuner (the note at the amp's input, cents, a needle, green within 3 cents); CPU = the share of each block's real
+  time `processBlock` needed (smoothed; it rises when the PC is busy, which is what matters for dropouts). The audio
+  thread writes `CustomAmpProcessor::Meters` (atomics: peaks raised with compare-exchange, read and set back to 0 by
+  the editor 30 times a second). The tuner is an `amp::Player` (the room's settings) on the input, run only while a
+  MeterView is showing (`tunerOn`). Checked (PluginTest): A2 +10 cents at 0.5 V -> "A2 10.02 cents", In -6.02 dB;
+  full scale -> clip; silence -> no note; tuner off -> it does not run; CPU on brit_800 8.9% with the tuner, 9.4%
+  without (no measurable cost; a first run showed 23-29%: the PC was busy).
 - **Signal view** (`SignalView`, "Signals" in the chain editor; the processor remembers it): for LEARNING what each
   block does. It never touches the sound: on its own thread it builds its own `Engine` (output level fixed at 1, same
   rate and oversampling as the plugin) from the editor's preset TEXT (a `juce::var` is not safe to share across

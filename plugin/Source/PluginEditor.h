@@ -5,6 +5,7 @@
 #include "ChainView.h"
 #include "Help.h"
 #include "Inspector.h"
+#include "MeterView.h"
 #include "PanelView.h"
 #include "PluginProcessor.h"
 #include "SignalView.h"
@@ -34,6 +35,7 @@ public:
     // In the chain editor: the signal view (each block's waveform or spectrum) instead of the block list.
     void showSignals (bool signals);
     SignalView& getSignalView() { return signalView; }
+    const MeterView& getMeterView() const { return meterView; }
 
     // What "Put on the front panel" does (right-click a slider in the chain editor).
     void putOnPanel (const juce::var& block, const juce::String& setting);
@@ -73,6 +75,7 @@ private:
     juce::Label inputLabel, outputLabel, qualityLabel, chainLabel;
     juce::ComboBox qualityBox;
     juce::TextEditor statusBox;
+    MeterView meterView { processor };
     juce::TextButton addBlockButton { "Add block..." }, undoButton { "Undo" }, redoButton { "Redo" }, viewButton;
     PanelView panelView { processor };
     juce::Viewport chainViewport, inspectorViewport;

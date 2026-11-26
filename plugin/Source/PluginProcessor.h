@@ -5,6 +5,7 @@
 #include "Help.h"
 #include "Panel.h"
 #include "dsp/Engine.h"
+#include "dsp/Player.h"
 
 #include <array>
 #include <optional>
@@ -40,6 +41,18 @@ public:
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+
+    // The header's meters and tuner (MeterView): the audio thread writes them, the message thread reads them (and
+    // takes the peaks and clip flags back to 0).
+    struct Meters
+    {
+        std::atomic<float> inPeak { 0 }, outPeak { 0 };         // the highest |sample| since the last read (1 = 0 dBFS)
+        std::atomic<bool> inClip { false }, outClip { false };   // the interface's input or the output reached full scale
+        std::atomic<float> cpu { 0 };                            // share of each block's time the audio thread needed
+        std::atomic<float> noteHz { 0 };                         // the tuner: the note at the amp's input, 0 = none
+        std::atomic<bool> tunerOn { false };                     // while a window shows it (the tracker costs a little)
+    };
+    Meters meters;
 
     // Message thread only. ---------------------------------------------------
     struct BuiltInPreset { juce::String fileName, name; };
@@ -169,6 +182,7 @@ private:
     std::atomic<int> historyWrite { 0 };
 
     std::vector<double> mono, monoOld;
+    amp::Player tuner;  // the tuner's pitch tracker (audio thread)
 
     // X-ray: the twin belongs to the audio thread like the engine (pendingTwin in, retiredTwin out). It is built from
     // the preset with one block switched off, at the amp's own output level (so the difference is exact).

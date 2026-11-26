@@ -901,6 +901,55 @@ int main (int argc, char* argv[])
         amp.deleteFile();
     }
 
+    std::cout << "Meters and tuner\n";
+    {
+        auto m = makePlugin();
+        waitForBuild (*m);
+        const auto feed = [&m] (double hz, float peak, double seconds)
+        {
+            juce::AudioBuffer<float> buffer (2, block);
+            juce::MidiBuffer midi;
+            static double phase = 0;
+
+            for (int b = 0; b < (int) (seconds * rate / block); ++b)
+            {
+                for (int i = 0; i < block; ++i, phase += juce::MathConstants<double>::twoPi * hz / rate)
+                    for (int ch = 0; ch < 2; ++ch)
+                        buffer.setSample (ch, i, peak * (float) std::sin (phase));
+
+                m->processBlock (buffer, midi);
+            }
+        };
+
+        // A2 10 cents sharp at 0.5 V: the tuner says A2 +10, the input meter -6.02 dB (1 V = 0 dB).
+        m->meters.tunerOn = true;
+        m->meters.inPeak = 0;
+        feed (110.0 * std::pow (2.0, 10 / 1200.0), 0.5f, 1.0);
+        double cents = 0;
+        const auto name = MeterView::noteName (m->meters.noteHz.load(), cents);
+        const double inDb = 20 * std::log10 (m->meters.inPeak.exchange (0));
+        const float cpu = m->meters.cpu.load();
+        check (name == "A2" && std::abs (cents - 10) < 0.5 && std::abs (inDb + 6.02) < 0.01 && cpu > 0 && cpu < 1 && ! m->meters.inClip.load(),
+               "tuner: " + name + " " + juce::String (cents, 2) + " cents (A2 +10), input meter " + juce::String (inDb, 2) + " dB (-6.02), CPU "
+                   + juce::String (100 * cpu, 2) + "%, no clip");
+
+        // Full scale at the input lights the clip light; silence: no note.
+        feed (110.0, 1.0f, 0.1);
+        const bool clipped = m->meters.inClip.exchange (false);
+        feed (110.0, 0.0f, 0.5);
+        double c2 = 0;
+        check (clipped && m->meters.noteHz.load() == 0 && MeterView::noteName (82.4069, c2) == "E2" && std::abs (c2) < 0.01
+                   && MeterView::noteName (440.0, c2) == "A4",
+               "full scale at the input: clip light; silence: no note; note names E2 (82.41 Hz), A4 (440 Hz)");
+
+        // The tracker only runs while a window shows the tuner.
+        m->meters.tunerOn = false;
+        m->meters.noteHz = 0;
+        feed (220.0, 0.5f, 1.0);
+        check (m->meters.noteHz.load() == 0, "with no window showing it, the tuner does not run (CPU then "
+                                                  + juce::String (100 * m->meters.cpu.load(), 2) + "%; " + m->getPresetSource() + ")");
+    }
+
     std::cout << "Signal view\n";
     {
         auto s = makePlugin();

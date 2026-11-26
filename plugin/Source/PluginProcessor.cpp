@@ -680,6 +680,7 @@ void CustomAmpProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     fadeLength = juce::jmax (1, (int) (fadeSeconds * sampleRate));
     inputGain.reset (sampleRate, 0.02);
     outputGain.reset (sampleRate, 0.02);
+    tuner.prepare (sampleRate, 0.001);  // the room's tracker (steadier than restring's quick one); quieter = no note
 
     juce::String message;
     engine = buildEngine (makeRequest (currentLevel.load() <= 0.0), message);
@@ -719,6 +720,7 @@ void CustomAmpProcessor::catchUp (amp::Engine& fresh) noexcept
 void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+    const auto started = juce::Time::getHighResolutionTicks();
 
     // An old engine that has faded out goes back to the message thread to be deleted.
     if (fadingEngine != nullptr && fadePos >= fadeLength && retiredEngine.load() == nullptr)
@@ -759,6 +761,8 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     inputGain.setTargetValue (juce::Decibels::decibelsToGain ((double) inputParam->load()));
     outputGain.setTargetValue (juce::Decibels::decibelsToGain ((double) outputParam->load()));
     const int size = (int) history.size();
+    const bool tunerOn = meters.tunerOn.load (std::memory_order_relaxed);
+    float rawPeak = 0, inPeak = 0, outPeak = 0;
 
     for (int start = 0; start < numSamples; start += engine->maxBlock())
     {
@@ -771,9 +775,17 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             double sum = 0.0;
 
             for (int ch = 0; ch < numIn; ++ch)
-                sum += (double) buffer.getSample (ch, start + i);
+            {
+                const float s = buffer.getSample (ch, start + i);
+                rawPeak = juce::jmax (rawPeak, std::abs (s));
+                sum += (double) s;
+            }
 
             mono[(size_t) i] = sum / numIn * inputGain.getNextValue();
+            inPeak = juce::jmax (inPeak, (float) std::abs (mono[(size_t) i]));
+
+            if (tunerOn && tuner.hear (mono[(size_t) i]))
+                meters.noteHz.store ((float) (currentRate / tuner.period()), std::memory_order_relaxed);
             history[(size_t) write].store ((float) mono[(size_t) i], std::memory_order_relaxed);
             write = (write + 1) % size;
         }
@@ -834,11 +846,32 @@ void CustomAmpProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         for (int i = 0; i < n; ++i)
         {
             const auto v = (float) (mono[(size_t) i] * outputGain.getNextValue());
+            outPeak = juce::jmax (outPeak, std::abs (v));
 
             for (int ch = 0; ch < numOut; ++ch)
                 buffer.setSample (ch, start + i, v);
         }
     }
+
+    // The meters: peaks go up to the highest since the editor last read them.
+    const auto raise = [] (std::atomic<float>& a, float v)
+    {
+        for (float old = a.load (std::memory_order_relaxed); v > old && ! a.compare_exchange_weak (old, v);) {}
+    };
+    raise (meters.inPeak, inPeak);
+    raise (meters.outPeak, outPeak);
+
+    if (rawPeak >= 0.999f)
+        meters.inClip = true;
+
+    if (outPeak >= 0.999f)
+        meters.outClip = true;
+
+    if (tunerOn && tuner.isMuted())
+        meters.noteHz.store (0.0f, std::memory_order_relaxed);
+
+    const double used = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - started) / (numSamples / currentRate);
+    meters.cpu.store ((float) (0.9 * meters.cpu.load (std::memory_order_relaxed) + 0.1 * used), std::memory_order_relaxed);
 }
 
 //==============================================================================

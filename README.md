@@ -57,6 +57,10 @@ The plugin is `build\CustomAmp_artefacts\Release\VST3\Custom Amp.vst3` (copy it 
   selected block with everything inside it. The copy is JSON text, so you can paste it into another plugin or a
   preset file. Ids that are already used get a number (`v2` becomes `v2_2`).
 - **Load IR...** loads a cab `.wav`. Without one, the built-in presets use a simple built-in test cab.
+- **Meters and tuner** (next to the knobs): **In** is what the amp gets (after Input), **Out** what leaves the plugin;
+  the red light above each means a sample hit full scale in the last 2 s (at In: your audio interface clipped; click
+  to clear). The tuner shows the note you play and how many cents off it is (green within 3 cents). **CPU** is how
+  much of each audio block's time the plugin needs; near 100% you get dropouts.
 - **Input**: hard strums should peak around -6 dBFS. **Output**: your own level on top of the automatic one
   (every preset is set to about the same loudness when it loads). **Quality**: oversampling, 8x is best.
 - **Signals** (in the chain editor): see what every block does. Its own copy of the amp plays a test signal (a sine,
