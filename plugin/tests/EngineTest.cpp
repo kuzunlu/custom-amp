@@ -520,6 +520,53 @@ void powerChecks()
                                                            + " W (known: " + juce::String (a.watts, 0) + " W)");
     }
 
+    // Two pairs into half the load: each tube works as in one pair, so twice the power and the same sound; the supply
+    // feeds twice the current, so it sags about twice as far (a bit less: a lower supply lowers the current too).
+    {
+        const auto one = amp::PushPull::make ("EL34", 450, 450, -38, 3400, 0.0, 1), two = amp::PushPull::make ("EL34", 450, 450, -38, 1700, 0.0, 2);
+        const double fast = 96000.0;
+        const auto run = [fast] (const juce::String& power, double& lowestSupply)
+        {
+            auto* preset = new juce::DynamicObject();
+            preset->setProperty ("chain", juce::JSON::parse ("[ " + power + " ]"));
+            amp::Amp a (juce::var (preset), fast, fast, juce::File(), juce::File ("C:/no/such/folder/ir.wav"));
+            a.prepare (4096, 4096);
+            auto x = sine (110, 30.0, 0.5, fast);
+            lowestSupply = 1.0;
+            amp::Power* pa = nullptr;
+
+            for (auto* b : amp::flatten (a.core))
+                pa = pa != nullptr ? pa : dynamic_cast<amp::Power*> (b);
+
+            for (size_t i = 0; i < x.size(); i += 96)
+            {
+                a.processCore (x.data() + i, 96);
+                lowestSupply = std::min (lowestSupply, pa->supplyRatio());
+            }
+
+            return x;
+        };
+        double unused = 0, dropOne = 0, dropTwo = 0;
+        const auto yOne = run (R"({ "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -38, "raa_ohms": 3400 })", unused);
+        const auto yTwo = run (R"({ "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -38, "raa_ohms": 1700, "pairs": 2 })", unused);
+        double worst = 0.0, peak = 0.0;
+
+        for (size_t i = 0; i < yOne.size(); ++i)
+        {
+            worst = std::max (worst, std::abs (yOne[i] - yTwo[i]));
+            peak = std::max (peak, std::abs (yOne[i]));
+        }
+
+        run (R"({ "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -38, "raa_ohms": 3400, "supply_ohms": 170 })", dropOne);
+        run (R"({ "type": "power", "tube": "EL34", "plate_v": 450, "bias_v": -38, "raa_ohms": 1700, "pairs": 2, "supply_ohms": 170 })", dropTwo);
+        const double ratio = (1 - dropTwo) / (1 - dropOne);
+        check (std::abs (two.maxWatts / one.maxWatts - 2.0) < 1e-9 && worst < 1e-9 * peak && ratio > 1.6 && ratio <= 2.0,
+               "two EL34 pairs into 1.7k: " + juce::String (two.maxWatts, 1) + " W = " + juce::String (two.maxWatts / one.maxWatts, 4)
+                   + " x one pair into 3.4k, the same sound (" + juce::String (worst / peak, 12) + " apart), and a 170 ohm supply sags "
+                   + juce::String (ratio, 2) + " x as far (B+ " + juce::String (juce::roundToInt (450 * dropOne)) + " V vs "
+                   + juce::String (juce::roundToInt (450 * dropTwo)) + " V)");
+    }
+
     const double rate = 384000.0;
     double second[2] {};
 

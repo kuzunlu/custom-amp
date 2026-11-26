@@ -108,6 +108,11 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   with 8 this model can not reach 11 mA/V at 140 mA) were fitted the same way; their `rsat` comes from the
   Svetlana sheets' fixed-bias rows: 100 W at 560 V into 4.5k (KT88), 100 W at 600 V into 5k (6550C).
   Safe bias (70% of max plate heat, screen = plate): KT88 at 560 V -66 V, 6550 at 600 V -76 V.
+  **Parallel pairs** (`pairs` 1-4, a whole number; settings.json `"step": 1` makes the inspector slider whole): each
+  side's current x pairs, rsat / pairs. Into raa / pairs every tube works as in one pair: the SAME output (checked:
+  0 apart) and pairs x the power (2 EL34 pairs into 1.7k = 95.9 W = 2.0000 x one into 3.4k); the supply feeds pairs x
+  the current, so it sags more (170 ohm: 1.67 x as far, B+ 424 vs 406 V). german_high_gain, us_hotrod_lead,
+  us_modern_high_gain (100 W originals) use 2 pairs into half their old raa.
   **Rectifier supply (C++ only, `supply_ohms` > 0, `supply_uf`):** the real cause of sag. A filter capacitor C
   charged through R (rectifier + transformer winding), drained by the pair's current `draw = h^1.35 (IA + IB)` (from
   `PushPull::shape`). Each sample, exactly: V moves towards `V0 - I R` with time constant R C (`stepSupply`);

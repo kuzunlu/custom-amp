@@ -345,17 +345,26 @@ juce::String Gain::describe() const
 }
 
 //==============================================================================
+// pairs: a whole number (1.5 pairs of tubes is a mistake, not something to round).
+static int wholePairs (double pairs)
+{
+    if (pairs != std::floor (pairs))
+        throw PresetError ("power pairs must be a whole number (1 to 4), got " + juce::String (pairs));
+
+    return (int) pairs;
+}
+
 Power::Power (const Cfg& cfg, const BuildContext& ctx)
     : LoopBlock (cfg, { "tube", "plate_v", "screen_v", "bias_v", "raa_ohms", "mismatch", "drive_db", "level_db",
                         "pre", "post", "oversample", "bias_shift", "shift_attack_ms", "shift_release_ms",
                         "supply_ohms", "supply_uf", "preamp_targets", "preamp_filter_ms", "transformer_low_hz",
-                        "transformer_sat_hz" })
+                        "transformer_sat_hz", "pairs" })
 {
     const double plateV = cfg.number ("plate_v", 450.0);
     const double screenV = cfg.number ("screen_v", 0.0);
     tubeName = cfg.text ("tube", "EL34");
     tubes = PushPull::make (tubeName, plateV, screenV != 0 ? screenV : plateV, cfg.number ("bias_v", -45.0),
-                            cfg.number ("raa_ohms", 3400.0), cfg.number ("mismatch", 0.0));
+                            cfg.number ("raa_ohms", 3400.0), cfg.number ("mismatch", 0.0), wholePairs (cfg.number ("pairs", 1)));
     supply = tubes.supply (1.0);
     double idleDraw = 0.0;
     offset = tubes.shape (0.0, supply, 0.0, 0.0, idleDraw);  // mismatched tubes leave a step at rest
@@ -531,7 +540,7 @@ void Power::commitTried() noexcept
 
 juce::String Power::describe() const
 {
-    return "2x " + tubeName + ", idle " + juce::String (juce::roundToInt (tubes.idleMa)) + " mA ("
+    return juce::String (2 * tubes.pairs) + "x " + tubeName + ", idle " + juce::String (juce::roundToInt (tubes.idleMa)) + " mA ("
            + juce::String (tubes.idleWatts, 1) + " W each), max about " + juce::String (juce::roundToInt (tubes.maxWatts)) + " W"
            + (supplyOhms > 0 ? ", supply " + juce::String (juce::roundToInt (supplyOhms)) + " ohm and " + juce::String (supplyUf, 0)
                                    + " uF (recovers in about " + juce::String (supplyOhms * supplyUf * 1e-3, 1) + " ms)"

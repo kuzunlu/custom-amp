@@ -183,7 +183,7 @@ double pentodeCurrent (const juce::String& tube, double vg, double screenV, doub
 }
 
 PushPull PushPull::make (const juce::String& tube, double plateV, double screenV, double biasV,
-                         double raaOhms, double mismatch)
+                         double raaOhms, double mismatch, int pairs)
 {
     auto found = pentodes().find (tube);
 
@@ -199,6 +199,9 @@ PushPull PushPull::make (const juce::String& tube, double plateV, double screenV
     if (plateV <= 0 || raaOhms <= 0)
         throw PresetError ("power plate_v and raa_ohms must be above 0");
 
+    if (pairs < 1 || pairs > 4)
+        throw PresetError ("power pairs must be from 1 to 4, got " + juce::String (pairs));
+
     const auto& p = found->second;
     PushPull pp;
     const auto grid = numpyArange (-400.0, 50.0 + pp.step, pp.step);
@@ -207,20 +210,21 @@ PushPull PushPull::make (const juce::String& tube, double plateV, double screenV
     pp.current.resize (grid.size());
 
     for (size_t i = 0; i < grid.size(); ++i)
-        pp.current[i] = pentodeCurrent (grid[i], screenV, plateV, p);
+        pp.current[i] = pairs * pentodeCurrent (grid[i], screenV, plateV, p);  // tubes in parallel: their currents add
 
     pp.bias = biasV;
     pp.quarter = raaOhms / 4;  // each half of the primary, when one tube works alone
-    pp.vmax = plateV * pp.quarter / (pp.quarter + p.rsat);  // rsat and the load share the supply
+    pp.vmax = plateV * pp.quarter / (pp.quarter + p.rsat / pairs);  // rsat (in parallel) and the load share the supply
     pp.scale = std::abs (biasV) / pp.vmax;
     pp.weaker = 1 - mismatch;
 
     const double idle = pentodeCurrent (biasV, screenV, plateV, p);
     const double peak = pentodeCurrent (0.0, screenV, plateV, p);
-    const double swing = std::min (pp.vmax, pp.quarter * peak);
+    const double swing = std::min (pp.vmax, pp.quarter * peak * pairs);
     pp.idleMa = idle * 1000;
     pp.idleWatts = idle * plateV;  // heat in each tube when not playing
-    pp.maxWatts = swing * swing / (2 * pp.quarter);  // rough clean output power of the pair
+    pp.maxWatts = swing * swing / (2 * pp.quarter);  // rough clean output power of all the tubes
+    pp.pairs = pairs;
     return pp;
 }
 

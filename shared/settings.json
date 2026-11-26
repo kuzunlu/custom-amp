@@ -190,6 +190,11 @@
           "short": "How much weaker tube B is than tube A. 0 = a perfect pair.",
           "tooltip": "Real tube pairs are never perfect. A mismatch lets some even harmonics through (measured: 10% mismatch gives about 1% 2nd harmonic when driven hard), which sounds thicker and a bit rougher, and it adds a small hum in a real amp. 0.05-0.1 is a normal 'real-world' pair."
         },
+        "pairs": {
+          "label": "Tube pairs", "type": "number", "unit": "", "min": 1, "max": 4, "default": 1, "step": 1,
+          "short": "How many pairs of power tubes work side by side. 2 = the four tubes of a 100 W amp.",
+          "tooltip": "Big amps put two (or three) pairs in parallel: each side's current adds up, and they drive a transformer with half the load (raa_ohms) to get twice the power. Into half the load each tube works just as in a single pair, so the clipping sounds the same; what changes is the power (50 W -> 100 W) and that the power supply has to feed twice the current, so it sags more with the same rectifier. Halve raa_ohms when you go from 1 to 2 pairs (3.4k -> 1.7k for EL34s), as the real amps do."
+        },
         "drive_db": {
           "label": "Drive", "type": "number", "unit": "dB", "min": -20, "max": 60, "default": 0,
           "short": "How many volts reach the power tube grids.",

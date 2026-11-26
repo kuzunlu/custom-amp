@@ -257,13 +257,14 @@ void setupSlider (juce::Slider& slider, const juce::var& entry, double value)
 
     slider.setSliderStyle (juce::Slider::LinearHorizontal);
     slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 78, 20);
-    slider.setRange (lo, hi, 0.0);
+    const double step = entry.hasProperty ("step") ? (double) entry["step"] : 0.0;  // "step": 1 = whole numbers only
+    slider.setRange (lo, hi, step);
 
     if (entry["scale"].toString() == "log" && lo > 0.0)
         slider.setSkewFactorFromMidPoint (std::sqrt (lo * hi));
 
     const double span = hi - lo;
-    slider.setNumDecimalPlacesToDisplay (span >= 100.0 ? 0 : span >= 10.0 ? 1 : span >= 1.0 ? 2 : 3);
+    slider.setNumDecimalPlacesToDisplay (step >= 1.0 || span >= 100.0 ? 0 : span >= 10.0 ? 1 : span >= 1.0 ? 2 : 3);
 
     const auto unit = entry["unit"].toString();
     slider.setTextValueSuffix (unit.isNotEmpty() ? " " + unit : juce::String());

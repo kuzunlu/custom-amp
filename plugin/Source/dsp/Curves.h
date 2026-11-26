@@ -86,8 +86,9 @@ constexpr double pentodeEx = 1.35;
 // A push-pull pair of power tubes into an output transformer.
 struct PushPull
 {
+    // pairs = how many pairs work in parallel (2 pairs = the 4 power tubes of a 100 W amp).
     static PushPull make (const juce::String& tube, double plateV, double screenV, double biasV,
-                          double raaOhms, double mismatch);
+                          double raaOhms, double mismatch, int pairs = 1);
 
     double lookup (double vg) const noexcept
     {
@@ -138,7 +139,8 @@ struct PushPull
     std::vector<double> current;
     double lo = -400.0, step = 0.05, perVolt = 20.0;  // perVolt = 1 / step
     double bias = -45, quarter = 850, vmax = 1, scale = 1, weaker = 1;
-    double idleMa = 0, idleWatts = 0, maxWatts = 0;
+    double idleMa = 0, idleWatts = 0, maxWatts = 0;  // idle current and heat per tube, output of all of them
+    int pairs = 1;
 };
 
 juce::StringArray pentodeNames();
