@@ -45,6 +45,12 @@ public:
     };
 
     const std::vector<Trace>& getTraces() const { return traces; }
+
+    // A/B: "Keep as A" keeps every strip as it is now; each strip then draws its A behind the new signal, on the same
+    // scale, until it is switched off. A strip's A is the kept strip of the same block (its name without the number,
+    // and the how-many-th of that name), so adding a block elsewhere does not mix them up.
+    void keepAsA (bool keep);
+    const Trace* heldFor (const Trace& t) const;
     juce::String getProblem() const { return problem; }
     bool isWaiting() const;  // a run is still going (for the test program)
 
@@ -99,7 +105,7 @@ private:
     Selection selection;
 
     juce::ComboBox signalBox, spanBox;
-    juce::TextButton timeButton { "Time" }, frequencyButton { "Frequency" }, curveButton { "Curve" };
+    juce::TextButton timeButton { "Time" }, frequencyButton { "Frequency" }, curveButton { "Curve" }, keepButton { "Keep as A" };
     juce::Slider freqSlider, levelSlider;
     juce::Label freqLabel, levelLabel, infoLabel;
     juce::Viewport viewport;
@@ -107,7 +113,7 @@ private:
 
     bool frequencyView = false, curveView = false, dirty = false;
     int generation = 0, shownGeneration = 0;
-    std::vector<Trace> traces;
+    std::vector<Trace> traces, held;
     juce::String problem;
 
     std::mutex resultLock;

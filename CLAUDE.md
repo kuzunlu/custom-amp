@@ -402,6 +402,11 @@ C++ checks:
   sag, gate, supply and room strips. Checked (PluginTest): a hard clip x4 without coupling = clip (4 x input) to 6e-8
   over 65664 pairs; pi inside brit_800's loop has its 65664 inputs. What it shows on brit_800 at 0.5 V: v1a an ellipse
   (its filters' phase), v1b a one-sided clipping curve, v2a two paths (bias shift memory), master a straight line.
+  **A/B** ("Keep as A", `keepAsA`): copies the strips; each strip draws its A (orange) behind the new signal (white) on
+  one scale, in all three views, with A's first summary line under its own. A strip's A = the kept strip with the
+  same name without its number ("gain  g1") and indent, the same how-many-th of that name (`heldFor`). Checked
+  (PluginTest): an eq inserted before g1 and g1's drive changed: g1 (now block 2) finds its A (peak 1.000 V) under the
+  new one (0.500 V); the new eq has none; dropping A clears it.
 
 ## Releases (option B chosen: the JUCE plugin)
 

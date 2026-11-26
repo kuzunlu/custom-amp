@@ -68,7 +68,8 @@ double pluck (double f, double t)
 }
 
 //==============================================================================
-// One strip: the name and what was measured on the left, the waveform or spectrum on the right.
+// One strip: the name and what was measured on the left, the waveform, spectrum or curve on the right. With a kept
+// "A" (Keep as A), A is drawn in orange behind the current signal (white), on the same scale.
 class SignalView::Strip final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -93,36 +94,51 @@ public:
         g.setColour (selected ? theme::chipSelected : theme::panel);
         g.fillRect (area);
 
+        const Trace* held = view.heldFor (trace);
         auto names = area.removeFromLeft (nameWidth).reduced (6, 4);
         names.removeFromLeft (trace.indent * 14);
         g.setColour (trace.target.isValid() ? theme::accent : juce::Colours::white);
         g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         g.drawText (trace.name, names.removeFromTop (18), juce::Justification::centredLeft, true);
-        g.setColour (theme::muted);
         g.setFont (juce::FontOptions (11.5f));
-        g.drawFittedText (trace.summary, names, juce::Justification::topLeft, 3, 1.0f);
+
+        if (held != nullptr)
+        {
+            g.setColour (heldColour);
+            g.drawText ("A: " + held->summary.upToFirstOccurrenceOf ("\n", false, false), names.removeFromBottom (14),
+                        juce::Justification::centredLeft, true);
+        }
+
+        g.setColour (theme::muted);
+        g.drawFittedText (trace.summary, names, juce::Justification::topLeft, held != nullptr ? 2 : 3, 1.0f);
 
         auto plot = area.reduced (4, 3).toFloat();
         g.setColour (theme::background);
         g.fillRect (plot);
 
         if (view.curveView)
-            paintCurve (g, plot);
+            paintCurve (g, plot, held);
         else if (view.frequencyView)
-            paintSpectrum (g, plot);
+            paintSpectrum (g, plot, held);
         else
-            paintWave (g, plot);
+            paintWave (g, plot, held);
     }
 
 private:
+    inline static const juce::Colour heldColour { 0xffe0a040 };  // A: the accent orange
+
+    int spanCount (const Trace& t) const
+    {
+        return juce::jmin ((int) t.samples.size(), juce::roundToInt (view.spanBox.getSelectedId() * 0.001 * t.rate));
+    }
+
     // Output against input over the time span: a clipping stage draws its curve, a filter an ellipse (its phase),
     // bias shift and sag make the line wander from one cycle to the next.
-    void paintCurve (juce::Graphics& g, juce::Rectangle<float> plot)
+    void paintCurve (juce::Graphics& g, juce::Rectangle<float> plot, const Trace* held)
     {
-        const int count = juce::jmin ((int) trace.samples.size(), (int) trace.inputs.size(),
-                                      juce::roundToInt (view.spanBox.getSelectedId() * 0.001 * trace.rate));
+        const auto pairs = [this] (const Trace& t) { return juce::jmin (spanCount (t), (int) t.inputs.size()); };
 
-        if (count < 2)
+        if (pairs (trace) < 2)
         {
             g.setColour (theme::muted);
             g.setFont (juce::FontOptions (11.0f));
@@ -132,11 +148,13 @@ private:
 
         float inTop = 1e-9f, outTop = 1e-9f;
 
-        for (int i = 0; i < count; ++i)
-        {
-            inTop = juce::jmax (inTop, std::abs (trace.inputs[(size_t) i]));
-            outTop = juce::jmax (outTop, std::abs (trace.samples[(size_t) i]));
-        }
+        for (const auto* t : { &trace, held })
+            if (t != nullptr)
+                for (int i = 0; i < pairs (*t); ++i)
+                {
+                    inTop = juce::jmax (inTop, std::abs (t->inputs[(size_t) i]));
+                    outTop = juce::jmax (outTop, std::abs (t->samples[(size_t) i]));
+                }
 
         inTop *= 1.1f;
         outTop *= 1.1f;
@@ -148,30 +166,43 @@ private:
         g.drawHorizontalLine ((int) box.getCentreY(), box.getX(), box.getRight());
         g.drawVerticalLine ((int) box.getCentreX(), box.getY(), box.getBottom());
 
-        juce::Path path;
-        const int step = juce::jmax (1, count / 4000);
-
-        for (int i = 0; i < count; i += step)
+        for (const auto* t : { held, &trace })
         {
-            const float x = xOf (trace.inputs[(size_t) i]), y = yOf (trace.samples[(size_t) i]);
-            i == 0 ? path.startNewSubPath (x, y) : path.lineTo (x, y);
+            const int count = t != nullptr ? pairs (*t) : 0;
+
+            if (count < 2)
+                continue;
+
+            juce::Path path;
+            const int step = juce::jmax (1, count / 4000);
+
+            for (int i = 0; i < count; i += step)
+            {
+                const float x = xOf (t->inputs[(size_t) i]), y = yOf (t->samples[(size_t) i]);
+                i == 0 ? path.startNewSubPath (x, y) : path.lineTo (x, y);
+            }
+
+            g.setColour (t == held ? heldColour : juce::Colours::white);
+            g.strokePath (path, juce::PathStrokeType (1.0f));
         }
 
-        g.setColour (juce::Colours::white);
-        g.strokePath (path, juce::PathStrokeType (1.0f));
         drawScale (g, plot, "in +/- " + formatVolts (inTop) + "  ->  out +/- " + formatVolts (outTop));
     }
 
-    void paintWave (juce::Graphics& g, juce::Rectangle<float> plot)
+    void paintWave (juce::Graphics& g, juce::Rectangle<float> plot, const Trace* held)
     {
-        const int count = juce::jmin ((int) trace.samples.size(), juce::roundToInt (view.spanBox.getSelectedId() * 0.001 * trace.rate));
-        const float top = trace.isUnit ? 1.0f : juce::jmax (1e-9f, trace.peak) * 1.1f;
+        float top = trace.isUnit ? 1.0f : juce::jmax (1e-9f, trace.peak, held != nullptr ? held->peak : 0.0f) * 1.1f;
         // A headroom, gain or supply strip shows from a round number under its lowest value up to 1, so a small sag shows.
         float bottom = 0.0f;
 
-        if (trace.isUnit && count > 0)
+        if (trace.isUnit)
         {
-            const float lowest = *std::min_element (trace.samples.begin(), trace.samples.begin() + count);
+            float lowest = 1.0f;
+
+            for (const auto* t : { &trace, held })
+                if (t != nullptr && spanCount (*t) > 0)
+                    lowest = juce::jmin (lowest, *std::min_element (t->samples.begin(), t->samples.begin() + spanCount (*t)));
+
             bottom = juce::jlimit (0.0f, 0.9f, std::floor ((lowest - 0.02f) * 10.0f) / 10.0f);
         }
 
@@ -184,32 +215,37 @@ private:
         g.setColour (theme::chip);
         g.drawHorizontalLine ((int) yOf (0.0f), plot.getX(), plot.getRight());
 
-        if (count < 2)
-            return;
-
         // Fewer samples than pixels: a line through them. More: the lowest and highest value in each pixel column.
-        juce::Path path;
-        const int width = (int) plot.getWidth();
-
-        if (count <= 2 * width)
+        for (const auto* t : { held, &trace })
         {
-            for (int i = 0; i < count; ++i)
+            const int count = t != nullptr ? spanCount (*t) : 0;
+
+            if (count < 2)
+                continue;
+
+            juce::Path path;
+            const int width = (int) plot.getWidth();
+            const auto colour = t == held ? heldColour : juce::Colours::white;
+
+            if (count <= 2 * width)
             {
-                const float x = plot.getX() + plot.getWidth() * (float) i / (float) (count - 1);
-                i == 0 ? path.startNewSubPath (x, yOf (trace.samples[0])) : path.lineTo (x, yOf (trace.samples[(size_t) i]));
+                for (int i = 0; i < count; ++i)
+                {
+                    const float x = plot.getX() + plot.getWidth() * (float) i / (float) (count - 1);
+                    i == 0 ? path.startNewSubPath (x, yOf (t->samples[0])) : path.lineTo (x, yOf (t->samples[(size_t) i]));
+                }
+
+                g.setColour (colour);
+                g.strokePath (path, juce::PathStrokeType (1.2f));
+                continue;
             }
 
-            g.setColour (juce::Colours::white);
-            g.strokePath (path, juce::PathStrokeType (1.2f));
-        }
-        else
-        {
             std::vector<float> lo ((size_t) width), hi ((size_t) width);
 
             for (int c = 0; c < width; ++c)
             {
                 const int from = (int) ((juce::int64) c * count / width), to = juce::jmax (from + 1, (int) ((juce::int64) (c + 1) * count / width));
-                const auto [mn, mx] = std::minmax_element (trace.samples.begin() + from, trace.samples.begin() + to);
+                const auto [mn, mx] = std::minmax_element (t->samples.begin() + from, t->samples.begin() + to);
                 lo[(size_t) c] = *mn;
                 hi[(size_t) c] = *mx;
             }
@@ -221,8 +257,9 @@ private:
                 path.lineTo (plot.getX() + (float) c + 1.0f, yOf (lo[(size_t) c]));
 
             path.closeSubPath();
-            g.setColour (juce::Colours::white);
+            g.setColour (t == held ? colour.withAlpha (0.35f) : colour);
             g.fillPath (path);
+            g.setColour (colour);
             g.strokePath (path, juce::PathStrokeType (1.0f));
         }
 
@@ -245,7 +282,7 @@ private:
         g.drawText (text, box, juce::Justification::centred);
     }
 
-    void paintSpectrum (juce::Graphics& g, juce::Rectangle<float> plot)
+    void paintSpectrum (juce::Graphics& g, juce::Rectangle<float> plot, const Trace* held)
     {
         g.setFont (juce::FontOptions (11.0f));
 
@@ -257,8 +294,16 @@ private:
             return;
         }
 
+        if (held != nullptr && held->spectrumDb.empty())
+            held = nullptr;
+
         const double loHz = 20.0, hiHz = juce::jmin (20000.0, trace.binHz * (double) (trace.spectrumDb.size() - 1));
-        const float topDb = 20.0f * std::ceil (*std::max_element (trace.spectrumDb.begin(), trace.spectrumDb.end()) / 20.0f);
+        float highest = *std::max_element (trace.spectrumDb.begin(), trace.spectrumDb.end());
+
+        if (held != nullptr)
+            highest = juce::jmax (highest, *std::max_element (held->spectrumDb.begin(), held->spectrumDb.end()));
+
+        const float topDb = 20.0f * std::ceil (highest / 20.0f);
         const float rangeDb = 100.0f;
         const auto xOf = [&] (double hz) { return plot.getX() + plot.getWidth() * (float) (std::log (hz / loHz) / std::log (hiHz / loHz)); };
         const auto yOf = [&] (float db) { return plot.getY() + plot.getHeight() * juce::jlimit (0.0f, 1.0f, (topDb - db) / rangeDb); };
@@ -273,25 +318,32 @@ private:
                 g.drawVerticalLine ((int) xOf (hz), plot.getY(), plot.getBottom());
 
         // Each pixel column: the highest bin in it, or (where bins are wider than a pixel) the bin under it.
-        juce::Path path;
-        const int width = (int) plot.getWidth();
-
-        for (int c = 0; c < width; ++c)
+        for (const auto* t : { held, &trace })
         {
-            const double f0 = loHz * std::pow (hiHz / loHz, (double) c / width);
-            const double f1 = loHz * std::pow (hiHz / loHz, (double) (c + 1) / width);
-            const int b0 = (int) std::ceil (f0 / trace.binHz), b1 = (int) std::floor (f1 / trace.binHz);
-            float db = trace.spectrumDb[(size_t) juce::jlimit (0, (int) trace.spectrumDb.size() - 1, juce::roundToInt (f0 / trace.binHz))];
+            if (t == nullptr)
+                continue;
 
-            for (int b = b0; b <= b1 && b < (int) trace.spectrumDb.size(); ++b)
-                db = juce::jmax (db, trace.spectrumDb[(size_t) b]);
+            juce::Path path;
+            const int width = (int) plot.getWidth();
+            const auto& spectrum = t->spectrumDb;
 
-            const float x = plot.getX() + (float) c, y = yOf (db);
-            c == 0 ? path.startNewSubPath (x, y) : path.lineTo (x, y);
+            for (int c = 0; c < width; ++c)
+            {
+                const double f0 = loHz * std::pow (hiHz / loHz, (double) c / width);
+                const double f1 = loHz * std::pow (hiHz / loHz, (double) (c + 1) / width);
+                const int b0 = (int) std::ceil (f0 / t->binHz), b1 = (int) std::floor (f1 / t->binHz);
+                float db = spectrum[(size_t) juce::jlimit (0, (int) spectrum.size() - 1, juce::roundToInt (f0 / t->binHz))];
+
+                for (int b = b0; b <= b1 && b < (int) spectrum.size(); ++b)
+                    db = juce::jmax (db, spectrum[(size_t) b]);
+
+                const float x = plot.getX() + (float) c, y = yOf (db);
+                c == 0 ? path.startNewSubPath (x, y) : path.lineTo (x, y);
+            }
+
+            g.setColour (t == held ? heldColour : juce::Colours::white);
+            g.strokePath (path, juce::PathStrokeType (1.2f));
         }
-
-        g.setColour (juce::Colours::white);
-        g.strokePath (path, juce::PathStrokeType (1.2f));
 
         drawScale (g, plot, "top line " + formatVolts (std::pow (10.0, topDb / 20.0)) + ", lines 20 dB apart");
         g.setColour (theme::muted);
@@ -356,6 +408,13 @@ SignalView::SignalView (CustomAmpProcessor& p) : processor (p)
     timeButton.onClick = [this] { setFrequencyView (false); };
     frequencyButton.onClick = [this] { setFrequencyView (true); };
     curveButton.onClick = [this] { setCurveView (true); };
+
+    keepButton.setClickingTogglesState (true);
+    keepButton.setColour (juce::TextButton::buttonOnColourId, theme::chipSelected);
+    keepButton.setTooltip ("A/B: keep what every strip shows now as 'A' (orange). Then change a setting: each strip shows "
+                           "the new signal (white) on top of A, on the same scale, and A's numbers under its own. Click again to drop A.");
+    keepButton.onClick = [this] { keepAsA (keepButton.getToggleState()); };
+    addAndMakeVisible (keepButton);
 
     freqSlider.setRange (20.0, 5000.0, 1.0);
     freqSlider.setSkewFactorFromMidPoint (300.0);
@@ -436,6 +495,48 @@ void SignalView::setFrequencyView (bool frequency)
 
     for (auto& strip : strips->strips)
         strip->repaint();
+}
+
+void SignalView::keepAsA (bool keep)
+{
+    held = keep ? traces : std::vector<Trace> {};
+    keepButton.setToggleState (keep, juce::dontSendNotification);
+
+    for (auto& strip : strips->strips)
+        strip->repaint();
+}
+
+const SignalView::Trace* SignalView::heldFor (const Trace& t) const
+{
+    if (held.empty())
+        return nullptr;
+
+    // The block's name without its number ("3. gain  v1b" -> "gain  v1b"), and the how-many-th of that name.
+    const auto key = [] (const Trace& x) { return x.name.fromFirstOccurrenceOf (". ", false, false).trim() + "|" + juce::String (x.indent); };
+    const auto nth = [&key] (const std::vector<Trace>& list, const Trace* x)
+    {
+        int count = 0;
+
+        for (auto& y : list)
+        {
+            if (&y == x)
+                return count;
+
+            count += key (y) == key (*x) ? 1 : 0;
+        }
+
+        return -1;
+    };
+
+    const int wanted = nth (traces, &t);
+    int count = 0;
+
+    for (auto& h : held)
+        if (key (h) == key (t) && h.isUnit == t.isUnit)
+            if (count++ == wanted)
+                return &h;
+
+    return nullptr;
 }
 
 void SignalView::setCurveView (bool curve)
@@ -833,6 +934,8 @@ void SignalView::resized()
     timeButton.setBounds (row.removeFromLeft (60));
     frequencyButton.setBounds (row.removeFromLeft (84));
     curveButton.setBounds (row.removeFromLeft (60));
+    row.removeFromLeft (6);
+    keepButton.setBounds (row.removeFromRight (juce::jmin (90, row.getWidth())));
     row.removeFromLeft (6);
     spanBox.setBounds (row.removeFromLeft (80));
 

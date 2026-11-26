@@ -965,6 +965,35 @@ int main (int argc, char* argv[])
             check (false, "curve view: 2 strips, got " + juce::String ((int) view.getTraces().size()) + " " + view.getProblem());
         }
 
+        // A/B: keep the strips, then insert an eq before g1 and change its drive: g1 (now block 2) still finds its A.
+        triode.replaceWithText (R"({ "name": "A", "chain": [ { "type": "gain", "id": "g1", "curve": "hard", "drive_db": 12.0412, "coupling_nf": 0 } ] })");
+        s->loadPresetFile (triode);
+        waitForBuild (*s);
+        waitForSignals();
+        view.keepAsA (true);
+        const auto keptPeak = view.getTraces().size() == 2 ? view.getTraces()[1].peak : 0.0f;
+        triode.replaceWithText (R"({ "name": "B", "chain": [ { "type": "eq", "id": "e0" },
+                                    { "type": "gain", "id": "g1", "curve": "hard", "drive_db": 0, "coupling_nf": 0 } ] })");
+        s->loadPresetFile (triode);
+        waitForBuild (*s);
+        waitForSignals();
+
+        if (view.getTraces().size() == 3)
+        {
+            const auto* a = view.heldFor (view.getTraces()[2]);
+            check (a != nullptr && a->name == "1. gain  g1" && a->peak == keptPeak && view.heldFor (view.getTraces()[1]) == nullptr
+                       && std::abs (view.getTraces()[2].peak - 0.5f) < 0.01f && std::abs (keptPeak - 1.0f) < 0.01f,
+                   "A/B: g1 (now block 2) finds its A (peak " + juce::String (keptPeak, 3) + " V, clipped) under the new one (peak "
+                       + juce::String (view.getTraces()[2].peak, 3) + " V); the new eq has no A");
+        }
+        else
+        {
+            check (false, "A/B: 3 strips, got " + juce::String ((int) view.getTraces().size()) + " " + view.getProblem());
+        }
+
+        view.keepAsA (false);
+        check (view.heldFor (view.getTraces().back()) == nullptr, "dropping A: no strip has one");
+
         // Rectifier sag (supply_ohms): a 40 V loud part, then 10 V, through one EL34 pair.
         view.setFrequencyView (false);
         std::vector<SignalView::Trace> stiff, sagging;
