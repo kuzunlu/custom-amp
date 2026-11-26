@@ -652,6 +652,9 @@ int main (int argc, char* argv[])
                    && endInsertIndex (list (R"([ { "type": "gain" }, { "type": "eq" }, { "type": "ir" }, { "type": "eq" } ])"), eq) == 4
                    && endInsertIndex (list (R"([ { "type": "gain" }, { "type": "eq" } ])"), gain) == 2,
                "end place: before the ir (eq right before it stays in front), at the very end with no ir");
+        const auto withRoom = list (R"([ { "type": "gain" }, { "type": "ir" }, { "type": "room" } ])");
+        check (endInsertIndex (withRoom, gain) == 1 && endInsertIndex (withRoom, eq) == 2 && endInsertIndex (withRoom, makeBlock ("room")) == 3,
+               "a room block stays last: a gain goes before the cab, an eq before the room, a new room at the very end");
 
         // Inside the feedback loop only loop blocks can go. (brit_800 has no sag block: one is put in front for a
         // moment, only to copy it.)

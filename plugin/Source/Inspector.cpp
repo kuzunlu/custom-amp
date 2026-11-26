@@ -78,8 +78,23 @@ int endInsertIndex (const juce::var& chain, const juce::var& block)
     if (array == nullptr)
         return 0;
 
+    // A room block stays last (the sound that leaves the speaker goes back to the guitar); a new room goes there.
     const auto type = block.getProperty ("type", {}).toString();
-    return type == "ir" || type == "eq" ? array->size() : amp::tailStart (*array);
+    const bool hasRoom = ! array->isEmpty() && array->getLast().getProperty ("type", {}).toString() == "room";
+    const int end = array->size() - (hasRoom ? 1 : 0);
+
+    if (type == "room")
+        return array->size();
+
+    if (type == "ir" || type == "eq")
+        return end;
+
+    juce::Array<juce::var> beforeRoom;
+
+    for (int i = 0; i < end; ++i)
+        beforeRoom.add ((*array)[i]);
+
+    return amp::tailStart (beforeRoom);
 }
 
 // Only these can go inside a feedback loop (the loop solver needs blocks that work one sample at a time).

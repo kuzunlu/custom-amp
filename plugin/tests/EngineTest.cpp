@@ -346,6 +346,155 @@ void transformerChecks()
                + juce::String (third, 1) + "%");
 }
 
+// A slowly dying note (harmonics fall faster), like a plucked string: 0.3 V peak.
+std::vector<double> dyingNote (double freq, double seconds, double rate)
+{
+    std::vector<double> x ((size_t) (seconds * rate), 0.0);
+    double peak = 0.0;
+
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        const double t = (double) i / rate;
+
+        for (int k = 1; k <= 8; ++k)
+            x[i] += std::sin (2 * pi * freq * k * t) / k * std::exp (-t * (0.6 + 0.4 * k));
+
+        peak = std::max (peak, std::abs (x[i]));
+    }
+
+    for (auto& v : x)
+        v *= 0.3 / peak;
+
+    return x;
+}
+
+void roomChecks (const juce::File& root)
+{
+    std::cout << "Room (acoustic feedback)\n";
+    const double rate = 48000.0;
+    amp::BuildContext ctx;
+    ctx.rate = ctx.checkRate = rate;
+
+    // The pitch tracker finds the note.
+    for (double f : { 82.41, 110.0, 329.63 })
+    {
+        amp::Room room (amp::Cfg (juce::JSON::parse ("{ \"type\": \"room\" }"), "room"), ctx);
+        auto x = sine (f, 0.3, 0.5, rate);
+
+        for (size_t i = 0; i < x.size(); i += (size_t) room.maxChunk())
+        {
+            const int n = (int) std::min ((size_t) room.maxChunk(), x.size() - i);
+            room.addFeedback (x.data() + i, n);
+            std::vector<double> silence ((size_t) n, 0.0);
+            room.hear (silence.data(), n);
+        }
+
+        check (std::abs (room.noteHz() / f - 1) < 0.005, "the pitch tracker finds " + juce::String (f, 2) + " Hz: " + juce::String (room.noteHz(), 2) + " Hz");
+    }
+
+    // The sound reaches the string after distance / 343 m/s, pushing it by volume / distance.
+    {
+        amp::Room room (amp::Cfg (juce::JSON::parse (R"({ "type": "room", "distance_m": 0.686, "volume_db": -20 })"), "room"), ctx);
+        std::vector<float> pushes;
+        auto x = sine (110, 0.3, 1.0, rate);
+        const size_t click = (size_t) (0.5 * rate);
+
+        for (size_t i = 0; i < x.size(); i += (size_t) room.maxChunk())
+        {
+            const int n = (int) std::min ((size_t) room.maxChunk(), x.size() - i);
+
+            if (i == click)
+                room.probe = &pushes;  // from the click on
+
+            room.addFeedback (x.data() + i, n);
+            std::vector<double> out ((size_t) n, 0.0);
+
+            if (i == click)
+                out[0] = 1.0;  // a click leaves the speaker
+
+            room.hear (out.data(), n);
+        }
+
+        size_t first = 0;
+
+        while (first < pushes.size() && std::abs (pushes[first]) < 1e-9f)
+            ++first;
+
+        const double expected = 0.686 / 343.0 * rate;
+        check (first < pushes.size() && (double) first == std::round (expected) && std::abs (pushes[first] - 0.1 / 0.686) < 1e-6,
+               "a click reaches the string after " + juce::String ((int) first) + " samples (0.686 m / 343 m/s = " + juce::String (expected, 1)
+                   + "), pushing it by " + juce::String (first < pushes.size() ? pushes[first] : 0.0f, 4) + " (-20 dB / 0.686 m = 0.1458)");
+    }
+
+    // The whole loop, the clean preset with a room at -20 dB: a dying note sustains, in tune, until it is muted.
+    const auto render = [&root, rate] (bool withRoom, double sustain = 3.0)
+    {
+        auto preset = loadJson (root.getChildFile ("presets/clean.json"));
+        preset.getDynamicObject()->removeProperty ("panel");
+
+        if (withRoom)
+            preset["chain"].getArray()->add (juce::JSON::parse (R"({ "type": "room", "distance_m": 0.5, "volume_db": -20, "sustain_s": )"
+                                                                + juce::String (sustain) + " }"));
+
+        amp::Engine::Options options;
+        options.preset = preset;
+        options.presetFolder = root.getChildFile ("presets");
+        options.irOverride = juce::File ("C:/no/such/folder/ir.wav");
+        options.sampleRate = rate;
+        options.maxBlock = 256;
+        amp::Engine engine (options);
+        auto x = dyingNote (110, 5.5, rate);
+        std::fill (x.begin() + (int) (4.0 * rate), x.end(), 0.0);  // a hand on the strings at 4 s
+
+        for (size_t i = 0; i < x.size(); i += 256)
+            engine.process (x.data() + i, (int) std::min ((size_t) 256, x.size() - i));
+
+        return x;
+    };
+    const auto level = [rate] (const std::vector<double>& y, double from, double to)
+    {
+        double sum = 0.0;
+
+        for (size_t i = (size_t) (from * rate); i < (size_t) (to * rate); ++i)
+            sum += y[i] * y[i];
+
+        return 10 * std::log10 (sum / ((to - from) * rate) + 1e-30);
+    };
+    const auto dry = render (false), wet = render (true);
+    const double dryFall = level (dry, 3.4, 3.6) - level (dry, 0.9, 1.1), wetFall = level (wet, 3.4, 3.6) - level (wet, 0.9, 1.1);
+    const double afterMute = level (wet, 4.3, 4.5) - level (wet, 3.4, 3.6);
+
+    // Its pitch: the strongest frequency near the note while it sustains (0.01 Hz steps). The rest of the loop (amp,
+    // cab, air) adds phase, so the loop settles a little beside the string's resonance peak. A string that rings longer
+    // has a sharper resonance (half-power width (1 - g) f / pi, g = what it keeps per period), so it is pulled less.
+    // (Measured: 3 s string +0.68 Hz, width 0.73; 10 s string +0.29 Hz, width 0.22: the pull is not bounded by the
+    // width, which only holds while the loop's extra phase stays under 45 degrees.)
+    const auto pitch = [rate] (const std::vector<double>& y)
+    {
+        std::vector<double> held (y.begin() + (int) (2.0 * rate), y.begin() + (int) (4.0 * rate));
+        double best = 0.0, bestHz = 0.0;
+
+        for (double f = 108.0; f <= 112.0; f += 0.01)
+            if (const double a = tone (held, f, rate); a > best)
+            {
+                best = a;
+                bestHz = f;
+            }
+
+        return bestHz;
+    };
+    const auto width = [rate] (double sustain) { return (1 - std::pow (10.0, -3.0 / (110.0 * sustain))) * 110.0 / pi; };
+    const double pulled3 = pitch (wet) - 110.0, pulled10 = pitch (render (true, 10.0)) - 110.0;
+
+    check (dryFall < -15 && std::abs (wetFall) < 3, "a dying note sustains: from 1 s to 3.5 s " + juce::String (dryFall, 1) + " dB without the room, "
+                                                        + juce::String (wetFall, 1) + " dB with it");
+    check (std::abs (pulled3) < 1.1 && std::abs (pulled10) < std::abs (pulled3),
+           "the feedback stays near the note (under 1%), and a longer-ringing string is pulled less: " + juce::String (pulled3, 2)
+               + " Hz with a 3 s string (resonance width +-" + juce::String (width (3.0), 2) + "), " + juce::String (pulled10, 2)
+               + " Hz with a 10 s string (+-" + juce::String (width (10.0), 2) + ")");
+    check (afterMute < -100, "a hand on the strings stops it: " + juce::String (afterMute, 0) + " dB 0.3 s after");
+}
+
 void powerChecks()
 {
     std::cout << "Power tubes against their datasheets\n";
@@ -847,6 +996,7 @@ int main (int argc, char* argv[])
             powerChecks();
             preampSupplyChecks();
             transformerChecks();
+            roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);
             std::cout << (failures == 0 ? "All passed\n" : juce::String (failures) + " failed\n");

@@ -1106,9 +1106,11 @@ Chain buildChain (const juce::Array<juce::var>& cfgs, const BuildContext& ctx)
         else if (kind == "split")     block = std::make_unique<Split> (cfg, ctx);
         else if (kind == "gate")      block = std::make_unique<Gate> (cfg, ctx);
         else if (kind == "ir")        block = std::make_unique<IrBlock> (cfg, ctx);
+        else if (kind == "room")
+            throw PresetError ("room: it must be the last block of the main chain (after the cab)");
         else
             throw PresetError ("block " + juce::String (i) + ": unknown type '" + kind
-                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir");
+                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir, room");
 
         blocks.push_back (std::move (block));
     }

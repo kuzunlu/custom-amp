@@ -13,6 +13,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `split` | Parallel paths: the same sound through several chains side by side, then mixed |
 | `gate` | Noise gate. Can listen at the clean input but mute after a later block (`apply_after`) |
 | `ir` | Cabinet sound from an impulse response `.wav` file |
+| `room` | Acoustic feedback: the amp's sound goes back into the guitar's strings, as in front of a loud amp (last block) |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
@@ -221,6 +222,19 @@ it loses volume (about 5-20 dB), so raise `level_db` or the next stage's drive.
 | `james` | a passive Baxandall-style circuit (C3/C4 and R3/R4 add parts): flat with both knobs at 5, about -21 dB | treble, bass |
 
 Setting `mid` with `top_boost` or `james` is an error.
+
+### Room (acoustic feedback)
+
+```json
+{ "type": "room", "distance_m": 0.5, "volume_db": -30, "sustain_s": 3, "string_tone_hz": 1000 }
+```
+
+Put it last, after the cab. The amp's sound travels `distance_m` / 343 m/s back to the guitar, gets weaker with
+distance, and shakes the string at the note you play and its harmonics; that goes round the amp again. Turn
+`volume_db` up until notes sustain. Where you stand decides which harmonic the feedback blooms into (measured with the
+800-style preset: the octave at 0.2-0.5 m, a high squeal at 0.8 m, the note itself at 1.2-2 m). A pitch tracker
+follows the note you play (one note), and the strings count as muted when your input falls fast or is very quiet:
+those two parts stand in for you, the rest is the physics of the loop.
 
 ### Gate
 

@@ -539,7 +539,9 @@ SignalView::Result SignalView::compute (const Request& r)
         for (auto& t : traces)
             supplies += t.unitVolts > 0 ? 1 : 0;
 
-        if (traces.size() != 1 + core.size() + tail.size() + supplies)
+        const size_t rooms = engine.amp.room != nullptr ? 1 : 0;
+
+        if (traces.size() != 1 + core.size() + tail.size() + supplies + rooms)
             throw amp::PresetError ("the signal view could not match the blocks of this preset");
 
         const auto play = [&engine, &x] (int from, int to)
@@ -557,6 +559,9 @@ SignalView::Result SignalView::compute (const Request& r)
         play (0, start);
         std::vector<amp::Block*> blocks (core.begin(), core.end());
         blocks.insert (blocks.end(), tail.begin(), tail.end());
+
+        if (engine.amp.room != nullptr)
+            blocks.push_back (engine.amp.room.get());  // its strip: the string's motion it adds to the input
 
         for (size_t k = 0, ti = 1; k < blocks.size(); ++k, ++ti)
         {

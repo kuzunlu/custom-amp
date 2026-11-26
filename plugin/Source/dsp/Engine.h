@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Blocks.h"
+#include "Room.h"
 
 #include <juce_dsp/juce_dsp.h>
 
@@ -24,6 +25,7 @@ public:
     juce::String name;
     juce::StringArray report;  // one line per block that has something to say (tube operating points, IR file)
     Chain core, tail;
+    std::unique_ptr<Room> room;  // a last "room" block: the Engine runs the acoustic feedback loop around the amp
 
 private:
     void link();
@@ -56,7 +58,7 @@ public:
 
     explicit Engine (const Options& options);  // throws PresetError
 
-    void process (double* x, int n) noexcept;  // mono, n <= maxBlock
+    void process (double* x, int n) noexcept;  // mono, n <= maxBlock; with a room block, the acoustic feedback loop too
     void reset() noexcept;
 
     int latencySamples() const { return juce::roundToInt (oversampling.getLatencyInSamples()); }
@@ -68,6 +70,8 @@ public:
     int heardUpTo = -1;  // for the plugin: where in its input history this engine's warm-up stopped
 
 private:
+    void processAmp (double* x, int n) noexcept;  // the amp itself: oversampled core, tail, output level
+
     double rate;
     int blockSize, factorLog2;
     juce::dsp::Oversampling<double> oversampling;

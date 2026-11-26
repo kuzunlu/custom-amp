@@ -170,6 +170,24 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   Opens above threshold, closes below threshold - hysteresis after `hold`; gain moves with attack/release.
   With `apply_after`, the gain goes to that block's `after_gain` (applied in `run_blocks`); the gate's
   own position passes the sound unchanged. Not allowed on a block inside a feedback loop.
+- **Room** (acoustic feedback, `Room.h/.cpp`, 2026-11-26): the LAST block (after the cab; anywhere else is an
+  error). `Amp` takes it off the chain; `Engine::process` runs the loop around the whole amp in pieces no longer than
+  the sound's travel time (`maxChunk` = min(delay, 64)): `addFeedback` (input += string motion) -> the amp ->
+  `hear` (output into the air delay line). Air: delay = distance / 343 m/s, push = `volume_db` (level at 1 m,
+  relative to the plugin's normal -20 dBFS output) / distance. String: a resonator one period long (fractional read),
+  per-period gain from `sustain_s` (-60 dB), a 1-pole low-pass at `string_tone_hz` in the loop (its phase delay is
+  taken off the read length, or the string rings flat: 29 cents at 110 Hz / 1 kHz). NOT physics, standing in for
+  the player: a YIN pitch tracker on the clean input (about 12 kHz, every 10 ms, 60 Hz-1 kHz, one note) sets the
+  period; MUTED when the input falls to a tenth within about 10 ms or stays below `mute_db` (dBV): then no push
+  reaches the pickup and the string dies in 50 ms (with the push still on, a muted string howled at high volume).
+  The level measurement runs with the room off. Checked (EngineTest): tracker 82.41 / 110.00 / 329.70 Hz for 82.41 /
+  110 / 329.63; a click arrives after 96 samples at 0.686 m (= 96.0) with push 0.1458 (-20 dB / 0.686 m); clean
+  preset + room -20 dB: a dying note goes 0.1 dB from 1 s to 3.5 s (-21.8 dB without), the feedback sits 0.68 Hz from
+  the note with a 3 s string and 0.29 Hz with a 10 s one (the loop's extra phase pulls it along the string's
+  resonance; a sharper resonance is pulled less), a mute: -185 dB after 0.3 s. Tried (brit_800, -40 dB): it blooms
+  into the octave at 0.2-0.5 m, squeals at a high harmonic (2770 Hz) at 0.8 m, stays on the note at 1.2-2 m. With
+  `brightness` (an earlier version: a weak per-period low-pass) brit_800 bloomed into its 17th-22nd harmonic.
+  `tests/presets/room_feedback.json` (clean + room) has a reference recording. No built-in preset uses it yet.
 - **Presets**: every unknown setting name is an error (`check_keys`), so typos never pass silently.
 - **Front panel** (`panel`, top-level preset key, at most 8 knobs): `{label, block, setting, range}`. `block` = an id
   (found anywhere: main chain, feedback chains, split paths); `setting` = a NUMBER setting from `settings.json`, or a

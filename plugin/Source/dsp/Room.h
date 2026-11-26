@@ -1,0 +1,58 @@
+#pragma once
+
+#include "Blocks.h"
+
+namespace amp
+{
+
+// The room: the amp's sound goes back to the guitar (acoustic feedback, as in front of a loud amp). It is the last
+// block. The sound travels distance / 343 m/s, gets weaker with distance, and shakes the string, which answers at the
+// note being played and its harmonics (a resonator tuned by a pitch tracker on the clean input). That motion is added
+// to the guitar's signal, so it goes round the amp again. Its process() passes the sound on unchanged: the Engine runs
+// the loop around the whole amp, in pieces shorter than the sound's travel time.
+//
+// Two parts are not physics, they stand in for the guitarist: the pitch tracker follows ONE note (with a chord, the
+// strongest), and the string counts as MUTED when the input falls fast (a hand on the strings) or is very quiet.
+class Room final : public Block
+{
+public:
+    Room (const Cfg& cfg, const BuildContext& ctx);
+
+    void prepare (int maxSamples) override;
+    void process (double*, int) noexcept override {}
+    void reset() noexcept override;
+    juce::String describe() const override;
+
+    int maxChunk() const noexcept { return chunk; }
+    void addFeedback (double* input, int n) noexcept;  // input += the string's motion, driven by the sound of `delay` ago
+    void hear (const double* output, int n) noexcept;  // what left the speaker just now
+    double noteHz() const noexcept { return period > 0 ? rate / period : 0.0; }
+    bool isMuted() const noexcept { return muted; }
+
+    bool enabled = true;  // off while the engine measures its level
+
+private:
+    void trackPitch() noexcept;
+
+    double rate = 48000, coupling = 0, sustainS = 3, tone = 0.1, muteLevel = 0.002, distance = 0.5;
+    int delay = 1, chunk = 1;
+
+    std::vector<double> air;     // the speaker's sound on its way to the guitar
+    int airWrite = 0;
+    std::vector<double> string;  // the string's motion driven by that sound (a resonator one period long)
+    int stringWrite = 0;
+    double period = 0, readPeriod = 0, loopGain = 0, mutedGain = 0, smooth = 0;
+
+    // Mute: a fast and a slow level follower of the clean input.
+    double fastLevel = 0, slowLevel = 0, fastFall = 0, slowFall = 0;
+    bool muted = true;
+
+    // Pitch: the input at about 12 kHz, checked every 10 ms (YIN: the lag where the signal best repeats itself).
+    int decimate = 4, decimCount = 0, sinceCheck = 0;
+    double decimSum = 0;
+    std::vector<double> low;
+    int lowWrite = 0;
+    std::vector<double> diff;
+};
+
+} // namespace amp

@@ -72,7 +72,8 @@
           "feedback": "A loop around a few blocks, like the feedback loop of a power amp.",
           "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
           "gate": "Noise gate: turns the sound down when you stop playing, to remove hiss and hum.",
-          "ir": "Speaker cabinet sound from an impulse response file."
+          "ir": "Speaker cabinet sound from an impulse response file.",
+    "room": "Acoustic feedback: the amp's sound goes back into the guitar, as when you stand in front of a loud amp."
         },
         "short": "What kind of block this is.",
         "tooltip": "Each block does one job. Combine them in any order to build any amp."
@@ -650,6 +651,39 @@
           "label": "Level", "type": "number", "unit": "dB", "min": -40, "max": 20, "default": 0,
           "short": "Volume after the cab.",
           "tooltip": "IR files have very different loudness. Use this to match the volume when switching between cabs, so you hear the tone difference and not the level difference."
+        }
+      }
+    },
+
+    "room": {
+      "label": "Room (acoustic feedback)",
+      "short": "The amp's sound goes back into the guitar's strings: notes sustain and bloom into feedback, as in front of a loud amp.",
+      "tooltip": "In front of a loud amp, the sound from the speaker shakes the guitar's strings. They answer at the note you play and its harmonics, the pickup hears that, the amp makes it louder, and it goes round again. Loud enough, a note sustains forever and 'blooms' into one of its harmonics (which one depends on the distance: the sound's travel time decides which harmonic comes back in step). This block does that: put it LAST (after the cab). It follows the note you play with a pitch tracker (one note: with a chord it follows the strongest), and it treats the strings as muted when your input falls fast (a hand on the strings) or is very quiet. Those two parts stand in for you; the rest is the physics of the loop. Turn Volume up until notes start to sustain.",
+      "settings": {
+        "distance_m": {
+          "label": "Distance", "type": "number", "unit": "m", "min": 0.1, "max": 20, "default": 0.5, "scale": "log",
+          "short": "How far the guitar is from the speaker.",
+          "tooltip": "The sound needs distance / 343 m/s to arrive (0.5 m = 1.5 ms), and it gets 6 dB weaker at twice the distance. Moving changes WHICH harmonic the feedback blooms into, because the travel time decides which ones come back in step: walking around in front of the amp to find the sweet spot is real."
+        },
+        "volume_db": {
+          "label": "Volume", "type": "number", "unit": "dB", "min": -80, "max": 20, "default": -20,
+          "short": "How loud the amp is in the room (at 1 m). Higher = more feedback.",
+          "tooltip": "How strongly the amp's sound pushes the strings at 1 m, relative to the plugin's normal output level. Low: notes only ring a bit longer. Higher: held notes sustain and bloom. Too high: everything howls. With the strings muted (your hand on them) nothing happens, as on a real amp."
+        },
+        "sustain_s": {
+          "label": "String sustain", "type": "number", "unit": "s", "min": 0.2, "max": 20, "default": 3, "scale": "log",
+          "short": "How long the string rings by itself (time to fall 60 dB).",
+          "tooltip": "A solid-body guitar's string rings for several seconds; a hollow body or old strings less. The longer it rings by itself, the less push from the amp it needs to keep going."
+        },
+        "string_tone_hz": {
+          "label": "String tone", "type": "number", "unit": "Hz", "min": 200, "max": 10000, "default": 1000, "scale": "log",
+          "short": "Above this the string's harmonics die fast, so feedback blooms into the note or a low harmonic.",
+          "tooltip": "A real string loses its high harmonics much faster than the note itself. In this model the string loses its highs above this frequency on every round trip (a gentle low-pass in the loop; the note stays in tune). Lower: the feedback stays on the note, the octave or the fifth. Higher: it can jump to high, squealing harmonics, most of all through a bright high-gain amp."
+        },
+        "mute_db": {
+          "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
+          "short": "Below this input level (in volts: 0 dBV = 1 V) the strings count as muted.",
+          "tooltip": "The plugin can not see your hand. So the strings count as muted when the input falls to a tenth within about 10 ms (a hand on the strings), or stays below this level. A guitar played hard gives about 0.5 V (-6 dBV)."
         }
       }
     }

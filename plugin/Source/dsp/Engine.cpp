@@ -58,10 +58,20 @@ Amp::Amp (const juce::var& preset, double baseRate, double coreRate, const juce:
         throw PresetError ("preset: needs a 'chain' (the list of blocks)");
 
     name = cfg.text ("name", {});
-    const auto chain = cfg.list ("chain");
-    const int split = tailStart (chain);
+    auto chain = cfg.list ("chain");
 
     BuildContext ctx;
+
+    // A room block must be the last one: the sound that leaves the speaker goes back to the guitar.
+    if (! chain.isEmpty() && chain.getLast().getProperty ("type", {}).toString() == "room")
+    {
+        BuildContext roomCtx;
+        roomCtx.rate = roomCtx.checkRate = baseRate;
+        room = std::make_unique<Room> (Cfg (chain.getLast(), "block " + juce::String (chain.size())), roomCtx);
+        chain.removeLast();
+    }
+
+    const int split = tailStart (chain);
     ctx.rate = coreRate;
     ctx.checkRate = baseRate;
     ctx.presetFolder = presetFolder;
@@ -82,6 +92,9 @@ Amp::Amp (const juce::var& preset, double baseRate, double coreRate, const juce:
             if (text.isNotEmpty())
                 report.add ((b->id.isNotEmpty() ? b->id : b->type) + ": " + text);
         }
+
+    if (room != nullptr)
+        report.add ((room->id.isNotEmpty() ? room->id : room->type) + ": " + room->describe());
 }
 
 void Amp::link()
@@ -197,6 +210,9 @@ void Amp::reset() noexcept
     for (auto& part : { &core, &tail })
         for (auto* b : flatten (*part))
             b->reset();
+
+    if (room != nullptr)
+        room->reset();
 }
 
 //==============================================================================
@@ -248,9 +264,13 @@ Engine::Engine (const Options& options)
     }
     else if (options.autoLevel)
     {
-        // Play a short riff through the amp, then set the output so it averages -20 dBFS.
+        // Play a short riff through the amp, then set the output so it averages -20 dBFS. Without the room: its
+        // feedback depends on that level (volume_db is relative to it).
         auto riff = makeLevelRiff (rate);
         double sumSquares = 0.0;
+
+        if (amp.room != nullptr)
+            amp.room->enabled = false;
 
         for (size_t start = 0; start < riff.size(); start += (size_t) blockSize)
         {
@@ -263,12 +283,35 @@ Engine::Engine (const Options& options)
 
         const double rms = std::sqrt (sumSquares / (double) riff.size());
         makeup = rms > 1e-9 && std::isfinite (rms) ? dbToGain (-20.0) / rms : 1.0;
+
+        if (amp.room != nullptr)
+            amp.room->enabled = true;
     }
 
     reset();
 }
 
 void Engine::process (double* x, int n) noexcept
+{
+    if (amp.room == nullptr || ! amp.room->enabled)
+    {
+        processAmp (x, n);
+        return;
+    }
+
+    // Acoustic feedback: in pieces no longer than the sound's travel time, so the sound that reaches the guitar has
+    // always already left the speaker.
+    for (int done = 0; done < n;)
+    {
+        const int c = std::min (n - done, amp.room->maxChunk());
+        amp.room->addFeedback (x + done, c);
+        processAmp (x + done, c);
+        amp.room->hear (x + done, c);
+        done += c;
+    }
+}
+
+void Engine::processAmp (double* x, int n) noexcept
 {
     double* channels[] { x };
     juce::dsp::AudioBlock<double> block (channels, 1, (size_t) n);
