@@ -1,0 +1,25 @@
+{
+  "name": "Instrument: cello (bow)",
+  "notes": "Your guitar bows a string an octave down. Your playing level is the bow's speed and force; a pluck becomes a long bowed note that fades in Hold; a hand on the strings lifts the bow. Physics: the bowed string (bow: stick and slip, Helmholtz motion, Schelleng's force limits). Guesses: the body eq (a few broad bumps where a cello body is loud, not a body model). Not physics: the pitch tracker (20-30 ms after the pick). Try Bow force: too little whistles, too much grinds.",
+  "panel": [
+    { "label": "Bow force", "block": "bow", "setting": "bow_force_n", "range": [0.3, 3] },
+    { "label": "Bow position", "block": "bow", "setting": "bow_position", "range": [0.04, 0.3] },
+    { "label": "Attack", "block": "bow", "setting": "swell_s", "range": [0.005, 1] },
+    { "label": "Hold", "block": "bow", "setting": "release_s", "range": [0.2, 10] },
+    { "label": "Bridge loss", "block": "bow", "setting": "bridge_loss_db", "range": [0.1, 2] },
+    { "label": "Level", "block": "body", "setting": "level_db", "range": [-40, 0] }
+  ],
+  "chain": [
+    { "type": "bow", "id": "bow", "transpose": -12 },
+    {
+      "type": "eq", "id": "body",
+      "bands": [
+        { "kind": "highpass", "freq": 45 },
+        { "kind": "peak", "freq": 200, "gain_db": 4, "q": 1.5 },
+        { "kind": "peak", "freq": 450, "gain_db": 3, "q": 2 },
+        { "kind": "peak", "freq": 2500, "gain_db": 3, "q": 1 },
+        { "kind": "lowpass", "freq": 7000 }
+      ]
+    }
+  ]
+}

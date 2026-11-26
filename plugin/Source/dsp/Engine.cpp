@@ -272,13 +272,20 @@ Engine::Engine (const Options& options)
         if (amp.room != nullptr)
             amp.room->enabled = false;
 
-        for (size_t start = 0; start < riff.size(); start += (size_t) blockSize)
+        // Twice, measuring only the second time: blocks that remember (sag, the supply, the mouth's follow) are then
+        // as they are while playing, not as they start from silence (the talking guitar was 5.8 dB too loud).
+        for (int pass = 0; pass < 2; ++pass)
         {
-            const int n = (int) std::min ((size_t) blockSize, riff.size() - start);
-            process (riff.data() + start, n);
+            auto x = riff;
 
-            for (int i = 0; i < n; ++i)
-                sumSquares += riff[start + (size_t) i] * riff[start + (size_t) i];
+            for (size_t start = 0; start < x.size(); start += (size_t) blockSize)
+            {
+                const int n = (int) std::min ((size_t) blockSize, x.size() - start);
+                process (x.data() + start, n);
+
+                for (int i = 0; pass == 1 && i < n; ++i)
+                    sumSquares += x[start + (size_t) i] * x[start + (size_t) i];
+            }
         }
 
         const double rms = std::sqrt (sumSquares / (double) riff.size());

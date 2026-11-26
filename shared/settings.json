@@ -869,6 +869,38 @@
           "tooltip": "The plugin can not see your hand. A hand on the strings is the input falling to a tenth within about 10 ms: then the bow lifts and the string dies in 50 ms."
         }
       }
+    },
+    "mouth": {
+      "label": "Mouth (talk box)",
+      "short": "Your sound through a vocal tract: the guitar speaks vowels, oo-oh-ah-eh-ee, like a talk box.",
+      "tooltip": "A talk box sends the amp's sound up a tube into the player's mouth, and the mouth's shape makes it speak. This is a vocal tract made of about 48 short tube sections: where the tube gets wider or narrower, part of the sound bounces back, and the tube's resonances (formants) make the vowel. Put it after the amp. Move Vowel by hand, from your DAW, or let Follow move it with your playing. The five vowel shapes are fitted to measured vowel formants (Peterson and Barney 1952, men), not measured tract shapes.",
+      "settings": {
+        "vowel": {
+          "label": "Vowel", "type": "number", "min": 0, "max": 4, "default": 2,
+          "short": "The mouth's shape: 0 = oo, 1 = oh, 2 = ah, 3 = eh, 4 = ee (in between: a blend).",
+          "tooltip": "Put it on the front panel and automate it, or sweep it like a wah. oo and oh round the lips (low formants), ee pushes the tongue forward (a high second formant)."
+        },
+        "follow": {
+          "label": "Follow", "type": "number", "min": -4, "max": 4, "default": 0,
+          "short": "How far your playing moves the vowel (in vowels, at the loudest you played lately).",
+          "tooltip": "2 with Vowel at 0: each note says 'oo-ah' as you hit it and goes back to 'oo' as it fades. Negative = the other way. The level is measured against the loudest of the last few seconds, so it works at any volume."
+        },
+        "follow_ms": {
+          "label": "Follow release", "type": "number", "unit": "ms", "min": 10, "max": 1000, "default": 80, "scale": "log",
+          "short": "How fast the vowel goes back as a note fades.",
+          "tooltip": "The level rises in 5 ms and falls back in this time (to 37%)."
+        },
+        "length_cm": {
+          "label": "Tract length", "type": "number", "unit": "cm", "min": 8, "max": 30, "default": 17.15,
+          "short": "How long the vocal tract is: 17 cm is a man's, 14.5 a woman's, 12 a child's.",
+          "tooltip": "All formants move together: half the length, twice the frequencies. Very long = a giant's voice. (It is made of whole sections, so it lands within 0.4 cm.)"
+        },
+        "mix": {
+          "label": "Mix", "type": "number", "min": 0, "max": 1, "default": 1,
+          "short": "1 = only the mouth's sound, 0 = the sound that comes in.",
+          "tooltip": "Output = (1 - mix) x the input + mix x the mouth."
+        }
+      }
     }
   },
 

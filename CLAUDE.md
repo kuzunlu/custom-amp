@@ -289,6 +289,37 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   -12 54.98 Hz. NOT shown by the data (tried, the check removed): "the least force grows with the losses". Demos
   (measured): 0.4 N -> its strongest frequency is the octave; 3.5 N -> 102 Hz and noisy (spectral flatness 0.11 vs 0).
   `tests/presets/bow_low.json` (an octave down before the clean chain) has a reference recording. CPU: about 0.2%.
+- **Mouth** (`Mouth.h/.cpp`, 2026-11-26, the talking guitar / talk box): a vocal tract, a Kelly-Lochbaum tube (Kelly and
+  Lochbaum 1962). Sections as long as sound travels in `delay` = round(rate / 96 kHz) samples (0.357 cm), count =
+  round(length / that) (48 for 17.15 cm at 96 and 384 kHz); one delay line per section and direction, a joint scatters
+  pressure waves with r = (A1 - A2) / (A1 + A2); glottis reflects 0.95, lips -0.9 (what passes, (1 + r) f,
+  differentiated = the radiation), each section pass x 0.9998 (walls). The vowels: ln A(x) = sum c_n cos(n pi x / L),
+  n = 1..6, FITTED in the scratchpad (Python, damped least squares, the same discrete tube solved per frequency with 2 x 2
+  chain matrices; a sample-by-sample Python loop was far too slow) to Peterson and Barney's (1952) F1-F3 for men (who'd
+  300 870 2240, hawed 570 840 2410, father 730 1090 2440, head 530 1840 2480, heed 270 2290 3010): NOT measured tract
+  shapes; area ratios 3-48 (real tracts reach about 50). A first try with glottis 0.8 / lips -0.85 / walls 0.9995 gave
+  F1 bandwidths up to 1000 Hz ("ah" and "oh" could not be fitted); now a plain tube's are 58 Hz. `vowel` 0-4 (oo oh ah
+  eh ee) blends neighbouring shapes; `follow` adds follow x level / the loudest of the last ~3 s (level: 5 ms up,
+  follow_ms down), reshaped every 1 ms. Each vowel's gain is set at build so a 110 Hz sawtooth keeps its level (blended
+  in dB between vowels): NOT physics. With these simple lips (-0.9 at any opening) "oo" came out 12 dB louder than "ah",
+  the wrong way round (a wide open mouth radiates more; in speech "ah" is the loudest vowel), and the talking guitar
+  missed the auto level by 5.5 dB (the level then depended on how far follow had opened the mouth). The real fix is a
+  radiation load that depends on the lip area (Flanagan's R and L in parallel); it would also move the formants, so
+  the vowels would need fitting again. X-ray removes it.
+  Checked (EngineTest): a plain 17.15 cm tube 502 / 1500 / 2500 Hz (theory c (2k - 1) / 4L: 500 1500 2500); the five
+  vowels within 0.4% of Peterson and Barney at 96 AND 384 kHz (the same numbers: at 384 kHz the tube is H(z^4), its
+  images above 90 kHz go in the oversampler's filter); 12 cm: every formant x 17.15/12.15 within 0.1%; follow 2 from oo:
+  1.99 loud, 0.24 at 20 dB softer (0.2). Demos (riff, each vowel fixed): the loudest band is 200-450 Hz for oo,
+  600-900 Hz for oh/ah, 1700-2400 Hz for eh/ee. CPU: 2.8% at 8x (talking guitar 5.4% vs the same amp without it 2.6%).
+  **`EngineTest render` now runs with denormals off (`ScopedNoDenormals`, as the plugin's processBlock)**: without it
+  the talking guitar measured 10-15% (tiny dying numbers in the tube; it changed with the vowel). Older CPU numbers in
+  this file came from render without it, so some may be a little high.
+- **Instrument presets** (2026-11-26, `presets/instrument_*.json`, named "Instrument: ..." so they sort together): bass
+  (restring -12, soft drive, eq), cello (bow -12, a GUESSED body eq: broad bumps, not a body model), bowed sitar drone
+  (bow near the bridge + D drone strings), bell strings (restring +12, stretch 400 cents), talking guitar (the crunch
+  amp WITHOUT its cab, as a talk box takes the amp's output, then mouth with follow 2 from oo). Each has its own panel
+  and notes saying what is physics and what is a guess; each has a reference recording; PluginTest: -21.0 / -19.0 /
+  -19.3 / -20.6 dBFS at the auto level.
 - **X-ray listening** (2026-11-26): hear only what one block adds. A TWIN engine runs beside the amp on the same
   input: the same preset with that block switched off (`CustomAmpProcessor::twinPreset`: gain/power `linear: true`,
   sag/feedback amount 0, eq/tonestack/gate/ir/room/strings left out; a split can not; the panel is dropped), built on
@@ -432,8 +463,9 @@ C++ checks:
   `ir_rate / rate` (both versions), so a cab is equally loud at every session rate. IR file paths:
   absolute, next to the preset, one folder up, or the current folder; not found -> built-in fake 4x12
   (`makeFakeCabIr`; `EngineTest make-audio` writes the same one to audio/) with a note in the status. "Load IR" replaces every ir file.
-- **Auto level:** after building, the engine plays a short fake riff (0.5 V peak) and sets its output so it
-  averages -20 dBFS, then resets. Amp-style presets put out tens of volts, so this is needed.
+- **Auto level:** after building, the engine plays a short fake riff (0.5 V peak) TWICE and sets its output so the
+  second time averages -20 dBFS, then resets. (Once from silence was untypical for blocks that remember: the talking
+  guitar's follow opened every attack to "ah" and it came out 5.8 dB quieter while playing; 2026-11-26.) Amp-style presets put out tens of volts, so this is needed.
 - **Threads:** engines are built on a background thread (`Builder`), handed to the audio thread through
   `pendingEngine`, and the old one comes back through `retiredEngine` to be deleted on the message thread.
   Nothing is allocated or freed on the audio thread. A failed build keeps the old engine playing and shows the
@@ -571,7 +603,7 @@ The old way, still there for a manual run, like the user's `github.com/kuzunlu/s
 
 Pushed to `github.com/kuzunlu/custom-amp` (branch `main`). Releases: tags `v0.1.0` and `v0.1.1` pushed on 2026-11-23
 (the build before it passed on GitHub; the user checks the Actions page, `gh` is not installed here).
-Done (also room, strings, restring, bow, X-ray): eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
+Done (also room, strings, restring, bow, mouth, instrument presets, meters, X-ray): eq, gain (curves soft/tube/diode/hard/custom/triode, bias shift, `plate_volts`), tonestack (from part
 values; styles british, american, top_boost, james), power (push-pull EL34/6L6GC/EL84/6V6GT/KT88/6550), sag,
 feedback (also positive), split, gate, ir, rectifier supply on the power block;
 simple presets (clean, crunch, high_gain) and 7 amp-style presets (see README).

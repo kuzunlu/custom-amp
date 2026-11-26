@@ -17,6 +17,7 @@ A guitar amp built from a few simple blocks that you can put in any order:
 | `strings` | Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's |
 | `restring` | Play your guitar, hear a virtual string with physics you choose (lower, stiffer, longer, bending by itself) |
 | `bow` | Your playing bows a virtual string: endless, swelling notes, with a real bow's stick and slip |
+| `mouth` | A vocal tract (talk box): the guitar speaks vowels, oo-oh-ah-eh-ee, by hand, from the DAW or following your playing |
 
 The idea: in the end, every amp is EQ and clipping, plus some feedback and power supply sag.
 
@@ -288,6 +289,25 @@ exactly every sample: the string sticks to the bow, then slips back. With the ri
 string; theory 0.88). Too little force: it slips several times a period (the "surface sound": the demo's strongest
 frequency is the octave). Too much: it grinds and goes flat (Schelleng's limit, 2.0 N with the defaults; measured: clean
 up to 1.9 N). The loss is per trip to the bridge, like a real bowed instrument's body, so low notes ring longer.
+
+### Mouth (talk box)
+
+```json
+{ "type": "mouth", "vowel": 0, "follow": 2, "follow_ms": 80, "length_cm": 17.15, "mix": 1 }
+```
+
+Put it after the amp (and leave the cab out: a talk box takes the amp's output into a tube). The sound goes through a
+simulated vocal tract, a tube of about 48 short sections; where it gets wider or narrower, part of the sound bounces
+back, and the tube's resonances (formants) make the vowel. `vowel` goes from 0 (oo) through oh, ah, eh to 4 (ee); put it
+on the front panel and sweep it like a wah. `follow` moves it with your playing: 2 from oo makes each note say "oo-ah".
+`length_cm`: 17 is a man's tract, 14.5 a woman's, 12 a child's. Measured: the five vowels land within 0.4% of
+Peterson and Barney's (1952) formants for men (the shapes are fitted to them, not measured tracts).
+
+### Instrument presets
+
+The preset menu has a few non-amp instruments, all played by your guitar: **bass** (restring an octave down),
+**cello** (bow an octave down), **bowed sitar drone** (bow + sympathetic strings in D), **bell strings** (very stiff
+restrung strings) and **talking guitar** (crunch amp + mouth). Each one's notes say what is physics and what is a guess.
 
 ### Gate
 

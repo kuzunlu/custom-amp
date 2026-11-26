@@ -13,6 +13,7 @@
 
 #include "../Source/dsp/Engine.h"
 #include "../Source/dsp/Bow.h"
+#include "../Source/dsp/Mouth.h"
 #include "../Source/dsp/Strings.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -1180,6 +1181,120 @@ void bowChecks()
     }
 }
 
+// The first three formants of a mouth block: the peaks of its impulse response's spectrum above 150 Hz.
+std::vector<double> mouthFormants (const juce::String& settings, double rate, const amp::Mouth::Shape* shape = nullptr)
+{
+    amp::BuildContext ctx;
+    ctx.rate = ctx.checkRate = rate;
+    amp::Mouth m (amp::Cfg (juce::JSON::parse ("{ \"type\": \"mouth\"" + settings + " }"), "mouth"), ctx, shape);
+    std::vector<double> h ((size_t) (0.25 * rate), 0.0);
+    h[0] = 1.0;
+    m.process (h.data(), (int) h.size());
+    const auto size = [&h, rate] (double f)
+    {
+        std::complex<double> sum;
+        const auto turn = std::polar (1.0, -2 * pi * f / rate);
+        std::complex<double> w (1.0, 0.0);
+
+        for (size_t i = 0; i < h.size(); ++i, w *= turn)
+            sum += h[i] * w;
+
+        return std::abs (sum);
+    };
+    std::vector<double> f, s;
+
+    for (double hz = 100; hz < 4500; hz += 2)
+    {
+        f.push_back (hz);
+        s.push_back (size (hz));
+    }
+
+    std::vector<double> peaks;
+
+    for (size_t i = 1; i + 1 < s.size() && peaks.size() < 3; ++i)
+        if (f[i] > 150 && s[i] > s[i - 1] && s[i] > s[i + 1])
+            peaks.push_back (f[i]);
+
+    return peaks;
+}
+
+void mouthChecks()
+{
+    std::cout << "Mouth (a vocal tract: Kelly-Lochbaum tube)" << std::endl;
+
+    // A plain tube, closed at the glottis and open at the lips: resonances at (2k - 1) c / 4L.
+    const amp::Mouth::Shape plain {};
+    const auto tube = mouthFormants ("", 96000.0, &plain);
+    const double L = 48 * 343.0 / 96000.0;
+    bool tubeOk = tube.size() == 3;
+
+    for (size_t k = 0; tubeOk && k < 3; ++k)
+        tubeOk = std::abs (tube[k] / (343.0 * (2 * (double) k + 1) / (4 * L)) - 1) < 0.01;
+
+    check (tubeOk, "a plain 17.15 cm tube: " + juce::String (tube.size() > 2 ? tube[0] : 0, 0) + " " + juce::String (tube.size() > 2 ? tube[1] : 0, 0) + " "
+                       + juce::String (tube.size() > 2 ? tube[2] : 0, 0) + " Hz (theory c (2k - 1) / 4L: 500 1500 2500)");
+
+    // The five vowels against Peterson and Barney (1952), men, at 96 kHz (one sample per section, as fitted) and at
+    // 384 kHz (four).
+    const std::array<std::array<double, 3>, 5> targets { { { 300, 870, 2240 }, { 570, 840, 2410 }, { 730, 1090, 2440 },
+                                                           { 530, 1840, 2480 }, { 270, 2290, 3010 } } };
+    const char* names[] = { "oo", "oh", "ah", "eh", "ee" };
+
+    for (double rate : { 96000.0, 384000.0 })
+    {
+        juce::String got;
+        double worst = 0;
+
+        for (int v = 0; v < 5; ++v)
+        {
+            const auto p = mouthFormants (", \"vowel\": " + juce::String (v), rate);
+            got << names[v] << " ";
+
+            for (size_t k = 0; k < 3; ++k)
+            {
+                const double hz = k < p.size() ? p[k] : 0;
+                worst = std::max (worst, std::abs (hz / targets[(size_t) v][k] - 1));
+                got << juce::String (hz, 0) << (k < 2 ? "/" : "  ");
+            }
+        }
+
+        check (worst < 0.02, juce::String (rate / 1000, 0) + " kHz: " + got + "(worst " + juce::String (100 * worst, 1) + "% off Peterson and Barney)");
+    }
+
+    // A shorter tract (a child's): every formant up by the same ratio.
+    {
+        const auto adult = mouthFormants ("", 96000.0), child = mouthFormants (", \"length_cm\": 12", 96000.0);
+        const double want = 48.0 / 34;  // sections: 17.15 cm vs 12.15 cm
+        double worst = 0;
+
+        for (size_t k = 0; k < 3 && k < adult.size() && k < child.size(); ++k)
+            worst = std::max (worst, std::abs (child[k] / adult[k] / want - 1));
+
+        check (child.size() == 3 && worst < 0.02, "ah, 12 cm: " + juce::String (child.size() > 2 ? child[0] : 0, 0) + "/" + juce::String (child.size() > 2 ? child[1] : 0, 0)
+                                                      + "/" + juce::String (child.size() > 2 ? child[2] : 0, 0) + " Hz, every formant x 17.15/12.15 within "
+                                                      + juce::String (100 * worst, 1) + "%");
+    }
+
+    // follow 2 from "oo": a loud note moves it to "ah", as it fades it goes back.
+    {
+        amp::BuildContext ctx;
+        ctx.rate = ctx.checkRate = 96000.0;
+        amp::Mouth m (amp::Cfg (juce::JSON::parse (R"({ "type": "mouth", "vowel": 0, "follow": 2 })"), "mouth"), ctx);
+        m.reset();
+        auto x = sine (220, 0.5, 1.0, 96000.0);
+
+        for (size_t i = (size_t) (0.5 * 96000); i < x.size(); ++i)
+            x[i] *= 0.1;  // 20 dB softer
+
+        m.process (x.data(), (int) (0.4 * 96000));
+        const double loud = m.vowelNow();
+        m.process (x.data() + (int) (0.4 * 96000), (int) (0.6 * 96000));
+        const double soft = m.vowelNow();
+        check (std::abs (loud - 2) < 0.1 && std::abs (soft - 0.2) < 0.1, "follow 2 from oo: " + juce::String (loud, 2) + " while loud (ah = 2), "
+                                                                              + juce::String (soft, 2) + " 20 dB softer (0.2)");
+    }
+}
+
 void powerChecks()
 {
     std::cout << "Power tubes against their datasheets\n";
@@ -1632,6 +1747,7 @@ int makeAudio (const juce::File& root)
 //==============================================================================
 int render (const juce::StringArray& args)
 {
+    juce::ScopedNoDenormals noDenormals;  // as the plugin's processBlock: tiny dying numbers would make the CPU time wrong
     const juce::File presetFile (args[1]);
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
@@ -1719,9 +1835,16 @@ int main (int argc, char* argv[])
 
     try
     {
+        if (args.size() >= 1 && args[0] == "mouth")  // only the mouth checks
+        {
+            mouthChecks();
+            return failures == 0 ? 0 : 1;
+        }
+
         if (args.size() >= 1 && args[0] == "bow")  // only the bow checks (quicker while working on it)
         {
             bowChecks();
+            mouthChecks();
             return failures == 0 ? 0 : 1;
         }
 

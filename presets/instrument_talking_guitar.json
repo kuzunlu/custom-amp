@@ -1,0 +1,39 @@
+{
+  "name": "Instrument: talking guitar (mouth)",
+  "notes": "A talk box: the crunch amp's sound (no speaker cab: a talk box takes the amp's output into a tube) goes through a vocal tract. Each note says 'oo-ah' as you hit it (Follow 2 from Vowel 0) and goes back to 'oo' as it fades. Turn Follow to 0 and move Vowel by hand or from your DAW for a wah-like sweep. Physics: the amp and the vocal tract (a Kelly-Lochbaum tube). Fitted, not measured: the five vowel shapes (they hit Peterson and Barney's 1952 formants for men). Guesses: the amp itself is the crunch preset's.",
+  "panel": [
+    { "label": "Gain", "block": "v1", "setting": "drive_db", "range": [0, 40] },
+    { "label": "Vowel", "block": "mouth", "setting": "vowel", "range": [0, 4] },
+    { "label": "Follow", "block": "mouth", "setting": "follow", "range": [-4, 4] },
+    { "label": "Follow release", "block": "mouth", "setting": "follow_ms", "range": [10, 1000] },
+    { "label": "Tract length", "block": "mouth", "setting": "length_cm", "range": [10, 25] },
+    { "label": "Mix", "block": "mouth", "setting": "mix", "range": [0, 1] }
+  ],
+  "chain": [
+    { "type": "eq", "bands": [{ "kind": "highpass", "freq": 90 }] },
+    {
+      "type": "gain", "id": "v1", "drive_db": 20, "curve": "tube", "bias": 0.15,
+      "post": [{ "kind": "lowpass", "freq": 9000 }]
+    },
+    {
+      "type": "eq", "id": "tonestack",
+      "bands": [
+        { "kind": "lowshelf", "freq": 200, "gain_db": -3 },
+        { "kind": "peak", "freq": 800, "gain_db": 3, "q": 0.8 },
+        { "kind": "highshelf", "freq": 2500, "gain_db": 2 }
+      ]
+    },
+    { "type": "sag", "amount": 0.4, "attack_ms": 5, "release_ms": 200, "targets": ["v2"] },
+    {
+      "type": "feedback", "id": "nfb", "amount": 0.1,
+      "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
+      "chain": [
+        {
+          "type": "gain", "id": "v2", "drive_db": 16, "curve": "soft",
+          "post": [{ "kind": "lowpass", "freq": 7000 }]
+        }
+      ]
+    },
+    { "type": "mouth", "id": "mouth", "vowel": 0, "follow": 2 }
+  ]
+}

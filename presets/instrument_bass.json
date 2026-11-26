@@ -1,0 +1,25 @@
+{
+  "name": "Instrument: bass (restring)",
+  "notes": "Your guitar restrung an octave down: every pick plucks a virtual bass string with your own pick shape, which rings on its own physics. Physics: the string (restring). Guesses: the soft drive and the tone eq (a simple clean bass sound, no cab). Not physics: the pitch tracker, so the string starts 20-30 ms after the pick and follows one note.",
+  "panel": [
+    { "label": "Sustain", "block": "string", "setting": "sustain_s", "range": [0.5, 10] },
+    { "label": "String tone", "block": "string", "setting": "string_tone_hz", "range": [500, 6000] },
+    { "label": "Drive", "block": "drive", "setting": "drive_db", "range": [0, 30] },
+    { "label": "Bass", "block": "tone", "setting": "bands.1.gain_db", "range": [-12, 12] },
+    { "label": "Middle", "block": "tone", "setting": "bands.2.gain_db", "range": [-12, 12] },
+    { "label": "Level", "block": "tone", "setting": "level_db", "range": [-40, 0] }
+  ],
+  "chain": [
+    { "type": "restring", "id": "string", "transpose": -12, "sustain_s": 3, "string_tone_hz": 2500 },
+    { "type": "gain", "id": "drive", "curve": "soft", "drive_db": 0 },
+    {
+      "type": "eq", "id": "tone",
+      "bands": [
+        { "kind": "highpass", "freq": 35 },
+        { "kind": "lowshelf", "freq": 100, "gain_db": 2 },
+        { "kind": "peak", "freq": 800, "gain_db": -3, "q": 0.7 },
+        { "kind": "lowpass", "freq": 5000 }
+      ]
+    }
+  ]
+}

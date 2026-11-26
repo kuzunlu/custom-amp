@@ -764,7 +764,10 @@ int main (int argc, char* argv[])
         const std::map<juce::String, int> knobCounts { { "brit_800.json", 6 }, { "brit_plexi.json", 6 }, { "brit_top_boost.json", 3 },
                                                        { "clean.json", 5 }, { "crunch.json", 5 }, { "german_high_gain.json", 6 },
                                                        { "high_gain.json", 6 }, { "us_blackface_clean.json", 4 },
-                                                       { "us_hotrod_lead.json", 7 }, { "us_modern_high_gain.json", 6 } };
+                                                       { "us_hotrod_lead.json", 7 }, { "us_modern_high_gain.json", 6 },
+                                                       { "instrument_bass.json", 6 }, { "instrument_cello.json", 6 },
+                                                       { "instrument_bowed_sitar.json", 7 }, { "instrument_bell_strings.json", 6 },
+                                                       { "instrument_talking_guitar.json", 6 } };
         int right = 0;
 
         for (auto& [fileName, count] : knobCounts)

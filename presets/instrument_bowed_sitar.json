@@ -1,0 +1,25 @@
+{
+  "name": "Instrument: bowed sitar drone (bow + strings)",
+  "notes": "Your guitar bows a string near the bridge, and a set of sympathetic strings tuned to a D drone (D2 A2 D3 A3 D4) rings along with it. Play in D for the halo. Physics: the bowed string (bow) and the sympathetic strings (strings). Guesses: the final eq. Not physics: the pitch tracker.",
+  "panel": [
+    { "label": "Bow force", "block": "bow", "setting": "bow_force_n", "range": [0.5, 4] },
+    { "label": "Bow position", "block": "bow", "setting": "bow_position", "range": [0.04, 0.3] },
+    { "label": "Hold", "block": "bow", "setting": "release_s", "range": [0.2, 10] },
+    { "label": "Coupling", "block": "drone", "setting": "coupling_db", "range": [-60, -10] },
+    { "label": "Halo sustain", "block": "drone", "setting": "sustain_s", "range": [1, 20] },
+    { "label": "Halo", "block": "drone", "setting": "mix_db", "range": [-30, 6] },
+    { "label": "Level", "block": "tone", "setting": "level_db", "range": [-40, 0] }
+  ],
+  "chain": [
+    { "type": "bow", "id": "bow", "bow_position": 0.08, "bow_force_n": 2.2, "release_s": 4 },
+    { "type": "strings", "id": "drone", "notes": ["D2", "A2", "D3", "A3", "D4"], "coupling_db": -24, "sustain_s": 6 },
+    {
+      "type": "eq", "id": "tone",
+      "bands": [
+        { "kind": "highpass", "freq": 60 },
+        { "kind": "peak", "freq": 3000, "gain_db": 2, "q": 0.8 },
+        { "kind": "lowpass", "freq": 9000 }
+      ]
+    }
+  ]
+}

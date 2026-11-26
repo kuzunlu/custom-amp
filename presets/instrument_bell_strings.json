@@ -1,0 +1,22 @@
+{
+  "name": "Instrument: bell strings (restring)",
+  "notes": "Your guitar restrung an octave up as very stiff strings: their harmonics are pushed sharp (400 cents at the 10th), so notes ring like bells or a toy piano, for 8 s. Physics: the stiff string (restring). Guesses: the final eq. Not physics: the pitch tracker (20-30 ms after the pick). Stiffness at 0 gives plain strings; around 20-50 a piano's.",
+  "panel": [
+    { "label": "Stiffness", "block": "string", "setting": "stretch_cents", "range": [0, 1200] },
+    { "label": "Sustain", "block": "string", "setting": "sustain_s", "range": [0.5, 30] },
+    { "label": "String tone", "block": "string", "setting": "string_tone_hz", "range": [1000, 10000] },
+    { "label": "Transpose", "block": "string", "setting": "transpose", "range": [-24, 24] },
+    { "label": "Mix", "block": "string", "setting": "mix", "range": [0, 1] },
+    { "label": "Level", "block": "tone", "setting": "level_db", "range": [-40, 0] }
+  ],
+  "chain": [
+    { "type": "restring", "id": "string", "transpose": 12, "stretch_cents": 400, "sustain_s": 8, "string_tone_hz": 6000 },
+    {
+      "type": "eq", "id": "tone",
+      "bands": [
+        { "kind": "highpass", "freq": 80 },
+        { "kind": "lowpass", "freq": 12000 }
+      ]
+    }
+  ]
+}

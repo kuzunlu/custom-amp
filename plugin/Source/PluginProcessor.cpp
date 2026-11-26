@@ -77,7 +77,7 @@ juce::String CustomAmpProcessor::twinPreset (const juce::String& text, const juc
         obj->setProperty ("linear", true);  // the same stage without its non-linear parts
     else if (type == "sag" || type == "feedback")
         obj->setProperty ("amount", 0.0);
-    else if (type == "eq" || type == "tonestack" || type == "gate" || type == "ir" || type == "room" || type == "strings" || type == "restring" || type == "bow")
+    else if (type == "eq" || type == "tonestack" || type == "gate" || type == "ir" || type == "room" || type == "strings" || type == "restring" || type == "bow" || type == "mouth")
         array->remove (index);
     else
         return {};  // a split: no single "off"
