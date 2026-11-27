@@ -326,15 +326,36 @@ int main (int argc, char* argv[])
     check (std::abs (level + 20.0) < 3.0, "the level riff comes out near -20 dBFS: " + juce::String (level, 1));
 
     std::cout << "Every built-in preset, switched while playing\n";
+    const auto riff = amp::makeLevelRiff (rate);
+    double riffSquares = 0.0;
+
+    for (auto v : riff)
+        riffSquares += v * v;
+
+    const double riffLevel = juce::Decibels::gainToDecibels (std::sqrt (riffSquares / (double) riff.size()));
 
     for (auto& preset : CustomAmpProcessor::getBuiltInPresets())
     {
         p->loadBuiltInPreset (preset.fileName);
         waitForBuild (*p);
         level = play (*p, 1.0);
-        check (! p->getStatus().isError && std::abs (level + 20.0) < 3.0,
-               preset.fileName + ": " + juce::String (level, 1) + " dBFS"
+        // An effect (auto_level off) comes out near the guitar's own level (the riff's), an amp near -20 dBFS. The talk
+        // box goes after another amp, so a guitar is not its input: only that it plays.
+        const bool effect = preset.fileName.startsWith ("effect_"), afterAmp = preset.fileName == "effect_talk_box.json";
+        check (! p->getStatus().isError && (afterAmp ? level > -60.0 && level < 0.0 : std::abs (level - (effect ? riffLevel : -20.0)) < (effect ? 6.0 : 3.0)),
+               preset.fileName + ": " + juce::String (level, 1) + " dBFS" + (effect ? " (the guitar: " + juce::String (riffLevel, 1) + ")" : juce::String())
                    + (p->getStatus().isError ? "  " + p->getStatus().text : juce::String()));
+    }
+
+    {
+        auto empty = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("custom_amp_empty.json");
+        empty.replaceWithText (R"({ "name": "Nothing", "auto_level": false, "chain": [] })");
+        p->loadPresetFile (empty);
+        waitForBuild (*p);
+        level = play (*p, 1.0);
+        check (! p->getStatus().isError && std::abs (level - riffLevel) < 0.05 && p->getStatus().text.contains ("auto level off: 0.0 dB"),
+               "an empty chain with auto_level off: output = input (" + juce::String (level, 2) + " dBFS, the guitar " + juce::String (riffLevel, 2) + ")");
+        empty.deleteFile();
     }
 
     std::cout << "A preset file with a typo, then fixed while the plugin watches it\n";
@@ -762,12 +783,13 @@ int main (int argc, char* argv[])
         check (total > 10 && same == total, "the shared panel cases give exactly their errors: " + juce::String (same) + " of " + juce::String (total));
 
         const std::map<juce::String, int> knobCounts { { "brit_800.json", 6 }, { "brit_plexi.json", 6 }, { "brit_top_boost.json", 3 },
-                                                       { "clean.json", 5 }, { "crunch.json", 5 }, { "german_high_gain.json", 6 },
+                                                       { "clean.json", 5 }, { "crunch.json", 5 }, { "german_high_gain.json", 7 },
                                                        { "high_gain.json", 6 }, { "us_blackface_clean.json", 4 },
-                                                       { "us_hotrod_lead.json", 7 }, { "us_modern_high_gain.json", 6 },
+                                                       { "us_hotrod_lead.json", 8 }, { "us_modern_high_gain.json", 7 },
                                                        { "instrument_bass.json", 6 }, { "instrument_cello.json", 6 },
                                                        { "instrument_bowed_sitar.json", 7 }, { "instrument_bell_strings.json", 6 },
-                                                       { "instrument_talking_guitar.json", 6 } };
+                                                       { "instrument_talking_guitar.json", 6 }, { "effect_strings.json", 4 },
+                                                       { "effect_restring.json", 5 }, { "effect_bow.json", 6 }, { "effect_talk_box.json", 6 } };
         int right = 0;
 
         for (auto& [fileName, count] : knobCounts)

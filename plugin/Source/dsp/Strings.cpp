@@ -71,9 +71,22 @@ SympatheticStrings::SympatheticStrings (const Cfg& cfg, const BuildContext& ctx)
         // The low-pass delays the note a little (its phase) and lowers it a little: read that much sooner, and give
         // that much back, so the string rings at its note for sustain_s.
         const double w = 2 * juce::MathConstants<double>::pi / period;
-        const std::complex<double> lp = tone / (1.0 - (1.0 - tone) * std::polar (1.0, -w));
+        const double keep = std::pow (10.0, -3.0 * period / (rate * sustain));  // what the note keeps per period
+        const auto lowpass = [w] (double t) { return t / (1.0 - (1.0 - t) * std::polar (1.0, -w)); };
+        s.tone = tone;
+
+        // The loop gain at 0 Hz is keep / |lp(note)|: above 1 the string gains energy. So the low-pass may cut the note
+        // no further than sqrt (keep): then 0 Hz dies in 2 x sustain_s, the note still in sustain_s, and this string's
+        // highs fade less than asked. |lp| = sqrt (keep): a quadratic in the pole (as in Restring's tonePole).
+        if (std::abs (lowpass (tone)) < std::sqrt (keep))
+        {
+            const double c1 = 2 * std::pow (std::sin (w / 2), 2), a = 1 - keep, bm = a + keep * c1;
+            s.tone = 1 - a / (bm + std::sqrt (std::max (0.0, bm * bm - a * a)));
+        }
+
+        const std::complex<double> lp = lowpass (s.tone);
         s.read = std::max (2.0, period + std::arg (lp) / w);
-        s.gain = std::pow (10.0, -3.0 * period / (rate * sustain)) / std::abs (lp);
+        s.gain = keep / std::abs (lp);
         s.line.assign ((size_t) std::ceil (period) + 4, 0.0);
         strings.push_back (std::move (s));
     }
@@ -108,7 +121,7 @@ void SympatheticStrings::process (double* x, int n) noexcept
             const auto k = (int) from;
             const double frac = from - k;
             const double old = s.line[(size_t) k] * (1 - frac) + s.line[(size_t) ((k + 1) % size)] * frac;
-            s.smooth += tone * (old - s.smooth);
+            s.smooth += s.tone * (old - s.smooth);
             const double v = coupling * in + s.gain * s.smooth;
             s.line[(size_t) s.write] = v;
             s.write = (s.write + 1) % size;

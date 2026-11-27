@@ -1,18 +1,20 @@
 #include "Room.h"
 
 #include <complex>
+#include <limits>
 
 namespace amp
 {
 
 Room::Room (const Cfg& cfg, const BuildContext& ctx)
-    : Block (cfg, { "distance_m", "volume_db", "sustain_s", "string_tone_hz", "mute_db", "harmonic", "find_spot" })
+    : Block (cfg, { "distance_m", "volume_db", "sustain_s", "string_tone_hz", "mute_db", "harmonic", "find_spot", "feedback_s" })
 {
     rate = ctx.rate;
     distance = cfg.number ("distance_m", 0.5);
     sustainS = cfg.number ("sustain_s", 3.0);
     harmonic = cfg.number ("harmonic", 1.0);
     findSpot = cfg.flag ("find_spot", false);
+    const double feedbackS = cfg.number ("feedback_s", 6.0);
 
     if (harmonic < 1 || harmonic > 8 || harmonic != std::floor (harmonic))
         throw PresetError ("room: harmonic must be a whole number from 1 to 8, got " + juce::String (harmonic));
@@ -22,6 +24,11 @@ Room::Room (const Cfg& cfg, const BuildContext& ctx)
     if (distance < 0.1 || distance > 20)
         throw PresetError ("room: distance_m must be from 0.1 to 20, got " + juce::String (distance));
 
+    if (feedbackS <= 0)
+        throw PresetError ("room: feedback_s must be above 0 (60 or more = it never stops), got " + juce::String (feedbackS));
+
+    holdSamples = feedbackS >= 60 ? -1.0 : feedbackS * rate;
+
     if (sustainS <= 0 || toneHz <= 0 || toneHz >= rate / 2)
         throw PresetError ("room: sustain_s must be above 0 and string_tone_hz between 0 and half the sample rate");
 
@@ -29,7 +36,7 @@ Room::Room (const Cfg& cfg, const BuildContext& ctx)
     tone = 1 - std::exp (-2 * juce::MathConstants<double>::pi * toneHz / rate);
 
     // Sound pressure falls with distance (6 dB less at twice the distance); volume_db is the level at 1 m.
-    coupling = dbToGain (cfg.number ("volume_db", -20.0)) / distance;
+    coupling = dbToGain (cfg.number ("volume_db", -40.0)) / distance;
     muteLevel = dbToGain (cfg.number ("mute_db", -60.0));  // volts at the input (a guitar: about 0.5 V played hard)
     delay = std::max (1, juce::roundToInt (distance / 343.0 * rate));  // the speed of sound
     chunk = std::min (delay, 64);
@@ -55,6 +62,7 @@ void Room::reset() noexcept
     smooth = 0.0;
     period = readPeriod = loopGain = mutedGain = 0.0;
     muted = true;
+    sincePick = std::numeric_limits<double>::max();  // no feedback before the first pick
     extra = 0.0;
     pushSum = ringSum = {};
     phasor = 1.0;
@@ -72,7 +80,9 @@ void Room::addFeedback (double* input, int n) noexcept
         if (player.hear (di))
             setNote (player.period());
 
-        muted = player.isMuted();
+        // A pick starts the feedback time again; when it is over, the string counts as muted (a hand on it).
+        sincePick = player.attacked() ? 0.0 : sincePick + 1;
+        muted = player.isMuted() || (holdSamples >= 0 && sincePick > holdSamples);
 
         // The string: the sound that left the speaker `delay` samples ago pushes it, and what it did one period ago
         // comes round again (a little weaker, the higher harmonics more so).
@@ -159,7 +169,9 @@ void Room::setNote (double newPeriod) noexcept
 
 juce::String Room::describe() const
 {
-    return "the sound reaches the guitar after " + juce::String (1000.0 * delay / rate, 2) + " ms (" + juce::String (distance, 2) + " m)";
+    return "the sound reaches the guitar after " + juce::String (1000.0 * delay / rate, 2) + " ms (" + juce::String (distance, 2) + " m), "
+           + (holdSamples < 0 ? juce::String ("the feedback never stops by itself")
+                              : "the feedback stops " + juce::String (holdSamples / rate, 1) + " s after each pick");
 }
 
 } // namespace amp

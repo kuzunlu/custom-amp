@@ -15,7 +15,9 @@ namespace amp
 // the loop around the whole amp, in pieces shorter than the sound's travel time.
 //
 // Two parts are not physics, they stand in for the guitarist: the pitch tracker follows ONE note (with a chord, the
-// strongest), and the string counts as MUTED when the input falls fast (a hand on the strings) or is very quiet.
+// strongest), and the string counts as MUTED when the input falls fast (a hand on the strings) or is very quiet, or
+// `feedback_s` after the last pick attack. The last one is needed because the feedback lives only in here: the real
+// string is not shaken by the amp, so it fades away slowly into the guitar's hum and no rule could hear the hand.
 class Room final : public Block
 {
 public:
@@ -38,6 +40,7 @@ private:
     void setNote (double period) noexcept;  // a note from the Player: the string's length and its losses
 
     double rate = 48000, coupling = 0, sustainS = 3, tone = 0.1, muteLevel = 0.002, distance = 0.5, harmonic = 1;
+    double holdSamples = -1, sincePick = 0;  // feedback_s in samples (-1 = never stops), samples since the last pick
     int delay = 1, chunk = 1;
 
     std::vector<double> air;     // the speaker's sound on its way to the guitar

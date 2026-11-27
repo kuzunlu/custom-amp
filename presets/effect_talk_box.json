@@ -1,0 +1,17 @@
+{
+  "name": "Effect: talk box (mouth)",
+  "notes": "An effect for AFTER another amp (a talk box takes the amp's sound, before its cab): no amp and no cab here, and auto_level off, so the level stays about the same. The sound goes through a vocal tract (a tube of 48 sections); Follow opens the mouth from oo towards ah as you play louder. Physics: the tube. Guesses: the five vowel shapes (fitted to Peterson and Barney's formants, not measured tracts) and each vowel's level (set so a 110 Hz sawtooth keeps its level). Level: the tube took 11 dB off a crunch amp's sound (measured, oo opening to ah with Follow 2), so the eq after it gives that back, like a talk box player's mic gain.",
+  "auto_level": false,
+  "panel": [
+    { "label": "Vowel", "block": "mouth", "setting": "vowel", "range": [0, 4] },
+    { "label": "Follow", "block": "mouth", "setting": "follow", "range": [-4, 4] },
+    { "label": "Follow release", "block": "mouth", "setting": "follow_ms", "range": [10, 1000] },
+    { "label": "Tract length", "block": "mouth", "setting": "length_cm", "range": [10, 25] },
+    { "label": "Mix", "block": "mouth", "setting": "mix", "range": [0, 1] },
+    { "label": "Level", "block": "level", "setting": "level_db", "range": [-20, 20] }
+  ],
+  "chain": [
+    { "type": "mouth", "id": "mouth", "vowel": 0, "follow": 2 },
+    { "type": "eq", "id": "level", "level_db": 11 }
+  ]
+}

@@ -533,6 +533,40 @@ void roomChecks (const juce::File& root)
                + " Hz with a 10 s string (+-" + juce::String (width (10.0), 2) + ")");
     check (afterMute < -100, "a hand on the strings stops it: " + juce::String (afterMute, 0) + " dB 0.3 s after");
 
+    // A real guitar: the note fades by itself into hum (-50 dBV, above mute_db) and no hand ever shows in the input, so
+    // only feedback_s can stop the feedback (before it, the plugin fed back forever).
+    const auto hummed = [&root, rate] (const juce::String& room)
+    {
+        auto preset = loadJson (root.getChildFile ("presets/clean.json"));
+        preset.getDynamicObject()->removeProperty ("panel");
+
+        if (room.isNotEmpty())
+            preset["chain"].getArray()->add (juce::JSON::parse (R"({ "type": "room", "distance_m": 0.5, "volume_db": -20)" + room + " }"));
+
+        amp::Engine::Options options;
+        options.preset = preset;
+        options.presetFolder = root.getChildFile ("presets");
+        options.irOverride = juce::File ("C:/no/such/folder/ir.wav");
+        options.sampleRate = rate;
+        options.maxBlock = 256;
+        amp::Engine engine (options);
+        auto x = dyingNote (110, 8.0, rate);
+
+        for (size_t i = 0; i < x.size(); ++i)
+            x[i] += 0.00316 * std::sin (2 * pi * 50 * (double) i / rate);
+
+        for (size_t i = 0; i < x.size(); i += 256)
+            engine.process (x.data() + i, (int) std::min ((size_t) 256, x.size() - i));
+
+        return x;
+    };
+    const auto noRoom = hummed ({}), endless = hummed (R"(, "feedback_s": 60)"), twoSeconds = hummed (R"(, "feedback_s": 2)");
+    const double endlessUp = level (endless, 7.5, 8.0) - level (noRoom, 7.5, 8.0), heldUp = level (twoSeconds, 1.6, 1.9) - level (noRoom, 1.6, 1.9);
+    const double stopped = level (twoSeconds, 2.3, 2.5) - level (noRoom, 2.3, 2.5);
+    check (endlessUp > 20 && heldUp > 10 && std::abs (stopped) < 1,
+           "a note fading into hum: feedback_s 60 still feeds back after 7.5 s (" + juce::String (endlessUp, 1) + " dB above the amp alone); "
+               + "feedback_s 2: " + juce::String (heldUp, 1) + " dB above it at 1.6 s, " + juce::String (stopped, 2) + " dB from it at 2.3 s (stopped)");
+
     // Bloom to the octave (harmonic 2, the string touched at its middle): at 0.4 m on the clean preset it only blooms
     // when find_spot moves the sound's arrival into step; and the same playing gives the same result every time.
     const auto bloom = [&root, rate] (bool spot)
@@ -627,6 +661,27 @@ void stringsChecks()
     const double fall = 20 * std::log10 (tone (window (3.0, 3.5), 110.0, rate) / tone (window (1.0, 1.5), 110.0, rate));
     check (std::abs (bestHz - 110.0) < 0.05 && std::abs (fall + 30.0) < 1.5,
            "an A2 string rings at " + juce::String (bestHz, 3) + " Hz (110) and falls " + juce::String (fall, 1) + " dB in 2 s (60 dB in 4 s: -30)");
+
+    // A string can not gain energy: the six default strings at 384 kHz (where the E4 string's loop gain at 0 Hz was 1.008
+    // and it grew 23 dB per second), fed a constant 1 mV (a DC offset) and a click, then nothing: the output dies away.
+    {
+        const double fast = 384000.0;
+        std::vector<double> x ((size_t) (6.0 * fast), 0.0);
+        std::fill (x.begin(), x.begin() + (int) (1.0 * fast), 0.001);
+        x[0] = 1.0;
+        const auto y = runJson (R"([ { "type": "strings" } ])", x, fast);
+        const auto rms = [&y, fast] (double from, double to)
+        {
+            double sum = 0.0;
+
+            for (size_t i = (size_t) (from * fast); i < (size_t) (to * fast); ++i)
+                sum += y[i] * y[i];
+
+            return 10 * std::log10 (sum / ((to - from) * fast) + 1e-300);
+        };
+        const double fall = rms (5.5, 6.0) - rms (1.5, 2.0);
+        check (fall < -20, "the default strings never gain energy (384 kHz, a DC offset and a click): " + juce::String (fall, 1) + " dB from 1.5 s to 5.5 s");
+    }
 
     // It only takes up its own note: played at A2 it answers far louder than a semitone higher (A#2).
     const auto answer = [&a2, rate] (double f)

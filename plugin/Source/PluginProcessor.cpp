@@ -545,7 +545,7 @@ std::unique_ptr<amp::Engine> CustomAmpProcessor::buildEngine (const BuildRequest
         lines.add ("Runs at " + juce::String (built->coreRate() / 1000.0, 1) + " kHz, latency "
                    + juce::String (built->latencySamples()) + " samples ("
                    + juce::String (1000.0 * built->latencySamples() / r.sampleRate, 2) + " ms), "
-                   + (r.fixedLevel > 0.0 ? "level kept at " : "auto level ")
+                   + (! built->amp.autoLevel ? "auto level off: " : r.fixedLevel > 0.0 ? "level kept at " : "auto level ")
                    + juce::String (juce::Decibels::gainToDecibels (built->makeup), 1) + " dB");
         lines.addArray (built->amp.report);
         message = lines.joinIntoString ("\n");

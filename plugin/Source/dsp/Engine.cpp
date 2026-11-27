@@ -52,12 +52,13 @@ Amp::Amp (const juce::var& preset, double baseRate, double coreRate, const juce:
           const juce::File& irOverride)
 {
     Cfg cfg (preset, "preset");
-    cfg.checkKeys ({ "name", "notes", "chain", "panel" });  // the panel is checked by the plugin (Panel.cpp)
+    cfg.checkKeys ({ "name", "notes", "chain", "panel", "auto_level" });  // the panel is checked by the plugin (Panel.cpp)
 
     if (! cfg.has ("chain"))
         throw PresetError ("preset: needs a 'chain' (the list of blocks)");
 
     name = cfg.text ("name", {});
+    autoLevel = cfg.flag ("auto_level", true);
     auto chain = cfg.list ("chain");
 
     BuildContext ctx;
@@ -258,7 +259,11 @@ Engine::Engine (const Options& options)
     oversampling.initProcessing ((size_t) blockSize);
     amp.prepare (blockSize, blockSize << factorLog2);
 
-    if (options.fixedLevel > 0.0)
+    if (! amp.autoLevel)
+    {
+        makeup = 1.0;  // output = input: the level of an effect must not depend on the amp after it
+    }
+    else if (options.fixedLevel > 0.0)
     {
         makeup = options.fixedLevel;
     }

@@ -198,6 +198,13 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   into the octave at 0.2-0.5 m, squeals at a high harmonic (2770 Hz) at 0.8 m, stays on the note at 1.2-2 m. With
   `brightness` (an earlier version: a weak per-period low-pass) brit_800 bloomed into its 17th-22nd harmonic.
   `tests/presets/room_feedback.json` (clean + room) has a reference recording. No built-in preset uses it yet.
+  **Feedback time** (`feedback_s`, default 6 s, 60 = never stops; 2026-11-27, the user's choice after "lots of infinite
+  feedback" when they first played it): the string also counts as muted `feedback_s` after the last pick attack
+  (`Player::attacked`). Needed because the feedback lives only in the plugin: the real string is not shaken, so it fades
+  slowly into the guitar's hum (often above mute_db's -60 dBV) and neither mute rule ever fired. Measured (a note fading
+  into -50 dBV hum, clean + room): it fed back forever (62 dB above the amp alone after 7.5 s); with 2 s it is 28 dB
+  above at 1.6 s and 0.00 dB from the amp alone at 2.3 s (EngineTest). Default `volume_db` is now -40 (-20 made the
+  clean amp 15 dB louder than normal; once it howls, -20 to 0 sound about the same: the loop is at the amp's limit).
   **Bloom to a harmonic** (2026-11-26, the user asked why notes in recordings "turn into a harmonic" and whether that
   can be recreated: it is feedback blooming, and it is deterministic). `harmonic` k (1-8): the string as if touched
   lightly at 1/k (a natural harmonic): its resonator is one period of k x the note long, so only that harmonic and its
@@ -220,6 +227,14 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   E#x, "" refused); an A2 string rings at 110.005 Hz and falls 30.0 dB in 2 s (sustain 4 s), and 7.5 dB in 0.5 s
   after a note stops (theory 7.5); at its own note it answers 24.9 dB louder than a semitone higher.
   `tests/presets/strings_drone.json` (a D drone before the clean chain) has a reference recording.
+  **It could gain energy until 2026-11-27**: the gain makes up the low-pass's loss at the note, but the low-pass passes
+  0 Hz untouched, so a high string's loop gain at 0 Hz was keep / |lp(note)| > 1 (E4 with the defaults at 384 kHz: 1.008,
+  +23 dB per second at 0 Hz, also after the input stopped; instrument_bowed_sitar's D4 1.009). Now a string whose note
+  the low-pass cuts by more than sqrt(keep) gets its own gentler pole (|lp(note)| = sqrt(keep): 0 Hz dies in 2 x
+  sustain_s, the note still in sustain_s; E4: its pole 2000 -> 4547 Hz). Not 1 as in restring: the strings are fed all
+  the time, and a loop gain of 1 adds up any DC offset forever. Checked (EngineTest): the default strings at 384 kHz with
+  a 1 mV offset and a click fall 31.5 dB from 1.5 to 5.5 s (+93.2 dB without the fix). References recorded again:
+  strings_drone, instrument_bowed_sitar.
 - **Player** (`Player.h/.cpp`, 2026-11-26): the part that stands in for the guitarist, shared by room and restring:
   YIN pitch tracker, muted / `isStopped` (input to a tenth within ~10 ms), `attacked` (the 100 ms peak follower jumps
   above twice its 20 ms-late copy + mute level; armed again near it). Room: window 512, every 10 ms, the OLDEST part
@@ -320,6 +335,16 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   amp WITHOUT its cab, as a talk box takes the amp's output, then mouth with follow 2 from oo). Each has its own panel
   and notes saying what is physics and what is a guess; each has a reference recording; PluginTest: -21.0 / -19.0 /
   -19.3 / -20.6 dBFS at the auto level.
+- **Effects without an amp** (2026-11-27, `presets/effect_*.json`, "Effect: ..."): strings, restring (octave down), bow,
+  talk box (mouth, meant AFTER another amp: an eq gives back the 11 dB the tube took off a crunch amp's sound). The
+  preset key `"auto_level": false` = no output gain at all (makeup 1, also over a kept level), so an effect leaves the
+  guitar's level for the amp after it; the status says "auto level off". (The user noticed the plugin changed the level
+  with no blocks: the auto level did, -2.95 dB on the test DI; the oversampling adds 6 samples and a -53 dB difference.)
+  PluginTest: an empty chain with auto_level off = the input within 0.01 dB; strings/restring/bow within 6 dB of the
+  guitar (-14.8 / -15.7 / -17.7 vs -17.1 dBFS: effect_strings uses mix_db -18, at 0 dB its halo was 15.5 dB louder).
+  The gated presets (german_high_gain, us_hotrod_lead, us_modern_high_gain) have a **Gate** knob first (-80..-30 dB;
+  their -55 dB = 5): a guitar with -50 dBV hum kept the gate open and us_modern_high_gain played the hum at -19.3 dBFS,
+  as loud as playing.
 - **X-ray listening** (2026-11-26): hear only what one block adds. A TWIN engine runs beside the amp on the same
   input: the same preset with that block switched off (`CustomAmpProcessor::twinPreset`: gain/power `linear: true`,
   sag/feedback amount 0, eq/tonestack/gate/ir/room/strings left out; a split can not; the panel is dropped), built on

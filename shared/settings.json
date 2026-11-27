@@ -26,6 +26,11 @@
         "label": "Front panel", "type": "panel", "default": [],
         "short": "The knobs on the plugin's front panel: which setting each one turns (at most 8).",
         "tooltip": "Each knob turns one number setting of one block, found by the block's id. Example: { \"label\": \"Master\", \"block\": \"master\", \"setting\": \"level_db\", \"range\": [-40, 0] }. It does not change the sound by itself. Without a panel, the plugin guesses a few knobs (a tone stack's three knobs, the last eq's level). In the plugin, right-click a slider in the chain editor and pick 'Put on the front panel'."
+      },
+      "auto_level": {
+        "label": "Auto level", "type": "toggle", "default": true,
+        "short": "On: the plugin sets its output so every amp is about equally loud. Off: output = input (for effects).",
+        "tooltip": "An amp-style preset puts out tens of volts, so the plugin plays a short riff through it and sets its output to about -20 dBFS. That is right for an amp, but wrong for an effect that goes in front of another amp (strings, restring, bow without an amp after them): there the next amp expects your guitar's own level. Off: the plugin adds no output gain at all (0 dB), so with nothing in the chain the output is the input. The Output knob still works."
       }
     }
   },
@@ -684,7 +689,7 @@
     "room": {
       "label": "Room (acoustic feedback)",
       "short": "The amp's sound goes back into the guitar's strings: notes sustain and bloom into feedback, as in front of a loud amp.",
-      "tooltip": "In front of a loud amp, the sound from the speaker shakes the guitar's strings. They answer at the note you play and its harmonics, the pickup hears that, the amp makes it louder, and it goes round again. Loud enough, a note sustains forever and 'blooms' into one of its harmonics (which one depends on the distance: the sound's travel time decides which harmonic comes back in step). This block does that: put it LAST (after the cab). It follows the note you play with a pitch tracker (one note: with a chord it follows the strongest), and it treats the strings as muted when your input falls fast (a hand on the strings) or is very quiet. Those two parts stand in for you; the rest is the physics of the loop. Turn Volume up until notes start to sustain.",
+      "tooltip": "In front of a loud amp, the sound from the speaker shakes the guitar's strings. They answer at the note you play and its harmonics, the pickup hears that, the amp makes it louder, and it goes round again. Loud enough, a note sustains forever and 'blooms' into one of its harmonics (which one depends on the distance: the sound's travel time decides which harmonic comes back in step). This block does that: put it LAST (after the cab). It follows the note you play with a pitch tracker (one note: with a chord it follows the strongest), and it treats the strings as muted when your input falls fast (a hand on the strings) or is very quiet, or when Feedback time is over after a pick. Those parts stand in for you; the rest is the physics of the loop. Why Feedback time: the feedback lives only inside the plugin. Your real string is not shaken by the amp, so it fades away slowly into your guitar's hum, and the plugin can not hear your hand stop it. Turn Volume up until notes start to sustain.",
       "settings": {
         "distance_m": {
           "label": "Distance", "type": "number", "unit": "m", "min": 0.1, "max": 20, "default": 0.5, "scale": "log",
@@ -692,7 +697,7 @@
           "tooltip": "The sound needs distance / 343 m/s to arrive (0.5 m = 1.5 ms), and it gets 6 dB weaker at twice the distance. Moving changes WHICH harmonic the feedback blooms into, because the travel time decides which ones come back in step: walking around in front of the amp to find the sweet spot is real."
         },
         "volume_db": {
-          "label": "Volume", "type": "number", "unit": "dB", "min": -80, "max": 20, "default": -20,
+          "label": "Volume", "type": "number", "unit": "dB", "min": -80, "max": 20, "default": -40,
           "short": "How loud the amp is in the room (at 1 m). Higher = more feedback.",
           "tooltip": "How strongly the amp's sound pushes the strings at 1 m, relative to the plugin's normal output level. Low: notes only ring a bit longer. Higher: held notes sustain and bloom. Too high: everything howls. With the strings muted (your hand on them) nothing happens, as on a real amp."
         },
@@ -709,7 +714,12 @@
         "mute_db": {
           "label": "Muted below", "type": "number", "unit": "dBV", "min": -100, "max": -20, "default": -60,
           "short": "Below this input level (in volts: 0 dBV = 1 V) the strings count as muted.",
-          "tooltip": "The plugin can not see your hand. So the strings count as muted when the input falls to a tenth within about 10 ms (a hand on the strings), or stays below this level. A guitar played hard gives about 0.5 V (-6 dBV)."
+          "tooltip": "The plugin can not see your hand. So the strings count as muted when the input falls to a tenth within about 10 ms (a hand on the strings), or stays below this level. A guitar played hard gives about 0.5 V (-6 dBV). A guitar's hum is often above the default -60 dBV: then this never mutes, and only Feedback time stops the feedback. The In meter shows your level when you do not play."
+        },
+        "feedback_s": {
+          "label": "Feedback time", "type": "number", "unit": "s", "min": 0.5, "max": 60, "default": 6, "scale": "log",
+          "short": "How long the amp can keep a note going after you pick it. 60 (the top) = it never stops.",
+          "tooltip": "After each pick attack the sound from the amp can push the string for this long. Then the string counts as muted, as if your hand were on it: the feedback dies in about 50 ms. Picking again starts the time again. It is needed because the feedback lives only inside the plugin: your real string fades away into your guitar's hum, so the plugin can not hear your hand. At 60 s (the top of the knob) it never stops by itself: only a fast drop of your input (a hand on loud strings) or silence below Muted below stops it."
         },
         "harmonic": {
           "label": "Ring at harmonic", "type": "number", "unit": "", "min": 1, "max": 8, "default": 1, "step": 1,

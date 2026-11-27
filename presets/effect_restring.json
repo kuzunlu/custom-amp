@@ -1,0 +1,15 @@
+{
+  "name": "Effect: restring (octave down)",
+  "notes": "An effect for in front of any amp: no amp and no cab here, and auto_level off, so the virtual string comes out at about your guitar's level. Each pick plucks a virtual string an octave down with your own DI's last period. Physics: the string (its length, stiffness, losses; vibrato and bends as tension changes). Not physics: the pitch tracker (15-30 ms after the pick, one note). Mix 1 = only the virtual string; lower adds your own guitar.",
+  "auto_level": false,
+  "panel": [
+    { "label": "Transpose", "block": "string", "setting": "transpose", "range": [-24, 24] },
+    { "label": "Stiffness", "block": "string", "setting": "stretch_cents", "range": [0, 1200] },
+    { "label": "Sustain", "block": "string", "setting": "sustain_s", "range": [0.5, 30] },
+    { "label": "String tone", "block": "string", "setting": "string_tone_hz", "range": [500, 10000] },
+    { "label": "Mix", "block": "string", "setting": "mix", "range": [0, 1] }
+  ],
+  "chain": [
+    { "type": "restring", "id": "string", "transpose": -12 }
+  ]
+}

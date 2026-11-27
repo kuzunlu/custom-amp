@@ -1,0 +1,14 @@
+{
+  "name": "Effect: sympathetic strings",
+  "notes": "An effect for in front of any amp (another plugin or a real amp): no amp and no cab here, and auto_level off, so your guitar comes out at its own level with the strings' halo added. The strings are tuned to a guitar's open strings (E A D G B E); change Tuning in the chain editor for a drone in your key. All physics: nothing listens to what you play. Mix -18 dB: at the block's own 0 dB the halo came out 15.5 dB louder than the guitar (measured on the level riff).",
+  "auto_level": false,
+  "panel": [
+    { "label": "Coupling", "block": "strings", "setting": "coupling_db", "range": [-60, -10] },
+    { "label": "Sustain", "block": "strings", "setting": "sustain_s", "range": [0.5, 20] },
+    { "label": "String tone", "block": "strings", "setting": "string_tone_hz", "range": [500, 8000] },
+    { "label": "Mix", "block": "strings", "setting": "mix_db", "range": [-30, 6] }
+  ],
+  "chain": [
+    { "type": "strings", "id": "strings", "mix_db": -18 }
+  ]
+}

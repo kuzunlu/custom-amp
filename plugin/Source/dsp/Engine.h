@@ -23,6 +23,7 @@ public:
     void reset() noexcept;
 
     juce::String name;
+    bool autoLevel = true;     // "auto_level": false = no output gain at all (an effect for in front of another amp)
     juce::StringArray report;  // one line per block that has something to say (tube operating points, IR file)
     Chain core, tail;
     std::unique_ptr<Room> room;  // a last "room" block: the Engine runs the acoustic feedback loop around the amp

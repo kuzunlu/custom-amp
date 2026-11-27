@@ -11,6 +11,9 @@ namespace amp
 // Each string is a resonator one period long: what it did one period ago comes round again, a little weaker
 // (-60 dB after sustain_s at its note), its highs fading faster (a 1-pole low-pass at string_tone_hz in the loop; the
 // read is shortened by that filter's delay so the string stays in tune). Output = the input + mix x all the strings.
+// The gain makes up the low-pass's loss at the note, but the low-pass passes 0 Hz untouched: a string whose note it
+// cuts by more than the square root of what the note keeps per period gets its own, gentler low-pass, so it can never
+// gain energy (a high string with the defaults grew 23 dB per second at 0 Hz before).
 class SympatheticStrings final : public Block
 {
 public:
@@ -26,7 +29,7 @@ public:
 private:
     struct String
     {
-        double hz = 110, read = 400, gain = 0.99, smooth = 0;
+        double hz = 110, read = 400, gain = 0.99, smooth = 0, tone = 0.1;  // tone: this string's own low-pass
         std::vector<double> line;
         int write = 0;
     };
