@@ -12,6 +12,7 @@
 // second, independent copy of all this math (the engine matched it to -131 dB or better); these checks replace it.
 
 #include "../Source/dsp/Engine.h"
+#include "../Source/dsp/Body.h"
 #include "../Source/dsp/Bow.h"
 #include "../Source/dsp/Mouth.h"
 #include "../Source/dsp/Strings.h"
@@ -620,6 +621,84 @@ void linearTwinChecks()
            "quiet playing: the twin is " + juce::String (100 * triodeQuiet, 3) + "% (12AX7) and " + juce::String (100 * pairQuiet, 3)
                + "% (EL34 pair) from the real stage; at 0.5 V the triode makes " + juce::String (loud, 2) + "% 2nd harmonic, its twin "
                + juce::String (loudTwin, 6) + "%");
+}
+
+void bodyChecks()
+{
+    std::cout << "Body (modal synthesis: glass, bar, membrane, plate, bell)\n";
+
+    // The mode patterns from the equations, against published values: the free bar's (x_k / x_1)^2 with x = 4.7300,
+    // 7.8532, 10.9956, 14.1372; the membrane's Bessel zeros 2.4048, 3.8317, 5.1356, 5.5201, 6.3802; a thin ring's
+    // n (n^2 - 1) / sqrt (n^2 + 1).
+    const auto near = [] (const std::vector<double>& got, std::initializer_list<double> want)
+    {
+        size_t k = 0;
+
+        for (double w : want)
+            if (k >= got.size() || std::abs (got[k++] / w - 1) > 1e-4)
+                return false;
+
+        return true;
+    };
+    const auto list = [] (const std::vector<double>& r, int count)
+    {
+        juce::String s;
+
+        for (int k = 0; k < count && k < (int) r.size(); ++k)
+            s << juce::String (r[(size_t) k], 4) << " ";
+
+        return s;
+    };
+    const auto bar = amp::Body::modeRatios ("bar", 20), drum = amp::Body::modeRatios ("membrane", 3),
+               glass = amp::Body::modeRatios ("glass", 10), plate = amp::Body::modeRatios ("plate", 5);
+    check (near (bar, { 1, 7.8532 * 7.8532 / (4.7300 * 4.7300), 10.9956 * 10.9956 / (4.7300 * 4.7300), 14.1372 * 14.1372 / (4.7300 * 4.7300) })
+               && near (drum, { 1, 3.8317 / 2.4048, 5.1356 / 2.4048, 5.5201 / 2.4048, 6.3802 / 2.4048 })
+               && near (glass, { 1, 2.8284, 5.4233, 8.7706 }) && near (plate, { 1, 2, 3, 11.0 / 3, 4 }),
+           "mode patterns: bar " + list (bar, 4) + "(2.7565 5.4039 8.9330); membrane " + list (drum, 5) + "(1.5934 2.1355 2.2954 2.6531); glass "
+               + list (glass, 4) + "(2.8284 5.4233 8.7706); plate " + list (plate, 5));
+
+    // A click into a glass at A5 (880 Hz), ring time 3 s, high damping 1: it rings at its modes; the lowest falls
+    // 20 dB per second (60 dB in 3 s), the second (2.83 x as high) 2.83 x as fast.
+    const double rate = 96000.0;
+    std::vector<double> click ((size_t) (3.0 * rate), 0.0);
+    click[0] = 1.0;
+    auto rung = runJson (R"([ { "type": "body", "object": "glass", "note": "A5" } ])", click, rate);
+    rung[0] -= 1.0;  // only the glass
+    const auto window = [&rung, rate] (double from, double to) { return std::vector<double> (rung.begin() + (int) (from * rate), rung.begin() + (int) (to * rate)); };
+    const auto strongest = [rate] (const std::vector<double>& y, double lo, double hi)
+    {
+        double best = 0, at = lo;
+
+        for (double f = lo; f <= hi; f += 0.5)
+            if (const double a = tone (y, f, rate); a > best)
+            {
+                best = a;
+                at = f;
+            }
+
+        return at;
+    };
+    const auto early = window (0.0, 1.0);
+    const double first = strongest (early, 800, 960), second = strongest (early, 2300, 2700);
+    const double fall1 = 20 * std::log10 (tone (window (1.5, 2.0), 880, rate) / tone (window (0.5, 1.0), 880, rate));
+    const double fall2 = 20 * std::log10 (tone (window (1.0, 1.25), 880 * 2.8284, rate) / tone (window (0.75, 1.0), 880 * 2.8284, rate));
+    check (std::abs (first - 880) < 1 && std::abs (second / (880 * 2.8284) - 1) < 0.001 && std::abs (fall1 + 20) < 0.5
+               && std::abs (fall2 / 0.25 + 20 * 2.8284) < 1.5,
+           "a click into a glass at A5: it rings at " + juce::String (first, 1) + " and " + juce::String (second, 1) + " Hz (880, 2489); the lowest falls "
+               + juce::String (fall1, 1) + " dB per s (-20), the second " + juce::String (fall2 / 0.25, 1) + " dB per s (-56.6)");
+
+    // A note right on the lowest mode, held until it has settled: the glass answers coupling / (1 - g), g = what that
+    // mode keeps per period (-40 dB, 880 Hz, 3 s: 0.01 / (1 - 10^(-3 / 2640)) = 3.83 x the note).
+    auto held = sine (880, 0.1, 12.0, rate);
+    const auto in = held;
+    held = runJson (R"([ { "type": "body", "object": "glass", "note": "A5" } ])", held, rate);
+
+    for (size_t i = 0; i < held.size(); ++i)
+        held[i] -= in[i];
+
+    const double answer = tone (held, 880, rate) / 0.1, theory = 0.01 / (1 - std::pow (10.0, -3.0 / (880 * 3.0)));
+    check (std::abs (answer / theory - 1) < 0.03, "a held A5 into it: the glass answers " + juce::String (answer, 2) + " x the note ("
+                                                      + juce::String (theory, 2) + ")");
 }
 
 void stringsChecks()
@@ -2036,6 +2115,12 @@ int main (int argc, char* argv[])
 
     try
     {
+        if (args.size() >= 1 && args[0] == "body")  // only the body checks
+        {
+            bodyChecks();
+            return failures == 0 ? 0 : 1;
+        }
+
         if (args.size() >= 1 && args[0] == "mouth")  // only the mouth checks
         {
             mouthChecks();
@@ -2065,6 +2150,7 @@ int main (int argc, char* argv[])
             restringChecks();
             bowChecks();
             mouthChecks();
+            bodyChecks();
             roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);

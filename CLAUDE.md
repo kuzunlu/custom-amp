@@ -350,6 +350,19 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   **`EngineTest render` now runs with denormals off (`ScopedNoDenormals`, as the plugin's processBlock)**: without it
   the talking guitar measured 10-15% (tiny dying numbers in the tube; it changed with the vowel). Older CPU numbers in
   this file came from render without it, so some may be a little high.
+- **Body** (`Body.h/.cpp`, 2026-11-27, "sounds like the mouth's chime": the guitar shakes a solid object): modal
+  synthesis, anywhere in a chain (not in a loop). One band-pass resonator per mode (y = b0 (x - x2) + a1 y1 + a2 y2), all
+  modes up to 16 kHz (at most 64), the lowest at `note`. Patterns from each shape's equations (`Body::modeRatios`):
+  glass = a thin ring's bending modes n (n^2 - 1) / sqrt (n^2 + 1) (Rayleigh), bar = free bar (roots of cos x cosh x = 1,
+  squared), membrane = Bessel zeros (std::cyl_bessel_j, bisection), plate = simply supported, sides 1 : sqrt 2,
+  (m^2 + 2 n^2) / 3; bell = NOT derived: a tuned church bell's partials (1, 2, 2.4, 3, 4, 5, 5.33, 6, 8 x the hum, from
+  Rossing). T60 = decay_s x (lowest / f)^high_damping. Each mode's peak = coupling / (1 - g) (g = kept per period, the
+  same meaning as the strings block). NOT physics: every mode driven and heard equally (no drive/pickup point).
+  Checked (EngineTest): the patterns against published numbers within 1e-4 (bar 2.7565 5.4039 8.9330, membrane 1.5934
+  2.1355 2.2954 2.6531, glass 2.8284 5.4233 8.7706); a click into a glass at A5 rings at 880.0 / 2489.0 Hz, falls 20.0 dB
+  per s (-20) and 57.1 (-56.6) for the second mode; a held A5 answers 3.83 x (theory 3.83). Presets (effects, auto level
+  off, coupling -30: at the default -40 the object was 11 dB under the guitar): wine glass (A5), church bell (C4),
+  drum head (A2), metal bar (C6). CPU 0.4% (1.8% for the drum head's many modes).
 - **Instrument presets** (2026-11-26, `presets/instrument_*.json`, named "Instrument: ..." so they sort together): bass
   (restring -12, soft drive, eq), cello (bow -12, a GUESSED body eq: broad bumps, not a body model), bowed sitar drone
   (bow near the bridge + D drone strings), bell strings (restring +12, stretch 400 cents), talking guitar (the crunch

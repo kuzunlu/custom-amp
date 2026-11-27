@@ -1,0 +1,14 @@
+{
+  "name": "Effect: metal bar (body)",
+  "notes": "Your playing shakes a free metal bar (a glockenspiel bar before it is tuned) at C6 (1047 Hz), and it clangs along. An effect for in front of any amp: no amp, no cab, auto level off. Physics: a free bar (Euler-Bernoulli: its modes at 1, 2.76, 5.40, 8.93 x the lowest). Simplified: every mode is shaken and heard equally. Change Lowest mode in the chain editor to tune it.",
+  "auto_level": false,
+  "panel": [
+    { "label": "Ring time", "block": "body", "setting": "decay_s", "range": [0.2, 6] },
+    { "label": "High damping", "block": "body", "setting": "high_damping", "range": [0, 2] },
+    { "label": "Coupling", "block": "body", "setting": "coupling_db", "range": [-60, -10] },
+    { "label": "Mix", "block": "body", "setting": "mix_db", "range": [-30, 6] }
+  ],
+  "chain": [
+    { "type": "body", "id": "body", "object": "bar", "note": "C6", "decay_s": 2, "coupling_db": -30 }
+  ]
+}

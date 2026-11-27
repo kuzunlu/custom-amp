@@ -33,6 +33,7 @@ add_subdirectory(libs/JUCE)
 # The amp engine.
 set(ENGINE_SOURCES
     plugin/Source/dsp/Blocks.cpp
+    plugin/Source/dsp/Body.cpp
     plugin/Source/dsp/Bow.cpp
     plugin/Source/dsp/Circuit.cpp
     plugin/Source/dsp/Common.cpp

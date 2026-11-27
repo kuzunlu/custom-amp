@@ -1,0 +1,14 @@
+{
+  "name": "Effect: wine glass (body)",
+  "notes": "Your playing shakes a wine glass tuned to A5 (880 Hz), and it rings along: notes that hit one of its modes make it sing. An effect for in front of any amp: no amp, no cab, auto level off. Physics: the glass rim as a thin ring (its bending modes at 1, 2.83, 5.42, 8.77 x the lowest). Simplified: every mode is shaken and heard equally. Change Lowest mode in the chain editor to tune it to your song.",
+  "auto_level": false,
+  "panel": [
+    { "label": "Ring time", "block": "body", "setting": "decay_s", "range": [0.3, 10] },
+    { "label": "High damping", "block": "body", "setting": "high_damping", "range": [0, 2] },
+    { "label": "Coupling", "block": "body", "setting": "coupling_db", "range": [-60, -10] },
+    { "label": "Mix", "block": "body", "setting": "mix_db", "range": [-30, 6] }
+  ],
+  "chain": [
+    { "type": "body", "id": "body", "object": "glass", "note": "A5", "decay_s": 4, "coupling_db": -30 }
+  ]
+}

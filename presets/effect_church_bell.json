@@ -1,0 +1,14 @@
+{
+  "name": "Effect: church bell (body)",
+  "notes": "Your playing shakes a church bell with its hum at C4 (262 Hz), and it rings along. An effect for in front of any amp: no amp, no cab, auto level off. The bell's partials are the ones bell founders tune to (1, 2, 2.4, 3, 4, 5, 5.33, 6, 8 x the hum), measured on tuned bells, not worked out from a shape. Simplified: every partial is shaken and heard equally. Change Lowest mode in the chain editor to tune it.",
+  "auto_level": false,
+  "panel": [
+    { "label": "Ring time", "block": "body", "setting": "decay_s", "range": [0.5, 20] },
+    { "label": "High damping", "block": "body", "setting": "high_damping", "range": [0, 2] },
+    { "label": "Coupling", "block": "body", "setting": "coupling_db", "range": [-60, -10] },
+    { "label": "Mix", "block": "body", "setting": "mix_db", "range": [-30, 6] }
+  ],
+  "chain": [
+    { "type": "body", "id": "body", "object": "bell", "note": "C4", "decay_s": 8, "high_damping": 0.5, "coupling_db": -30 }
+  ]
+}

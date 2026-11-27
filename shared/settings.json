@@ -82,7 +82,8 @@
           "strings": "Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's.",
           "restring": "Your playing plucks a virtual string with physics you choose: lower, stiffer, longer.",
           "bow": "Your playing bows a virtual string: long notes that swell and sing, like a cello.",
-          "mouth": "A vocal tract: the sound goes through a mouth shaping vowels, like a talk box."
+          "mouth": "A vocal tract: the sound goes through a mouth shaping vowels, like a talk box.",
+          "body": "Your playing shakes a solid object (a wine glass, a bar, a drum head, a plate, a bell) that rings along."
         },
         "short": "What kind of block this is.",
         "tooltip": "Each block does one job. Combine them in any order to build any amp."
@@ -936,6 +937,50 @@
           "label": "Mix", "type": "number", "min": 0, "max": 1, "default": 1,
           "short": "1 = only the mouth's sound, 0 = the sound that comes in.",
           "tooltip": "Output = (1 - mix) x the input + mix x the mouth."
+        }
+      }
+    },
+    "body": {
+      "label": "Body (glass, bar, drum head, plate, bell)",
+      "short": "Your playing shakes a solid object, and it rings along: a wine glass, a bar, a drum head, a metal plate, a bell.",
+      "tooltip": "Every object rings at a set of its own frequencies (its modes). A string's modes are whole multiples of its note, so it sounds like one note; a glass, a bar or a drum head has modes at odd, uneven distances, which is why they sound glassy, metallic or like a drum. Here your playing shakes the object and you hear its modes ring along: notes near a mode make it ring loudly, the others only a little. The frequencies come from the physics of each shape (a ring, a free bar, a round membrane, a plate); the bell's are the ones bell founders tune. Simplified: every mode is shaken and heard equally (a real spot favours some). Before the amp it is like a body on your guitar; after the amp, like an object next to the speaker.",
+      "settings": {
+        "object": {
+          "label": "Object", "type": "choice", "default": "glass",
+          "choices": {
+            "glass": "A wine glass's rim (a thin ring bending): modes at 1, 2.83, 5.42, 8.77 x the lowest. Clear and glassy.",
+            "bar": "A free metal or wooden bar, like a glockenspiel bar before it is tuned: 1, 2.76, 5.40, 8.93 x the lowest. Bright and clangy.",
+            "membrane": "A round drum head (a tight skin held at its edge): 1, 1.59, 2.14, 2.30, 2.65 x the lowest. Many modes close together: a thud with a tone.",
+            "plate": "A rectangular metal plate held at its edges (sides 1 : 1.41): dense modes, like a thunder sheet or a gong.",
+            "bell": "A church bell: the partials bell founders tune it to (1, 2, 2.4, 3, 4, 5, 5.33, 6, 8 x the hum). Not worked out from the shape: measured on tuned bells."
+          },
+          "short": "What kind of object rings along.",
+          "tooltip": "The object sets the pattern of its modes. The note sets where that pattern starts."
+        },
+        "note": {
+          "label": "Lowest mode", "type": "text", "default": "A5",
+          "short": "The object's lowest mode: a note name like A5, or Hz (20 to 5000).",
+          "tooltip": "A wine glass is usually around 500-900 Hz, a glockenspiel bar 800-4000 Hz, a drum head 60-300 Hz, a church bell's hum 100-400 Hz. Tune it to your song's key: notes that hit a mode make it ring."
+        },
+        "decay_s": {
+          "label": "Ring time", "type": "number", "unit": "s", "min": 0.05, "max": 30, "default": 3, "scale": "log",
+          "short": "How long the lowest mode rings (time to fall 60 dB).",
+          "tooltip": "Glass and metal ring for seconds, wood and drum heads for a fraction of a second. A long ring also makes each mode pickier: it answers only notes very close to it, but those strongly."
+        },
+        "high_damping": {
+          "label": "High damping", "type": "number", "min": 0, "max": 3, "default": 1,
+          "short": "How much sooner the higher modes die: 0 = all ring as long as the lowest, 1 = a mode twice as high rings half as long.",
+          "tooltip": "Real objects lose their high modes faster (friction inside the material, sound sent into the air). Lower = brighter and more shimmering, higher = duller, like wood."
+        },
+        "coupling_db": {
+          "label": "Coupling", "type": "number", "unit": "dB", "min": -80, "max": 0, "default": -40,
+          "short": "How strongly your playing shakes the object.",
+          "tooltip": "A mode hit right on its frequency answers coupling / (1 - what it keeps per period), like a sympathetic string: at -40 dB a glass mode at 880 Hz ringing 3 s answers 3.8 times as loud as what comes in. Higher = louder and quicker."
+        },
+        "mix_db": {
+          "label": "Mix", "type": "number", "unit": "dB", "min": -60, "max": 12, "default": 0,
+          "short": "How loud the object is next to your own sound.",
+          "tooltip": "The object's sound is added to the sound that comes in, which passes unchanged."
         }
       }
     }

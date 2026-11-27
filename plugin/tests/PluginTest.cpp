@@ -857,7 +857,9 @@ int main (int argc, char* argv[])
                                                        { "instrument_bass.json", 6 }, { "instrument_cello.json", 6 },
                                                        { "instrument_bowed_sitar.json", 7 }, { "instrument_bell_strings.json", 6 },
                                                        { "instrument_talking_guitar.json", 7 }, { "instrument_overtone_singer.json", 7 }, { "effect_strings.json", 4 },
-                                                       { "effect_restring.json", 5 }, { "effect_bow.json", 6 }, { "effect_talk_box.json", 7 } };
+                                                       { "effect_restring.json", 5 }, { "effect_bow.json", 6 }, { "effect_talk_box.json", 7 },
+                                                       { "effect_wine_glass.json", 4 }, { "effect_church_bell.json", 4 },
+                                                       { "effect_drum_head.json", 4 }, { "effect_glockenspiel_bar.json", 4 } };
         int right = 0;
 
         for (auto& [fileName, count] : knobCounts)

@@ -3,6 +3,7 @@
 #include "Mouth.h"
 #include "Restring.h"
 #include "Strings.h"
+#include "Body.h"
 
 #include "Circuit.h"
 
@@ -1171,11 +1172,12 @@ Chain buildChain (const juce::Array<juce::var>& cfgs, const BuildContext& ctx)
         else if (kind == "restring")  block = std::make_unique<Restring> (cfg, ctx);
         else if (kind == "bow")       block = std::make_unique<Bow> (cfg, ctx);
         else if (kind == "mouth")     block = std::make_unique<Mouth> (cfg, ctx);
+        else if (kind == "body")      block = std::make_unique<Body> (cfg, ctx);
         else if (kind == "room")
             throw PresetError ("room: it must be the last block of the main chain (after the cab)");
         else
             throw PresetError ("block " + juce::String (i) + ": unknown type '" + kind
-                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir, room, strings, restring, bow, mouth");
+                               + "'. Use one of: eq, tonestack, gain, power, sag, feedback, split, gate, ir, room, strings, restring, bow, mouth, body");
 
         blocks.push_back (std::move (block));
     }
