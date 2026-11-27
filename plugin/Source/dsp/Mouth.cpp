@@ -17,10 +17,21 @@ const std::array<Mouth::Shape, 5> vowels { {
     { -0.2327, 0.0000, -0.4306, 0.0012, 0.0684, 0.0196 },  // eh (head)
     { 0.7357, 0.0000, -0.9470, -0.0110, -0.2026, -0.0128 },  // ee (heed)
 } };
+
+// shapes "overtone": one narrow resonance each, far above the rest, at these frequencies (with lip_reflection 0.97 and
+// lip_radiation_hz 2500, at 96 kHz: searched for the most height above everything else from 150 Hz to 5 kHz, each
+// starting from the one before and kept near it, so the blends glide: halfway between two, the peak is between them).
+const std::array<Mouth::Shape, 5> overtones { {
+    { -0.5359, 0.4137, -0.4044, -0.5071, 0.4662, 1.2685 },  // 1222 Hz
+    { -0.3252, -0.2702, -0.6558, 0.2416, 0.2337, 1.2328 },  // 1572 Hz
+    { 0.0200, 0.0224, -1.4449, 0.0486, 0.0516, 1.1250 },    // 1962 Hz
+    { 0.0247, -0.0380, -1.6781, 0.0021, 0.0731, 0.8785 },   // 2354 Hz
+    { -0.0366, -0.0012, -1.8941, 0.0029, 0.0409, 0.6684 },  // 2746 Hz
+} };
 }
 
 Mouth::Mouth (const Cfg& cfg, const BuildContext& ctx, const Shape* shape)
-    : Block (cfg, { "vowel", "follow", "follow_ms", "length_cm", "mix", "lip_reflection", "lip_radiation_hz", "tune" })
+    : Block (cfg, { "vowel", "follow", "follow_ms", "length_cm", "mix", "lip_reflection", "lip_radiation_hz", "tune", "shapes" })
 {
     rate = ctx.rate;
     vowel = cfg.number ("vowel", 2.0);
@@ -34,6 +45,13 @@ Mouth::Mouth (const Cfg& cfg, const BuildContext& ctx, const Shape* shape)
         throw PresetError ("mouth: lip_reflection must be between 0 and 1 and lip_radiation_hz from 0 (off) to half the sample rate");
 
     lips = -lipReflection;
+
+    const auto shapes = cfg.text ("shapes", "vowels");
+
+    if (shapes != "vowels" && shapes != "overtone")
+        throw PresetError ("mouth: shapes must be \"vowels\" or \"overtone\", got \"" + shapes + "\"");
+
+    table = shapes == "overtone" ? &overtones : &vowels;
     radiates = radiationHz > 0;
     radiation = 1 - std::exp (-2 * juce::MathConstants<double>::pi * radiationHz / rate);
 
@@ -146,7 +164,7 @@ void Mouth::setShape (double position) noexcept
 
     if (! fixedShape)
         for (size_t n = 0; n < c.size(); ++n)
-            c[n] = (1 - t) * vowels[(size_t) k][n] + t * vowels[(size_t) k + 1][n];
+            c[n] = (1 - t) * (*table)[(size_t) k][n] + t * (*table)[(size_t) k + 1][n];
 
     const auto lnArea = [&c, this] (int i)
     {

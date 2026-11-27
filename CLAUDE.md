@@ -337,6 +337,16 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   c / 2f; whole 0.36 cm sections, so B5 measures 976 Hz apart, 21 cents flat; finer would need a fractional delay).
   The talking guitar and talk box panels got a Glass knob (lip_reflection 0.8-0.99). **mouthChecks were not in
   `EngineTest check` until 2026-11-27** (only `EngineTest mouth`/`bow` ran them), so releases skipped them; now they run.
+  **Overtone singer** (`shapes: "overtone"`, 2026-11-27): five more shapes, each ONE narrow resonance far above the rest
+  (F2 and F3 pulled together, as on throat singers: Bloothooft et al. 1992, Adachi and Yamada 1999), at 1222, 1572,
+  1962, 2354, 2746 Hz; `vowel` moves it. Fitting formant POSITIONS (F2/F3 6% apart) did not make one peak stand out (the
+  merged peak stayed 2-9 dB under the chime ladder at 3-5 kHz, even with the new lips); so they were SEARCHED in the
+  scratchpad (`overtone2.py`: a simple evolution search over the 6 numbers, area ratio under 50, score = height above
+  everything else 150 Hz-5 kHz, each shape starting from and kept near the one before so blends glide) with
+  lip_reflection 0.97 and lip_radiation_hz 2500 (nearly closed lips); they need those lips (the preset sets them).
+  Checked (EngineTest, 96 and 384 kHz): 0-4 in half steps 1231 1368* 1572 1745* 1961 2154* 2353 2544* 2741 Hz (* =
+  blend, always between), at least 9.1 dB above everything else. Preset `instrument_overtone_singer` (the talking
+  guitar's crunch amp, no cab; Whistle = vowel).
   **`EngineTest render` now runs with denormals off (`ScopedNoDenormals`, as the plugin's processBlock)**: without it
   the talking guitar measured 10-15% (tiny dying numbers in the tube; it changed with the vowel). Older CPU numbers in
   this file came from render without it, so some may be a little high.

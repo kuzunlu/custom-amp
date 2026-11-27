@@ -888,6 +888,15 @@
       "short": "Your sound through a vocal tract: the guitar speaks vowels, oo-oh-ah-eh-ee, like a talk box.",
       "tooltip": "A talk box sends the amp's sound up a tube into the player's mouth, and the mouth's shape makes it speak. This is a vocal tract made of about 48 short tube sections: where the tube gets wider or narrower, part of the sound bounces back, and the tube's resonances (formants) make the vowel. Put it after the amp. Move Vowel by hand, from your DAW, or let Follow move it with your playing. The five vowel shapes are fitted to measured vowel formants (Peterson and Barney 1952, men), not measured tract shapes.",
       "settings": {
+        "shapes": {
+          "label": "Mouth shapes", "type": "choice", "default": "vowels",
+          "choices": {
+            "vowels": "Speech: oo, oh, ah, eh, ee (fitted to measured formants of men's voices).",
+            "overtone": "A throat singer's mouth: ONE narrow resonance far above everything else, which picks out one harmonic of your note at a time, a whistle over the drone. Vowel moves it from 1222 Hz (0) to 2746 Hz (4). Made for nearly closed lips: Lip reflection 0.97 and Lips let the highs out above 2500 Hz."
+          },
+          "short": "Speech vowels, or a throat singer's whistle (overtone singing).",
+          "tooltip": "In overtone singing the singer pulls the mouth's 2nd and 3rd resonances together into one sharp peak and moves it with the tongue: it makes one harmonic of the drone ring out like a whistle. The five overtone shapes were searched for exactly that (one peak 9-20 dB above everything else from 150 Hz to 5 kHz) with nearly closed lips; they are not measured shapes. With a distorted guitar (many harmonics), move Vowel slowly or let Follow move it, and the whistle walks up and down the harmonics."
+        },
         "vowel": {
           "label": "Vowel", "type": "number", "min": 0, "max": 4, "default": 2,
           "short": "The mouth's shape: 0 = oo, 1 = oh, 2 = ah, 3 = eh, 4 = ee (in between: a blend).",

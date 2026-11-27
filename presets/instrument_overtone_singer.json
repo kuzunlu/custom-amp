@@ -1,0 +1,40 @@
+{
+  "name": "Instrument: overtone singer (mouth)",
+  "notes": "Throat singing on your guitar: the crunch amp's sound (no cab, as into a talk box) goes through a mouth shaped like an overtone singer's, with ONE narrow resonance that picks out a single harmonic of your note, a whistle over the drone. Whistle moves it from 1222 Hz (0) to 2746 Hz (10); move it slowly while a note rings, and it walks up and down the harmonics. Follow lets your playing move it (louder = higher). Physics: the amp and the vocal tract (a Kelly-Lochbaum tube). Searched, not measured: the five overtone mouth shapes (one peak 9-20 dB above everything else from 150 Hz to 5 kHz, with these nearly closed lips: Glass 0.97, the highs let out above 2500 Hz). Guesses: the amp is the crunch preset's.",
+  "panel": [
+    { "label": "Gain", "block": "v1", "setting": "drive_db", "range": [0, 40] },
+    { "label": "Whistle", "block": "mouth", "setting": "vowel", "range": [0, 4] },
+    { "label": "Follow", "block": "mouth", "setting": "follow", "range": [-4, 4] },
+    { "label": "Follow release", "block": "mouth", "setting": "follow_ms", "range": [10, 1000] },
+    { "label": "Glass", "block": "mouth", "setting": "lip_reflection", "range": [0.9, 0.99] },
+    { "label": "Lips open above", "block": "mouth", "setting": "lip_radiation_hz", "range": [1000, 6000] },
+    { "label": "Mix", "block": "mouth", "setting": "mix", "range": [0, 1] }
+  ],
+  "chain": [
+    { "type": "eq", "bands": [{ "kind": "highpass", "freq": 90 }] },
+    {
+      "type": "gain", "id": "v1", "drive_db": 20, "curve": "tube", "bias": 0.15,
+      "post": [{ "kind": "lowpass", "freq": 9000 }]
+    },
+    {
+      "type": "eq", "id": "tonestack",
+      "bands": [
+        { "kind": "lowshelf", "freq": 200, "gain_db": -3 },
+        { "kind": "peak", "freq": 800, "gain_db": 3, "q": 0.8 },
+        { "kind": "highshelf", "freq": 2500, "gain_db": 2 }
+      ]
+    },
+    { "type": "sag", "amount": 0.4, "attack_ms": 5, "release_ms": 200, "targets": ["v2"] },
+    {
+      "type": "feedback", "id": "nfb", "amount": 0.1,
+      "path": [{ "kind": "highshelf", "freq": 3000, "gain_db": -10 }],
+      "chain": [
+        {
+          "type": "gain", "id": "v2", "drive_db": 16, "curve": "soft",
+          "post": [{ "kind": "lowpass", "freq": 7000 }]
+        }
+      ]
+    },
+    { "type": "mouth", "id": "mouth", "shapes": "overtone", "lip_reflection": 0.97, "lip_radiation_hz": 2500, "vowel": 2 }
+  ]
+}

@@ -1419,6 +1419,58 @@ void mouthChecks()
                                                          + juce::String (100 * moved, 1) + "% from the fitted formants");
     }
 
+    // shapes "overtone": at every position one peak, at its frequency, far above everything else from 150 Hz to 5 kHz;
+    // halfway between two positions the peak lies between theirs. At 96 kHz (as searched) and 384 kHz (the plugin at 8x).
+    for (double rate : { 96000.0, 384000.0 })
+    {
+        const int order = rate > 100000 ? 19 : 17;  // 1.4 s of impulse response
+        const int n = 1 << order;
+        juce::String got;
+        bool ok = true;
+        double lowest = 1e9, previous = 0;
+
+        for (double position = 0; position <= 4.001; position += 0.5)
+        {
+            amp::BuildContext ctx;
+            ctx.rate = ctx.checkRate = rate;
+            amp::Mouth m (amp::Cfg (juce::JSON::parse (R"({ "type": "mouth", "shapes": "overtone", "lip_reflection": 0.97, "lip_radiation_hz": 2500, "vowel": )"
+                                                       + juce::String (position) + " }"), "mouth"), ctx);
+            std::vector<double> h ((size_t) n, 0.0);
+            h[0] = 1.0;
+            m.process (h.data(), n);
+            std::vector<float> data ((size_t) (2 * n), 0.0f);
+
+            for (int i = 0; i < n; ++i)
+                data[(size_t) i] = (float) h[(size_t) i];
+
+            juce::dsp::FFT (order).performFrequencyOnlyForwardTransform (data.data());
+            const double binHz = rate / n;
+            const auto db = [&data] (int k) { return 20 * std::log10 (data[(size_t) k] + 1e-20); };
+            int top = (int) (1000 / binHz);
+
+            for (int k = top; k < (int) (3200 / binHz); ++k)
+                if (db (k) > db (top))
+                    top = k;
+
+            double rest = -1e9;
+
+            for (int k = (int) (150 / binHz); k < (int) (5000 / binHz); ++k)
+                if (std::abs (k - top) > 0.12 * top)
+                    rest = std::max (rest, db (k));
+
+            const double hz = top * binHz, above = db (top) - rest;
+            const bool whole = position == std::floor (position);
+            const double want[] = { 1222, 1572, 1962, 2354, 2746 };
+            lowest = std::min (lowest, above);
+            ok = ok && above > 8 && hz > previous && (! whole || std::abs (hz / want[(int) position] - 1) < 0.01);
+            previous = hz;
+            got << juce::roundToInt (hz) << (whole ? "" : "*") << " ";
+        }
+
+        check (ok, juce::String (rate / 1000, 0) + " kHz, overtone shapes 0 to 4 in half steps (* = a blend): the whistle at " + got
+                       + "Hz, at least " + juce::String (lowest, 1) + " dB above everything else from 150 Hz to 5 kHz");
+    }
+
     // tune: the spacing of the high resonances is the note (B5 = 987.77 Hz), within the sections' 1%.
     {
         const auto a = mouthPeak (R"(, "tune": "B5")", 9500, 10500);

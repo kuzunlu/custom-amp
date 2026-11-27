@@ -25,6 +25,13 @@ namespace amp
 // mouth damps them (its lips radiate more and reflect less at high frequencies). lip_reflection (default 0.9) and
 // lip_radiation_hz (default off) set that; the defaults are the sound as it was, sample for sample. tune sets the
 // length from the spacing of those resonances (the chime's pitch).
+//
+// shapes "overtone" (2026-11-27): a throat singer's mouth instead of the vowels. Five shapes, each with ONE narrow
+// resonance standing far above the rest (F2 and F3 pulled together, as measured on overtone singers: Bloothooft et al.
+// 1992, Adachi and Yamada 1999), at 1222, 1572, 1962, 2354, 2746 Hz: it picks out one harmonic of the note at a time,
+// a whistle over the drone. `vowel` moves it (blends glide in between). SEARCHED in the scratchpad (not measured
+// shapes): with lip_reflection 0.97 and lip_radiation_hz 2500 (nearly closed lips), each peak 9-20 dB above everything
+// else from 150 Hz to 5 kHz; area ratios up to 50 (about what real tracts reach).
 class Mouth final : public Block
 {
 public:
@@ -44,6 +51,7 @@ private:
     void setShape (double vowel) noexcept;  // the reflection coefficients for a vowel position (0..4)
 
     double rate = 48000, vowel = 2, follow = 0, mix = 1, length = 0.1715, gain = 1;
+    const std::array<Shape, 5>* table = nullptr;        // the vowels, or the overtone shapes
     double lips = -0.9;                                 // the lips' reflection (-lip_reflection)
     double radiation = 0, lipState = 0;                 // lip_radiation_hz: a 1-pole low-pass on what the lips send back
     bool radiates = false;
