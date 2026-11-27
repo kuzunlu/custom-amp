@@ -125,6 +125,72 @@ static bool isLoopChain (const juce::var& node, const juce::Array<juce::var>* li
     return false;
 }
 
+// True when `list` is `node` itself or any list inside it.
+static bool holdsList (const juce::var& node, const juce::Array<juce::var>* list)
+{
+    if (auto* array = node.getArray())
+    {
+        if (array == list)
+            return true;
+
+        for (auto& v : *array)
+            if (holdsList (v, list))
+                return true;
+    }
+    else if (auto* object = node.getDynamicObject())
+    {
+        for (auto& p : object->getProperties())
+            if (holdsList (p.value, list))
+                return true;
+    }
+
+    return false;
+}
+
+juce::String placeProblem (const juce::var& preset, const juce::var& item, bool isPath, const juce::var& list, bool listIsPaths)
+{
+    if (isPath != listIsPaths)
+        return isPath ? "A split path can only go among the paths of a split."
+                      : "A block can not go among a split's paths: drop it into a path, under its name.";
+
+    if (! isPath && isLoopChain (preset, list.getArray()) && ! canGoInLoop (item["type"].toString()))
+        return "Only eq, tonestack, gain and power blocks can go inside a feedback loop.";
+
+    if (holdsList (item, list.getArray()))
+        return "A block can not go inside itself.";
+
+    return {};
+}
+
+bool moveItem (const juce::var& preset, const Selection& from, const juce::var& toList, int toIndex, bool toPaths,
+               Selection& moved, juce::String& problem)
+{
+    moved = from;
+    auto* source = from.list.getArray();
+    auto* target = toList.getArray();
+
+    if (! from.isValid() || target == nullptr || ! juce::isPositiveAndNotGreaterThan (toIndex, target->size()))
+        return false;
+
+    if (source == target && (toIndex == from.index || toIndex == from.index + 1))
+        return false;  // dropped where it already is
+
+    const auto item = from.item();
+    problem = placeProblem (preset, item, from.isPath, toList, toPaths);
+
+    if (problem.isNotEmpty())
+        return false;
+
+    source->remove (from.index);
+
+    if (source == target && toIndex > from.index)
+        --toIndex;  // it came out of the same list in front of that place
+
+    target->insert (toIndex, item);
+    moved = { toList, toIndex, from.isPath };
+    return true;
+}
+
 void collectIds (const juce::var& node, juce::StringArray& ids)
 {
     if (auto* array = node.getArray())

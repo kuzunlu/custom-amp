@@ -529,6 +529,17 @@ C++ checks:
   Some program on the user's PC sometimes holds the clipboard open for minutes (10 of 10 opens failed, also for
   PowerShell); then PluginTest's copy test prints "skip" with that reason instead of failing (it checks with
   `OpenClipboard` whether ANY program could open it). A copy bug still fails whenever the clipboard is free.
+- **Drag and drop** (2026-11-27, the user found adding/removing blocks hard): drag a block's (or split path's) NAME in
+  the chain to move it; `ChainView` keeps a drop place (`Slot`) above every block and path and at the end of every list
+  (of an empty loop or path: under its name), draws a line at the nearest one (between places at the same height the
+  mouse's x picks the depth: further left = the outer list) and scrolls near the edges. `BlockPalette` above the chain:
+  a chip per block type (drag into the chain = add there, click = add at the end, like "Add block...") and Remove (drop a
+  block on it). The editor is the `DragAndDropContainer`; the rules are `placeProblem` (a path only among paths, only
+  eq/tonestack/gain/power into a loop, nothing into itself) and `moveItem` (index counted before the move). Checked
+  (PluginTest, through `ChainView::dropAt` at a block's name: a real mouse drag is JUCE's own code): v1a above divider,
+  the same place = nothing, ir or the loop itself into the loop refused, master into the loop between pi and pa (builds),
+  a new gate at the start (selected), a new sag into the loop refused, undo. The block types (settings.json
+  `common.type.choices`, also the "Add block..." menu) were missing restring, bow and mouth until then.
 - **Where new blocks go:** "Add block..." and paste with nothing selected go at `endInsertIndex`: before the
   cab (`amp::tailStart`), since only eq/ir can follow it; an eq or ir goes at the very end. Inside a feedback
   loop (`isLoopChain`), "Add after..." offers only eq/tonestack/gain/power and paste refuses other blocks.

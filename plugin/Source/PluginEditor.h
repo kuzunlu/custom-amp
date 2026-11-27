@@ -11,6 +11,7 @@
 #include "SignalView.h"
 
 class CustomAmpEditor final : public juce::AudioProcessorEditor,
+                              public juce::DragAndDropContainer,  // blocks are dragged in the chain and from the palette
                               private juce::ChangeListener,
                               private juce::AsyncUpdater
 {
@@ -35,6 +36,7 @@ public:
     // In the chain editor: the signal view (each block's waveform or spectrum) instead of the block list.
     void showSignals (bool signals);
     SignalView& getSignalView() { return signalView; }
+    ChainView& getChainView() { return chainView; }
     const MeterView& getMeterView() const { return meterView; }
 
     // What "Put on the front panel" does (right-click a slider in the chain editor).
@@ -52,6 +54,8 @@ private:
     void showMessage (const juce::String& text, bool isProblem);
     void showXrayMenu (const juce::StringArray& blockPath, juce::Component* near);
     void refreshXray();
+    void addBlockAtEnd (const juce::String& type);  // before the cab IR (endInsertIndex)
+    void dropped (const juce::String& what, const Selection& dragged, const juce::var& list, int index, bool paths);
 
     CustomAmpProcessor& processor;
     SettingsHelp help;
@@ -80,6 +84,7 @@ private:
     PanelView panelView { processor };
     juce::Viewport chainViewport, inspectorViewport;
     ChainView chainView { help };
+    BlockPalette palette { help };
     Inspector inspector { help };
     SignalView signalView { processor };
     juce::TextButton signalsButton, xrayButton;

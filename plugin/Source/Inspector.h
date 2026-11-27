@@ -56,6 +56,16 @@ juce::var makeBlock (const juce::String& type);
 // ir blocks can come after it (an eq or ir block itself goes at the very end).
 int endInsertIndex (const juce::var& chain, const juce::var& block);
 
+// Why `item` (a block, or a split path when isPath) can not go into `list` of `preset` ("" = it can): a path only among
+// a split's paths (listIsPaths) and a block only into a chain, only eq/tonestack/gain/power into a feedback loop, and
+// nothing into itself.
+juce::String placeProblem (const juce::var& preset, const juce::var& item, bool isPath, const juce::var& list, bool listIsPaths);
+
+// Drag and drop: moves `from` to `toIndex` of `toList` (its place counted BEFORE the move). False when nothing changed
+// (the same place, or `problem` says why it can not go there); `moved` is where it is now.
+bool moveItem (const juce::var& preset, const Selection& from, const juce::var& toList, int toIndex, bool toPaths,
+               Selection& moved, juce::String& problem);
+
 // Every "id" in a preset, or in a part of one.
 void collectIds (const juce::var& node, juce::StringArray& ids);
 

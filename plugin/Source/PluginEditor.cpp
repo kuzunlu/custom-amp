@@ -196,16 +196,27 @@ CustomAmpEditor::CustomAmpEditor (CustomAmpProcessor& p)
 
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&addBlockButton), [this, types] (int result)
         {
-            if (result <= 0)
-                return;
-
-            auto chain = preset["chain"];
-            const auto block = makeBlock (types[result - 1]);
-            const int at = endInsertIndex (chain, block);
-            chain.getArray()->insert (at, block);
-            presetEdited (true);
-            select ({ chain, at, false });
+            if (result > 0)
+                addBlockAtEnd (types[result - 1]);
         });
+    };
+
+    addAndMakeVisible (palette);
+    palette.onAdd = [this] (const juce::String& type) { addBlockAtEnd (type); };
+    palette.onRemove = [this]
+    {
+        const auto dragged = chainView.getDragged();
+
+        if (dragged.isValid())
+        {
+            dragged.list.getArray()->remove (dragged.index);
+            presetEdited (true);
+            select ({});
+        }
+    };
+    chainView.onDrop = [this] (const juce::String& what, const Selection& dragged, const juce::var& list, int index, bool paths)
+    {
+        dropped (what, dragged, list, index, paths);
     };
 
     addAndMakeVisible (undoButton);
@@ -293,6 +304,7 @@ void CustomAmpEditor::showView (bool showPanel)
         c->setVisible (! showPanel);
 
     chainViewport.setVisible (! showPanel && ! processor.showSignals);
+    palette.setVisible (! showPanel && ! processor.showSignals);
     signalView.setVisible (! showPanel && processor.showSignals);
     signalsButton.setButtonText (processor.showSignals ? "Blocks" : "Signals");
     signalsButton.setTooltip (processor.showSignals ? "Back to the list of blocks and their settings."
@@ -303,6 +315,50 @@ void CustomAmpEditor::showView (bool showPanel)
                                      : "Back to the front panel.");
     showMessage ({}, false);
     refreshXray();  // also lays the window out
+}
+
+void CustomAmpEditor::addBlockAtEnd (const juce::String& type)
+{
+    if (! preset.isObject())
+        return;
+
+    if (! preset["chain"].isArray())
+        if (auto* obj = preset.getDynamicObject())
+            obj->setProperty ("chain", juce::Array<juce::var>());
+
+    auto chain = preset["chain"];
+    const auto block = makeBlock (type);
+    const int at = endInsertIndex (chain, block);
+    chain.getArray()->insert (at, block);
+    presetEdited (true);
+    select ({ chain, at, false });
+}
+
+// A drop in the chain: a block (or path) moved there, or a new block from the palette ("new:<type>").
+void CustomAmpEditor::dropped (const juce::String& what, const Selection& dragged, const juce::var& list, int index, bool paths)
+{
+    juce::String problem;
+
+    if (what.startsWith ("new:"))
+    {
+        const auto block = makeBlock (what.fromFirstOccurrenceOf ("new:", false, false));
+        problem = placeProblem (preset, block, false, list, paths);
+
+        if (problem.isEmpty())
+        {
+            list.getArray()->insert (index, block);
+            presetEdited (true);
+            select ({ list, index, false });
+        }
+    }
+    else if (Selection moved; moveItem (preset, dragged, list, index, paths, moved, problem))
+    {
+        presetEdited (true);
+        select (moved);
+    }
+
+    if (problem.isNotEmpty())
+        showMessage (problem, true);
 }
 
 void CustomAmpEditor::showSignals (bool signals)
@@ -360,7 +416,7 @@ void CustomAmpEditor::showMessage (const juce::String& text, bool isProblem)
 {
     // Empty text: the normal hint for the view.
     const auto hint = processor.showPanelView ? "Front panel: turn the knobs. Your DAW can automate them as Knob 1 to Knob 8."
-                                              : "Chain: click a block to edit it, hover for help. Right-click a slider to put it on the front panel.";
+                                              : "Chain: click a block to edit it, drag its name to move it, hover for help. Right-click a slider to put it on the front panel.";
     chainLabel.setText (text.isNotEmpty() ? text : juce::String (hint), juce::dontSendNotification);
     chainLabel.setColour (juce::Label::textColourId,
                           text.isEmpty() ? juce::Colours::white : isProblem ? theme::error : theme::accent);
@@ -612,8 +668,10 @@ void CustomAmpEditor::resized()
 
     panelView.setBounds (area);
     auto left = area.removeFromLeft (area.getWidth() * 55 / 100);
-    chainViewport.setBounds (left);
     signalView.setBounds (left);
+    palette.setTopLeftPosition (left.getPosition());
+    left.removeFromTop (palette.layout (left.getWidth()) + 8);
+    chainViewport.setBounds (left);
     area.removeFromLeft (12);
     inspectorViewport.setBounds (area);
     layoutViews();

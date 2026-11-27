@@ -78,8 +78,11 @@
           "split": "Parallel paths: the same sound goes through several chains side by side, then they are mixed.",
           "gate": "Noise gate: turns the sound down when you stop playing, to remove hiss and hum.",
           "ir": "Speaker cabinet sound from an impulse response file.",
-    "room": "Acoustic feedback: the amp's sound goes back into the guitar, as when you stand in front of a loud amp.",
-    "strings": "Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's."
+          "room": "Acoustic feedback: the amp's sound goes back into the guitar, as when you stand in front of a loud amp.",
+          "strings": "Sympathetic strings: extra strings tuned to fixed notes ring along with your playing, like a sitar's.",
+          "restring": "Your playing plucks a virtual string with physics you choose: lower, stiffer, longer.",
+          "bow": "Your playing bows a virtual string: long notes that swell and sing, like a cello.",
+          "mouth": "A vocal tract: the sound goes through a mouth shaping vowels, like a talk box."
         },
         "short": "What kind of block this is.",
         "tooltip": "Each block does one job. Combine them in any order to build any amp."

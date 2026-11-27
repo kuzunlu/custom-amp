@@ -745,6 +745,74 @@ int main (int argc, char* argv[])
         juce::SystemClipboard::copyTextToClipboard (userClipboard);
     }
 
+    std::cout << "Drag and drop in the chain\n";
+    {
+        q->loadBuiltInPreset ("brit_800.json");
+        waitForBuild (*q);
+        std::unique_ptr<juce::AudioProcessorEditor> editor (q->createEditor());
+        auto* ed = dynamic_cast<CustomAmpEditor*> (editor.get());
+        editor->setSize (1120, 720);
+        ed->showView (false);
+        pump (50);
+        auto& view = ed->getChainView();
+        const auto chain = [ed] { return ed->getEditedPreset()["chain"]; };
+        const auto ids = [] (const juce::var& list)
+        {
+            juce::StringArray names;
+
+            for (auto& b : *list.getArray())
+                names.add (b.getProperty ("id", b["type"]).toString());
+
+            return names.joinIntoString (" ");
+        };
+        // Drops just above a block's name (between it and the one before), at its depth.
+        const auto above = [&view] (const juce::var& list, int index)
+        {
+            const auto b = view.headerBounds ({ list, index, false });
+            return juce::Point<int> (b.getX() + 2, b.getY() - 2);
+        };
+        const auto drag = [&view, &above] (const juce::String& what, const Selection& item, const juce::var& list, int index)
+        {
+            const bool dropped = view.dropAt (what, item, above (list, index));
+            pump (50);  // the view is made again later (it may be the component that asked)
+            return dropped;
+        };
+
+        const auto before = ids (chain());
+        drag ("move", { chain(), 0, false }, chain(), 3);  // v1a to just above divider
+        waitForBuild (*q);
+        check (ids (chain()) == "gain_pot v1b v1a divider v2a cathode_follower tone master nfb ir" && q->isEdited() && ! q->getStatus().isError,
+               "dragging v1a above divider moves it there and builds: " + ids (chain()) + " (was " + before + ")");
+        check (ed->getSelection().index == 2, "the moved block is selected");
+
+        drag ("move", { chain(), 2, false }, chain(), 2);  // onto its own place
+        check (ids (chain()) == "gain_pot v1b v1a divider v2a cathode_follower tone master nfb ir", "dropping a block on its own place changes nothing");
+
+        const auto loop = chain()[8]["chain"];
+        drag ("move", { chain(), 9, false }, loop, 0);  // the cab into the feedback loop
+        check (ids (loop) == "pi pa" && chain().size() == 10, "the cab IR can not be dropped into the feedback loop: " + ids (loop));
+        drag ("move", { chain(), 8, false }, loop, 1);  // the loop into itself
+        check (ids (loop) == "pi pa" && chain().size() == 10, "the feedback loop can not be dropped into itself");
+
+        drag ("move", { chain(), 7, false }, loop, 1);  // master into the loop, between pi and pa
+        waitForBuild (*q);
+        const auto loopNow = chain()[7]["chain"];
+        check (ids (loopNow) == "pi master pa" && ids (chain()) == "gain_pot v1b v1a divider v2a cathode_follower tone nfb ir"
+                   && ! q->getStatus().isError,
+               "an eq can be dropped into the loop: " + ids (loopNow) + "; the chain " + ids (chain()));
+
+        drag ("new:gate", {}, chain(), 0);  // a new gate from the palette, at the very start
+        waitForBuild (*q);
+        check (chain()[0]["type"].toString() == "gate" && chain().size() == 10 && ed->getSelection().index == 0,
+               "a gate dragged from the palette lands at the start and is selected");
+        drag ("new:sag", {}, chain()[8]["chain"], 0);
+        check (chain()[8]["chain"].size() == 3, "a new sag can not be dropped into the loop");
+
+        q->undo();
+        pump (50);
+        check (q->getPresetData()["chain"][0]["id"].toString() == "gain_pot", "undo takes the dropped gate out again");
+    }
+
     std::cout << "Front panel\n";
     {
         SettingsHelp help;
