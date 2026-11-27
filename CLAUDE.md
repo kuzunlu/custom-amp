@@ -326,6 +326,17 @@ commit. (Checked: a 0.1 dB change of brit_800's master shows as -43 dB, so it fa
   images above 90 kHz go in the oversampler's filter); 12 cm: every formant x 17.15/12.15 within 0.1%; follow 2 from oo:
   1.99 loud, 0.24 at 20 dB softer (0.2). Demos (riff, each vowel fixed): the loudest band is 200-450 Hz for oo,
   600-900 Hz for oh/ah, 1700-2400 Hz for eh/ee. CPU: 2.8% at 8x (talking guitar 5.4% vs the same amp without it 2.6%).
+  **The chime** (2026-11-27, the user: "the most original thing we have done... as if the strings are glass... it
+  chimes"; KEEP IT, new lips only as options). Measured (a click through "ah"): above about 3 kHz the tube rings like a
+  plain pipe, resonances every ~990 Hz (c / 2L) up to 19.5 kHz, each ~55 Hz wide (40 ms of ringing) and louder by 6 dB per
+  octave (the differentiated radiation): +25 dB at 19.5 kHz against F1. A real mouth damps them. New settings, defaults =
+  the old sound sample for sample (talking guitar and talk box references -300 dB): `lip_reflection` (0.9; 0.97: the
+  10.5 kHz resonance 32 Hz wide, rings 69 ms), `lip_radiation_hz` (0 = off; what the lips send back goes through a
+  1-pole low-pass, the rest leaves: a stand-in for Flanagan's radiation load; 3000: 554 Hz wide, 4 ms, 8.3 dB quieter, and
+  ah's formants move up to 8.8%: the vowels were fitted without it), `tune` (a note or Hz instead of length_cm: L =
+  c / 2f; whole 0.36 cm sections, so B5 measures 976 Hz apart, 21 cents flat; finer would need a fractional delay).
+  The talking guitar and talk box panels got a Glass knob (lip_reflection 0.8-0.99). **mouthChecks were not in
+  `EngineTest check` until 2026-11-27** (only `EngineTest mouth`/`bow` ran them), so releases skipped them; now they run.
   **`EngineTest render` now runs with denormals off (`ScopedNoDenormals`, as the plugin's processBlock)**: without it
   the talking guitar measured 10-15% (tiny dying numbers in the tube; it changed with the vowel). Older CPU numbers in
   this file came from render without it, so some may be a little high.

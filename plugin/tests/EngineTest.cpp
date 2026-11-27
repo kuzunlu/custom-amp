@@ -1273,6 +1273,48 @@ std::vector<double> mouthFormants (const juce::String& settings, double rate, co
     return peaks;
 }
 
+// The strongest resonance of the mouth between lo and hi Hz (impulse response, 96 kHz, 1 Hz steps): its frequency,
+// its -3 dB width (capped at 600 Hz) and its level in dB.
+std::array<double, 3> mouthPeak (const juce::String& settings, double lo, double hi)
+{
+    const double rate = 96000.0;
+    amp::BuildContext ctx;
+    ctx.rate = ctx.checkRate = rate;
+    amp::Mouth m (amp::Cfg (juce::JSON::parse ("{ \"type\": \"mouth\"" + settings + " }"), "mouth"), ctx);
+    std::vector<double> h ((size_t) (0.5 * rate), 0.0);
+    h[0] = 1.0;
+    m.process (h.data(), (int) h.size());
+    const auto size = [&h, rate] (double f)
+    {
+        std::complex<double> sum;
+        const auto turn = std::polar (1.0, -2 * pi * f / rate);
+        std::complex<double> w (1.0, 0.0);
+
+        for (size_t i = 0; i < h.size(); ++i, w *= turn)
+            sum += h[i] * w;
+
+        return std::abs (sum);
+    };
+    double best = lo, top = 0;
+
+    for (double f = lo; f <= hi; f += 1)
+        if (const double a = size (f); a > top)
+        {
+            top = a;
+            best = f;
+        }
+
+    double below = best, above = best;
+
+    while (best - below < 600 && size (below) > top / std::sqrt (2.0))
+        below -= 1;
+
+    while (above - best < 600 && size (above) > top / std::sqrt (2.0))
+        above += 1;
+
+    return { best, above - below, 20 * std::log10 (top) };
+}
+
 void mouthChecks()
 {
     std::cout << "Mouth (a vocal tract: Kelly-Lochbaum tube)" << std::endl;
@@ -1347,6 +1389,58 @@ void mouthChecks()
         const double soft = m.vowelNow();
         check (std::abs (loud - 2) < 0.1 && std::abs (soft - 0.2) < 0.1, "follow 2 from oo: " + juce::String (loud, 2) + " while loud (ah = 2), "
                                                                               + juce::String (soft, 2) + " 20 dB softer (0.2)");
+    }
+
+    // The chime: the high resonances (here the one near 10.5 kHz of "ah") against the vowel's second formant. The more
+    // the lips send back, the narrower (longer ringing) they are; letting the highs out (lip_radiation_hz) damps them.
+    {
+        const auto f2 = mouthPeak ("", 1000, 1200);
+        const auto as = [&f2] (const std::array<double, 3>& p)
+        {
+            return juce::String (p[0], 0) + " Hz " + juce::String (p[1], 0) + " Hz wide (rings " + juce::String (juce::roundToInt (2200 / p[1])) + " ms), "
+                   + juce::String (p[2] - f2[2], 1) + " dB";
+        };
+        const auto now = mouthPeak ("", 10000, 11000), glass = mouthPeak (R"(, "lip_reflection": 0.97)", 10000, 11000),
+                   real = mouthPeak (R"(, "lip_radiation_hz": 3000)", 10000, 11000);
+        check (now[1] < 70 && glass[1] < 0.7 * now[1] && real[1] > 3 * now[1] && real[2] < now[2] - 6,
+               "the high resonance near 10.5 kHz: as it was " + as (now) + "; lip_reflection 0.97 " + as (glass) + "; lip_radiation_hz 3000 " + as (real)
+                   + " (levels against F2)");
+
+        // How far the vowel's formants move with the new lips (the vowels were fitted with the old ones).
+        const auto ah = mouthFormants ("", 96000.0), radiating = mouthFormants (R"(, "lip_radiation_hz": 3000)", 96000.0);
+        double moved = 0;
+
+        for (size_t k = 0; k < 3 && k < ah.size() && k < radiating.size(); ++k)
+            moved = std::max (moved, std::abs (radiating[k] / ah[k] - 1));
+
+        check (radiating.size() == 3 && moved < 0.1, "ah with lip_radiation_hz 3000: " + juce::String (radiating.size() > 2 ? radiating[0] : 0, 0) + "/"
+                                                         + juce::String (radiating.size() > 2 ? radiating[1] : 0, 0) + "/"
+                                                         + juce::String (radiating.size() > 2 ? radiating[2] : 0, 0) + " Hz, at most "
+                                                         + juce::String (100 * moved, 1) + "% from the fitted formants");
+    }
+
+    // tune: the spacing of the high resonances is the note (B5 = 987.77 Hz), within the sections' 1%.
+    {
+        const auto a = mouthPeak (R"(, "tune": "B5")", 9500, 10500);
+        const auto b = mouthPeak (R"(, "tune": "B5")", a[0] + 600, a[0] + 1400);
+        const auto c = mouthPeak (R"(, "tune": "987.77")", 9500, 10500);
+        int refused = 0;
+
+        for (auto* bad : { R"({ "type": "mouth", "tune": "B5", "length_cm": 17 })", R"({ "type": "mouth", "tune": "C4" })", R"({ "type": "mouth", "tune": "X" })" })
+        {
+            try
+            {
+                amp::BuildContext ctx;
+                ctx.rate = ctx.checkRate = 96000.0;
+                amp::Mouth m (amp::Cfg (juce::JSON::parse (bad), "mouth"), ctx);
+            }
+            catch (const amp::PresetError&) { ++refused; }
+        }
+
+        const double spacing = b[0] - a[0];
+        check (std::abs (spacing / 987.77 - 1) < 0.015 && c[0] == a[0] && refused == 3,
+               "tune B5: the high resonances " + juce::String (spacing, 0) + " Hz apart (987.77, " + juce::String (juce::roundToInt (1200 * std::log2 (spacing / 987.77)))
+                   + " cents); \"987.77\" the same; tune with length_cm, C4 (too low) and X refused");
     }
 }
 
@@ -1900,6 +1994,7 @@ int main (int argc, char* argv[])
         {
             bowChecks();
             mouthChecks();
+            mouthChecks();
             return failures == 0 ? 0 : 1;
         }
 
@@ -1917,6 +2012,7 @@ int main (int argc, char* argv[])
             stringsChecks();
             restringChecks();
             bowChecks();
+            mouthChecks();
             roomChecks (root);
             settingsChecks (root);
             referenceChecks (root);

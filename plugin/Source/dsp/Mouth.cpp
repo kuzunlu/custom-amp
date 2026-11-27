@@ -1,5 +1,7 @@
 #include "Mouth.h"
 
+#include "Strings.h"
+
 namespace amp
 {
 
@@ -18,13 +20,46 @@ const std::array<Mouth::Shape, 5> vowels { {
 }
 
 Mouth::Mouth (const Cfg& cfg, const BuildContext& ctx, const Shape* shape)
-    : Block (cfg, { "vowel", "follow", "follow_ms", "length_cm", "mix" })
+    : Block (cfg, { "vowel", "follow", "follow_ms", "length_cm", "mix", "lip_reflection", "lip_radiation_hz", "tune" })
 {
     rate = ctx.rate;
     vowel = cfg.number ("vowel", 2.0);
     follow = cfg.number ("follow", 0.0);
-    const double followMs = cfg.number ("follow_ms", 80.0), cm = cfg.number ("length_cm", 17.15);
+    const double followMs = cfg.number ("follow_ms", 80.0);
+    double cm = cfg.number ("length_cm", 17.15);
     mix = cfg.number ("mix", 1.0);
+    const double lipReflection = cfg.number ("lip_reflection", 0.9), radiationHz = cfg.number ("lip_radiation_hz", 0.0);
+
+    if (lipReflection <= 0 || lipReflection >= 1 || radiationHz < 0 || radiationHz >= ctx.checkRate / 2)
+        throw PresetError ("mouth: lip_reflection must be between 0 and 1 and lip_radiation_hz from 0 (off) to half the sample rate");
+
+    lips = -lipReflection;
+    radiates = radiationHz > 0;
+    radiation = 1 - std::exp (-2 * juce::MathConstants<double>::pi * radiationHz / rate);
+
+    // tune: a note (a name like E5, or Hz) = the spacing of the high resonances, c / 2L.
+    if (const auto tune = cfg.get ("tune"); ! tune.isVoid() && tune.toString().isNotEmpty())
+    {
+        if (cfg.has ("length_cm"))
+            throw PresetError ("mouth: give tune or length_cm, not both");
+
+        const auto text = tune.toString().trim();
+        double hz = 0;
+
+        try
+        {
+            hz = SympatheticStrings::noteHz (text.containsOnly ("0123456789.") ? juce::var (text.getDoubleValue()) : tune);
+        }
+        catch (const PresetError&)
+        {
+            throw PresetError ("mouth: tune '" + text + "' is not a note. Use a name like E5, F#5 or Bb5, or a number of Hz");
+        }
+
+        cm = 100 * soundSpeed / (2 * hz);
+
+        if (cm < 8 || cm > 30)
+            throw PresetError ("mouth: tune must be from 572 Hz (D5, a 30 cm tract) to 2144 Hz (C7, 8 cm), got " + juce::String (hz, 1) + " Hz");
+    }
 
     if (vowel < 0 || vowel > 4 || std::abs (follow) > 4)
         throw PresetError ("mouth: vowel must be from 0 (oo) to 4 (ee) and follow from -4 to 4");
@@ -95,7 +130,7 @@ void Mouth::reset() noexcept
     std::fill (fwd.begin(), fwd.end(), 0.0);
     std::fill (bwd.begin(), bwd.end(), 0.0);
     at = untilShape = 0;
-    lastLip = level = loudest = 0.0;
+    lastLip = level = loudest = lipState = 0.0;
     setShape (vowel);
 }
 
@@ -172,11 +207,25 @@ void Mouth::process (double* x, int n) noexcept
             bwd[(size_t) (j * delay + at)] = wallLoss * (r * f + (1 - r) * b);
         }
 
-        bwd[(size_t) (last * delay + at)] = wallLoss * lips * outF[(size_t) last];
+        double lip;
+
+        if (! radiates)
+        {
+            bwd[(size_t) (last * delay + at)] = wallLoss * lips * outF[(size_t) last];
+            lip = (1 + lips) * outF[(size_t) last];
+        }
+        else
+        {
+            // The lips send back less of the highs: what comes back is the wave through a 1-pole low-pass (a simple
+            // stand-in for Flanagan's radiation load); the rest passes out.
+            lipState += radiation * (outF[(size_t) last] - lipState);
+            bwd[(size_t) (last * delay + at)] = wallLoss * lips * lipState;
+            lip = outF[(size_t) last] + lips * lipState;
+        }
+
         at = (at + 1) % delay;
 
         // What leaves the lips, differentiated (the radiation).
-        const double lip = (1 + lips) * outF[(size_t) last];
         const double out = gain * (lip - lastLip);
         lastLip = lip;
         x[i] = (1 - mix) * in + mix * out;
@@ -185,7 +234,8 @@ void Mouth::process (double* x, int n) noexcept
 
 juce::String Mouth::describe() const
 {
-    return "mouth: a " + juce::String (100 * length, 2) + " cm tract in " + juce::String (sections) + " sections";
+    return "mouth: a " + juce::String (100 * length, 2) + " cm tract in " + juce::String (sections) + " sections, its high resonances "
+           + juce::String (soundSpeed / (2 * length), 0) + " Hz apart";
 }
 
 } // namespace amp

@@ -7,6 +7,7 @@
     { "label": "Follow", "block": "mouth", "setting": "follow", "range": [-4, 4] },
     { "label": "Follow release", "block": "mouth", "setting": "follow_ms", "range": [10, 1000] },
     { "label": "Tract length", "block": "mouth", "setting": "length_cm", "range": [10, 25] },
+    { "label": "Glass", "block": "mouth", "setting": "lip_reflection", "range": [0.8, 0.99] },
     { "label": "Mix", "block": "mouth", "setting": "mix", "range": [0, 1] },
     { "label": "Level", "block": "level", "setting": "level_db", "range": [-20, 20] }
   ],

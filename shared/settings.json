@@ -906,7 +906,22 @@
         "length_cm": {
           "label": "Tract length", "type": "number", "unit": "cm", "min": 8, "max": 30, "default": 17.15,
           "short": "How long the vocal tract is: 17 cm is a man's, 14.5 a woman's, 12 a child's.",
-          "tooltip": "All formants move together: half the length, twice the frequencies. Very long = a giant's voice. (It is made of whole sections, so it lands within 0.4 cm.)"
+          "tooltip": "All formants move together: half the length, twice the frequencies. Very long = a giant's voice. It also sets the chime's pitch: the high resonances lie 343 / (2 x length) apart (17 cm = 1 kHz, 30 cm = 572 Hz, 8 cm = 2.1 kHz). (It is made of whole sections, so it lands within 0.4 cm.)"
+        },
+        "tune": {
+          "label": "Chime note", "type": "text", "default": null,
+          "short": "Instead of Tract length: the note of the chime (a name like B5, or Hz), from D5 (572 Hz) to C7 (2144 Hz).",
+          "tooltip": "Above about 3 kHz the tract rings like a plain pipe: a ladder of narrow resonances, all the same distance apart, up to 20 kHz. That is the glassy chime. Their distance is the note you hear in it, and it is set by the length (343 m/s / 2 / length). This sets the length from a note, so the chime fits your song's key. All the formants move with it (a shorter tract = a higher voice). Use this or Tract length, not both. The tract is made of whole sections (0.36 cm), so the note can be up to about 1.5% (25 cents) off: measured, B5 comes out 21 cents flat."
+        },
+        "lip_reflection": {
+          "label": "Lip reflection (glass)", "type": "number", "min": 0.5, "max": 0.995, "default": 0.9,
+          "short": "How much of the sound the lips send back into the tract. Higher = the chime rings longer and sharper.",
+          "tooltip": "An open mouth sends most of the sound back in: only a little leaves, so the tract rings. Each resonance rings longer the more comes back: at 0.9 (as it always was) the high resonances ring about 40 ms; 0.97 makes them ring much longer and narrower (more glass); 0.7 makes them short and dull. The vowels were fitted with 0.9, so other values move the formants a little."
+        },
+        "lip_radiation_hz": {
+          "label": "Lips let the highs out above", "type": "number", "unit": "Hz", "min": 0, "max": 20000, "default": 0,
+          "short": "0 = off (the chime). Above this frequency the lips let the sound out instead of sending it back, like a real mouth: the chime fades.",
+          "tooltip": "A real mouth reflects less and radiates more at high frequencies (the air outside the lips acts like a load that grows with frequency: Flanagan's radiation model). So in speech the resonances above 3 kHz are wide and quiet. Here it is simplified: what the lips send back goes through a gentle low-pass at this frequency, and the rest leaves the mouth. 0 = off: every frequency is sent back the same (Lip reflection), which is what makes the glassy chime. 2000-4000 Hz sounds more like a real voice. The vowels were fitted without it, so it moves the formants a little."
         },
         "mix": {
           "label": "Mix", "type": "number", "min": 0, "max": 1, "default": 1,
